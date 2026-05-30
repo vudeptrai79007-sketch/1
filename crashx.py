@@ -79,10 +79,24 @@ def basic_auto_logic(history):
     final_target = base_target + random.uniform(0.01, 0.05)
     return round(final_target, 2)
 
+# Hàm áp dụng cấu hình (1, 2 hoặc 3) vào session hiện tại
+def apply_config(session, config_id):
+    cfg = session['configs'][config_id]
+    session['current_config_id'] = config_id
+    session['base_bet'] = cfg['base_bet']
+    session['target_x'] = cfg['target_x']
+    session['auto_x'] = cfg['auto_x']
+    session['loss_multiplier'] = cfg['loss_multiplier']
+    session['max_bet'] = cfg['max_bet']
+    session['skip_win_min'] = cfg['skip_win_min']
+    session['skip_win_max'] = cfg['skip_win_max']
+    session['skip_loss_min'] = cfg['skip_loss_min']
+    session['skip_loss_max'] = cfg['skip_loss_max']
+
 async def radar_tracker_task(session):
     last_x = 1.00
     start_time = time.time()
-    print_log("\nMAY BAY KHOI HANH", C_CYAN)
+    print_log(f"\n[CẤU HÌNH {session['current_config_id']}] MÁY BAY KHỞI HÀNH", C_CYAN)
     
     try:
         while session.get('is_betting', False) and session.get('is_running', False):
@@ -159,7 +173,7 @@ async def listen_game_server(session):
                                     session['skip_count'] -= 1
                                     print_log(f"[BO QUA] Dang bo qua lenh, con lai {session['skip_count']} van.", C_YELLOW)
                                 else:
-                                    if session['auto_x']:                                    
+                                    if session['auto_x']:                                      
                                         session['target_x'] = basic_auto_logic(session['history_x'])
                                             
                                     bet_payload = {
@@ -168,7 +182,7 @@ async def listen_game_server(session):
                                         "theme": "default", "tag": "a"
                                     }
                                     await session['auth_send_queue'].put(json.dumps(bet_payload))
-                                    print_log(f"[VAO LENH] Cuoc: {bet_amount} BLD | Muc tieu: {session['target_x']:.2f}x", C_GREEN)
+                                    print_log(f"[VAO LENH - C.HÌNH {session['current_config_id']}] Cuoc: {bet_amount} BLD | Muc tieu: {session['target_x']:.2f}x", C_GREEN)
 
                         elif msg.startswith("4,"):
                             current_x = float(msg.split(",")[1])
@@ -236,17 +250,48 @@ async def listen_auth_server(session):
                                         
                                         if res == "won":
                                             profit_round = payout - amount
+                                            session['consecutive_losses'] = 0 
+                                            
+                                            # --- LOGIC THẮNG: LUÂN CHUYỂN CẤU HÌNH (1 -> 3 -> 2 -> 1) ---
+                                            old_cfg = session['current_config_id']
+                                            if old_cfg == 1:
+                                                next_cfg = 3
+                                            elif old_cfg == 3:
+                                                next_cfg = 2
+                                            else:
+                                                next_cfg = 1
+                                                
+                                            apply_config(session, next_cfg)
+                                            # Đã thắng nên reset về cược gốc của cấu hình mới
                                             session['current_bet'] = session['base_bet'] 
-                                            text_res = "THANG"
+                                            text_res = f"THẮNG (Đổi cấu hình: {old_cfg} -> {next_cfg} | Reset mức cược)"
                                             
                                             if session['skip_win_max'] >= session['skip_win_min']:
                                                 diff_win = session['skip_win_max'] - session['skip_win_min']
                                                 session['skip_count'] = session['skip_win_min'] if diff_win == 0 else (session['total_played'] % (diff_win + 1)) + session['skip_win_min']
+                                        
                                         else:
                                             profit_round = -amount
+                                            session['consecutive_losses'] += 1
+                                            
+                                            # --- LOGIC THUA: ĐỔI CẤU HÌNH NẾU QUÁ 2 LẦN ---
+                                            if session['consecutive_losses'] >= 3:
+                                                old_cfg = session['current_config_id']
+                                                available_configs = [c for c in [1, 2, 3] if c != old_cfg]
+                                                next_cfg = random.choice(available_configs)
+                                                
+                                                apply_config(session, next_cfg)
+                                                session['consecutive_losses'] = 0 # Đặt lại bộ đếm để cấu hình mới chịu trách nhiệm gồng tiếp
+                                                prefix_text = f"Đổi sang Cấu hình {next_cfg}"
+                                            else:
+                                                prefix_text = f"Giữ nguyên Cấu hình {session['current_config_id']}"
+                                            
+                                            # --- LUÔN LUÔN GẤP THẾP ---
+                                            # Lấy mức tiền cũ nhân với hệ số gấp thếp của cấu hình hiện tại (có thể vừa bị đổi ở trên)
                                             next_bet = session['current_bet'] * session['loss_multiplier']
                                             session['current_bet'] = session['max_bet'] if (session['max_bet'] > 0 and next_bet > session['max_bet']) else next_bet
-                                            text_res = "THUA"
+                                            
+                                            text_res = f"THUA (Gấp thếp | {prefix_text})"
                                             
                                             if session['skip_loss_max'] >= session['skip_loss_min']:
                                                 diff_loss = session['skip_loss_max'] - session['skip_loss_min']
@@ -298,7 +343,7 @@ def start_async_loop(session):
 
 def main():
     os.system('clear')
-    print_log("CRASHX ADMIN XD-BOT", C_CYAN)
+    print_log("CRASHX ADMIN XD-BOT - PHIÊN BẢN 3 CẤU HÌNH (GỒNG TIẾP LỰC)", C_CYAN)
     
     json_data = get_multiline_json()
     print_log("\n[HETHONG] Dang xac thuc...", C_YELLOW)
@@ -325,35 +370,45 @@ def main():
         "history_x": [],
         "last_flying_x": 1.00,
         "pending_summary": None,
-        "observe_count": 0
+        "observe_count": 0,
+        "consecutive_losses": 0,
+        "configs": {}
     }
 
     try:
-        session['base_bet'] = float(input(f"{C_CYAN}Nhap so tien cuoc goc (VD: 100): {C_RESET}"))
-        session['current_bet'] = session['base_bet']
-        
-        target_input = input(f"{C_CYAN}Nhap Toa Do X (VD: 1.5) hoac go 'auto': {C_RESET}").strip().lower()
-        if target_input == 'auto':
-            session['auto_x'] = True
-            session['target_x'] = 1.15
-        else:
-            session['auto_x'] = False
-            session['target_x'] = float(target_input)
+        for i in range(1, 4):
+            print_log(f"\n--- NHẬP THÔNG SỐ CHO CẤU HÌNH {i} ---", C_YELLOW)
+            cfg = {}
+            cfg['base_bet'] = float(input(f"{C_CYAN}Nhap so tien cuoc goc (VD: 100): {C_RESET}"))
             
-        skip_win = input(f"{C_CYAN}Bo qua sau khi THANG (VD: 0-0 hoac 1-2): {C_RESET}").split('-')
-        session['skip_win_min'], session['skip_win_max'] = int(skip_win[0]), int(skip_win[1])
+            target_input = input(f"{C_CYAN}Nhap Toa Do X (VD: 1.5) hoac go 'auto': {C_RESET}").strip().lower()
+            if target_input == 'auto':
+                cfg['auto_x'] = True
+                cfg['target_x'] = 1.15
+            else:
+                cfg['auto_x'] = False
+                cfg['target_x'] = float(target_input)
+                
+            skip_win = input(f"{C_CYAN}Bo qua sau khi THANG (VD: 0-0 hoac 1-2): {C_RESET}").split('-')
+            cfg['skip_win_min'], cfg['skip_win_max'] = int(skip_win[0]), int(skip_win[1])
+            
+            skip_loss = input(f"{C_CYAN}Bo qua sau khi THUA (VD: 0-0 hoac 1-2): {C_RESET}").split('-')
+            cfg['skip_loss_min'], cfg['skip_loss_max'] = int(skip_loss[0]), int(skip_loss[1])
+            
+            cfg['loss_multiplier'] = float(input(f"{C_CYAN}He so gap thep khi THUA (VD: 2.0): {C_RESET}"))
+            cfg['max_bet'] = float(input(f"{C_CYAN}Gioi han cuoc khi gap thep (0 = khong gioi han): {C_RESET}"))
+            
+            session['configs'][i] = cfg
         
-        skip_loss = input(f"{C_CYAN}Bo qua sau khi THUA (VD: 0-0 hoac 1-2): {C_RESET}").split('-')
-        session['skip_loss_min'], session['skip_loss_max'] = int(skip_loss[0]), int(skip_loss[1])
-        
-        session['loss_multiplier'] = float(input(f"{C_CYAN}He so gap thep khi THUA (VD: 2.0): {C_RESET}"))
-        session['max_bet'] = float(input(f"{C_CYAN}Gioi han cuoc khi gap thep (0 = khong gioi han): {C_RESET}"))
-        
+        print_log(f"\n--- THÔNG SỐ CHUNG CHO HỆ THỐNG ---", C_YELLOW)
         sl_tp = input(f"{C_CYAN}Chot Loi - Cat Lo (VD: 1000-500, go 0-0 de bo qua): {C_RESET}").split('-')
         session['take_profit'], session['stop_loss'] = int(sl_tp[0]), int(sl_tp[1])
         
         session['observe_target'] = int(input(f"{C_CYAN}Theo doi truoc khi vao lenh (So van, VD: 0): {C_RESET}"))
         session['skip_count'] = 0
+        
+        apply_config(session, 1)
+        session['current_bet'] = session['base_bet']
         
     except ValueError:
         print_log("[LOI] Sai dinh dang thong so. Vui long chay lai va nhap so hop le.", C_RED)
