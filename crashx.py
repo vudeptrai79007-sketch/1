@@ -79,7 +79,6 @@ def basic_auto_logic(history):
     final_target = base_target + random.uniform(0.01, 0.05)
     return round(final_target, 2)
 
-# Hàm áp dụng cấu hình (1, 2 hoặc 3) vào session hiện tại
 def apply_config(session, config_id):
     cfg = session['configs'][config_id]
     session['current_config_id'] = config_id
@@ -169,15 +168,41 @@ async def listen_game_server(session):
                                     print_log(f"[LOI] Quy ({session['current_balance']}) khong du thuc thi lenh ({bet_amount}).", C_RED)
                                     break 
 
+                                if not session.get('auth_connected', False):
+                                    print_log(f"\n[BẢO VỆ] Máy chủ xử lý lệnh đang mất kết nối. Đợi ván sau...", C_YELLOW)
+                                    session['bet_id'] = None
+                                    session['bet_placed'] = False
+                                    continue
+                                
+                                # ==========================================
+                                # BẢN VÁ 4: CHỐT CHẶN CHỐNG KẸT LỆNH / SPAM LỆNH
+                                # ==========================================
+                                if session.get('is_waiting_for_result', False) or session.get('bet_placed', False):
+                                    session['spam_count'] += 1
+                                    if session['spam_count'] >= 2:
+                                        print_log("\n[DỪNG KHẨN CẤP] Phát hiện kẹt lệnh 2 ván liên tiếp (Tool có dấu hiệu spam ảo)! Tắt hệ thống để bảo vệ vốn.", C_RED)
+                                        session['is_running'] = False
+                                        break
+                                    else:
+                                        print_log("\n[CẢNH BÁO MẠNG] Lệnh cũ chưa chốt xong, tạm bỏ qua nhịp này để tránh gửi chồng lệnh...", C_YELLOW)
+                                        continue
+                                # ==========================================
+
                                 if session['skip_count'] > 0:
                                     session['skip_count'] -= 1
                                     print_log(f"[BO QUA] Dang bo qua lenh, con lai {session['skip_count']} van.", C_YELLOW)
                                 else:
                                     if session['auto_x']:                                      
                                         session['target_x'] = basic_auto_logic(session['history_x'])
-                                            
+                                    
+                                    # Kích hoạt trạng thái đang chờ kết quả
+                                    session['is_waiting_for_result'] = True
+                                    session['spam_count'] = 0 
+                                    
+                                    auto_cashout_multiplier = str(session['target_x'])
+                                        
                                     bet_payload = {
-                                        "type": "placebet", "l": 2, "amount": bet_amount, "coefficient": "1000000",
+                                        "type": "placebet", "l": 2, "amount": bet_amount, "coefficient": auto_cashout_multiplier,
                                         "currency": "bld", "index": 0, "metadata": {"subPartnerId": "", "device": "mobile", "manual": True},
                                         "theme": "default", "tag": "a"
                                     }
@@ -188,21 +213,16 @@ async def listen_game_server(session):
                             current_x = float(msg.split(",")[1])
                             session['last_flying_x'] = current_x
                             
-                            if session.get('bet_placed') and not session.get('cashed_out') and session.get('bet_id'):
-                                if current_x >= session['target_x']:
-                                    session['cashed_out'] = True
-                                    cashout_payload = {
-                                        "type": "cashout", "id": session['bet_id'], "amount": int(session['current_bet']),
-                                        "coefficient": current_x, 
-                                        "cashoutTimestamp": int(time.time() * 1000)
-                                    }
-                                    await session['auth_send_queue'].put(json.dumps(cashout_payload))
-                        
                         elif msg.startswith("5,"):
                             session['is_betting'] = False
                             parts = msg.split(",")
                             if len(parts) >= 4:
                                 session['last_flying_x'] = float(parts[3])
+                                
+                            # Nếu ván kết thúc mà mình KHÔNG CÓ LỆNH CƯỢC NÀO, reset cờ chờ kết quả
+                            if not session.get('bet_placed', False):
+                                session['is_waiting_for_result'] = False
+
                     except ValueError:
                         pass
                     except Exception:
@@ -218,13 +238,17 @@ async def listen_auth_server(session):
     while session.get('is_running', False):
         try:
             async with websockets.connect(ws_url, ping_interval=10, ping_timeout=20, max_size=None) as ws_auth:
+                session['auth_connected'] = True
+                
                 async def sender():
-                    while session.get('is_running', False):
+                    while session.get('is_running', False) and session.get('auth_connected', False):
                         data_to_send = await session['auth_send_queue'].get()
                         try:
                             await ws_auth.send(data_to_send)
-                        except Exception:
+                        except Exception as e:
+                            print_log(f"[LỖI GỬI LỆNH] Không thể gửi lệnh tới máy chủ: {e}", C_RED)
                             break
+                            
                 sender_task = asyncio.create_task(sender())
                 try:
                     while session.get('is_running', False):
@@ -243,6 +267,9 @@ async def listen_auth_server(session):
                                     
                                 if data.get("type") == "result":
                                     if session.get('bet_placed'):
+                                        # Đã nhận được kết quả tiền về -> Giải phóng trạng thái chờ chống Spam
+                                        session['is_waiting_for_result'] = False 
+                                        
                                         session['total_played'] += 1
                                         res = data.get("result")
                                         payout = float(data.get("payout", 0))
@@ -252,17 +279,12 @@ async def listen_auth_server(session):
                                             profit_round = payout - amount
                                             session['consecutive_losses'] = 0 
                                             
-                                            # --- LOGIC THẮNG: LUÂN CHUYỂN CẤU HÌNH (1 -> 3 -> 2 -> 1) ---
                                             old_cfg = session['current_config_id']
-                                            if old_cfg == 1:
-                                                next_cfg = 3
-                                            elif old_cfg == 3:
-                                                next_cfg = 2
-                                            else:
-                                                next_cfg = 1
+                                            if old_cfg == 1: next_cfg = 3
+                                            elif old_cfg == 3: next_cfg = 2
+                                            else: next_cfg = 1
                                                 
                                             apply_config(session, next_cfg)
-                                            # Đã thắng nên reset về cược gốc của cấu hình mới
                                             session['current_bet'] = session['base_bet'] 
                                             text_res = f"THẮNG (Đổi cấu hình: {old_cfg} -> {next_cfg} | Reset mức cược)"
                                             
@@ -274,24 +296,29 @@ async def listen_auth_server(session):
                                             profit_round = -amount
                                             session['consecutive_losses'] += 1
                                             
-                                            # --- LOGIC THUA: ĐỔI CẤU HÌNH NẾU QUÁ 2 LẦN ---
                                             if session['consecutive_losses'] >= 3:
                                                 old_cfg = session['current_config_id']
                                                 available_configs = [c for c in [1, 2, 3] if c != old_cfg]
                                                 next_cfg = random.choice(available_configs)
                                                 
                                                 apply_config(session, next_cfg)
-                                                session['consecutive_losses'] = 0 # Đặt lại bộ đếm để cấu hình mới chịu trách nhiệm gồng tiếp
+                                                session['consecutive_losses'] = 0 
                                                 prefix_text = f"Đổi sang Cấu hình {next_cfg}"
                                             else:
                                                 prefix_text = f"Giữ nguyên Cấu hình {session['current_config_id']}"
                                             
-                                            # --- LUÔN LUÔN GẤP THẾP ---
-                                            # Lấy mức tiền cũ nhân với hệ số gấp thếp của cấu hình hiện tại (có thể vừa bị đổi ở trên)
-                                            next_bet = session['current_bet'] * session['loss_multiplier']
-                                            session['current_bet'] = session['max_bet'] if (session['max_bet'] > 0 and next_bet > session['max_bet']) else next_bet
-                                            
-                                            text_res = f"THUA (Gấp thếp | {prefix_text})"
+                                            if session['max_bet'] > 0 and session['current_bet'] >= session['max_bet']:
+                                                print_log(f"\n[BÁO ĐỘNG] ĐÃ CHẠM ĐỈNH MAX BET ({session['max_bet']}) MÀ VẪN THUA!", C_RED)
+                                                print_log("[BẢO VỆ VỐN] Cắt đứt chuỗi gồng, reset về cược gốc để tránh cháy tài khoản.", C_YELLOW)
+                                                session['current_bet'] = session['base_bet']
+                                                text_res = f"THUA (Chạm đỉnh Max Bet -> Cắt máu về cược gốc | {prefix_text})"
+                                            else:
+                                                next_bet = session['current_bet'] * session['loss_multiplier']
+                                                if session['max_bet'] > 0 and next_bet > session['max_bet']:
+                                                    session['current_bet'] = session['max_bet']
+                                                else:
+                                                    session['current_bet'] = next_bet
+                                                text_res = f"THUA (Gấp thếp | {prefix_text})"
                                             
                                             if session['skip_loss_max'] >= session['skip_loss_min']:
                                                 diff_loss = session['skip_loss_max'] - session['skip_loss_min']
@@ -315,9 +342,19 @@ async def listen_auth_server(session):
                             pass
                 finally:
                     sender_task.cancel()
-        except Exception:
+                    session['auth_connected'] = False 
+                    
+        except Exception as e:
+            session['auth_connected'] = False
             if session.get('is_running', False):
-                await asyncio.sleep(3)
+                print_log(f"\n[CẢNH BÁO] Máy chủ Đặt Cược (Auth) đã ngắt kết nối: {e}", C_RED)
+                
+                if "401" in str(e) or "403" in str(e):
+                    print_log("[LỖI CHÍ MẠNG] Token JSON của bạn đã hết hạn! Hãy F5 trình duyệt, copy Token mới và chạy lại tool.", C_RED)
+                    session['is_running'] = False
+                    break
+                    
+                await asyncio.sleep(5)
 
 async def run_crash_bot(session):
     session['auth_send_queue'] = asyncio.Queue()
@@ -343,7 +380,7 @@ def start_async_loop(session):
 
 def main():
     os.system('clear')
-    print_log("CRASHX ADMIN XD-BOT - PHIÊN BẢN 3 CẤU HÌNH (GỒNG TIẾP LỰC)", C_CYAN)
+    print_log("CRASHX ADMIN XD-BOT - PHIÊN BẢN CHỐNG SPAM KẸT LỆNH", C_CYAN)
     
     json_data = get_multiline_json()
     print_log("\n[HETHONG] Dang xac thuc...", C_YELLOW)
@@ -372,7 +409,10 @@ def main():
         "pending_summary": None,
         "observe_count": 0,
         "consecutive_losses": 0,
-        "configs": {}
+        "configs": {},
+        "auth_connected": False,
+        "is_waiting_for_result": False,  # Cờ theo dõi kẹt lệnh
+        "spam_count": 0                  # Đếm số ván bị kẹt
     }
 
     try:
@@ -396,7 +436,7 @@ def main():
             cfg['skip_loss_min'], cfg['skip_loss_max'] = int(skip_loss[0]), int(skip_loss[1])
             
             cfg['loss_multiplier'] = float(input(f"{C_CYAN}He so gap thep khi THUA (VD: 2.0): {C_RESET}"))
-            cfg['max_bet'] = float(input(f"{C_CYAN}Gioi han cuoc khi gap thep (0 = khong gioi han): {C_RESET}"))
+            cfg['max_bet'] = float(input(f"{C_CYAN}Gioi han cuoc khi gap thep (0 = khong gioi han, TUYỆT ĐỐI KHÔNG ĐỂ 0): {C_RESET}"))
             
             session['configs'][i] = cfg
         
