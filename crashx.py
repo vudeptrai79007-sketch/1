@@ -33,8 +33,28 @@ HEADERS_MOBILE = {
     "User-Agent": "Mozilla/5.0 (Linux; Android 13; SM-S918B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/112.0.0.0 Mobile Safari/537.36"
 }
 
+# HỆ SỐ PHÍ GIAO DỊCH (6%)
+FEE_RATE = 0.06 
+CONFIG_FILE = "bot_config.json"
+
 def print_log(msg, color=C_RESET):
     print(f"{color}{msg}{C_RESET}")
+
+def load_saved_config():
+    if os.path.exists(CONFIG_FILE):
+        try:
+            with open(CONFIG_FILE, 'r') as f:
+                return json.load(f)
+        except Exception:
+            return None
+    return None
+
+def save_config(data):
+    try:
+        with open(CONFIG_FILE, 'w') as f:
+            json.dump(data, f, indent=4)
+    except Exception:
+        pass
 
 def get_multiline_json():
     print_log("Vui long dan chuoi JSON Token. Nhan Enter sau do nhap 'ok' de xac nhan:", C_CYAN)
@@ -154,7 +174,7 @@ async def listen_game_server(session):
                                 
                                 if session['take_profit'] > 0 and total_profit >= session['take_profit']:
                                     session['is_running'] = False
-                                    print_log(f"\n[🎉 HOÀN THÀNH MỤC TIÊU] Lãi đạt mức x2 tiền cược gốc (+{total_profit:.2f} BLD). Tool tự động nghỉ ngơi để bảo toàn thành quả!", C_GREEN)
+                                    print_log(f"\n[🎉 HOÀN THÀNH MỤC TIÊU] Đạt mức chốt lời (+{total_profit:.2f} BLD). Tool tự động dừng!", C_GREEN)
                                     break
                                 
                                 if session['stop_loss'] > 0 and total_profit <= -session['stop_loss']:
@@ -162,12 +182,12 @@ async def listen_game_server(session):
                                     print_log(f"\n[CAT LO] Cham nguong ro rui ({total_profit:.2f} BLD). Dung he thong.", C_RED)
                                     break
 
-                                # Sửa thành số thập phân để có thể đánh lẻ (ví dụ 3.6)
                                 bet_amount = round(float(session['current_bet']), 2)
                                 
-                                if session['current_balance'] < bet_amount:
+                                cost_required = bet_amount * (1 + FEE_RATE)
+                                if session['current_balance'] < cost_required:
                                     session['is_running'] = False
-                                    print_log(f"[LOI] Quy ({session['current_balance']}) khong du thuc thi lenh ({bet_amount}).", C_RED)
+                                    print_log(f"[LOI] Quy ({session['current_balance']:.2f}) khong du thuc thi lenh va phi ({cost_required:.2f}).", C_RED)
                                     break 
 
                                 if not session.get('auth_connected', False):
@@ -204,7 +224,7 @@ async def listen_game_server(session):
                                         "theme": "default", "tag": "a"
                                     }
                                     await session['auth_send_queue'].put(json.dumps(bet_payload))
-                                    print_log(f"[VAO LENH - C.HÌNH {session['current_config_id']}] Cuoc: {bet_amount} BLD | Muc tieu: {session['target_x']}x", C_GREEN)
+                                    print_log(f"[VAO LENH - C.HÌNH {session['current_config_id']}] Cuoc: {bet_amount} BLD (Chi phi thuc: {cost_required:.2f}) | Muc tieu: {session['target_x']}x", C_GREEN)
 
                         elif msg.startswith("4,"):
                             current_x = float(msg.split(",")[1])
@@ -268,12 +288,14 @@ async def listen_auth_server(session):
                                         session['total_played'] += 1
                                         res = data.get("result")
                                         payout = float(data.get("payout", 0))
+                                        
                                         amount = float(data.get("amount", session['current_bet']))
+                                        actual_cost = amount * (1 + FEE_RATE)
                                         
                                         if res == "won":
-                                            profit_round = payout - amount
+                                            profit_round = payout - actual_cost
                                             session['consecutive_losses'] = 0 
-                                            session['accumulated_loss'] = 0 # Xóa sổ tiền lỗ khi thắng
+                                            session['accumulated_loss'] = 0 
                                             
                                             old_cfg = session['current_config_id']
                                             if old_cfg == 1: next_cfg = 3
@@ -289,11 +311,10 @@ async def listen_auth_server(session):
                                                 session['skip_count'] = session['skip_win_min'] if diff_win == 0 else (session['total_played'] % (diff_win + 1)) + session['skip_win_min']
                                         
                                         else:
-                                            profit_round = -amount
+                                            profit_round = -actual_cost
                                             session['consecutive_losses'] += 1
                                             
-                                            # CỘNG DỒN TIỀN LỖ ĐỂ TÍNH TOÁN BÙ LỖ THÔNG MINH
-                                            session['accumulated_loss'] += amount 
+                                            session['accumulated_loss'] += actual_cost 
                                             
                                             if session['consecutive_losses'] >= 3:
                                                 old_cfg = session['current_config_id']
@@ -310,16 +331,14 @@ async def listen_auth_server(session):
                                                 print_log(f"\n[BÁO ĐỘNG] ĐÃ CHẠM ĐỈNH MAX BET ({session['max_bet']}) MÀ VẪN THUA!", C_RED)
                                                 print_log("[BẢO VỆ VỐN] Cắt đứt chuỗi gồng, reset về cược gốc để tránh cháy tài khoản.", C_YELLOW)
                                                 session['current_bet'] = session['base_bet']
-                                                session['accumulated_loss'] = 0 # Xả cầu thì cũng xóa sổ nợ luôn
+                                                session['accumulated_loss'] = 0
                                                 text_res = f"THUA (Chạm đỉnh Max Bet -> Cắt máu về cược gốc | {prefix_text})"
                                             else:
-                                                # ==============================================================
-                                                # CÔNG THỨC BÙ LỖ THÔNG MINH (Không bị hao hụt dòng tiền)
-                                                # Tiền cược ván sau = (Tổng lỗ + Tiền lãi mục tiêu) / (Tọa độ X - 1)
-                                                # ==============================================================
                                                 target_x_val = float(session['target_x'])
-                                                if target_x_val > 1.0:
-                                                    calculated_bet = (session['accumulated_loss'] + session['base_bet']) / (target_x_val - 1.0)
+                                                fee_multiplier = 1 + FEE_RATE
+                                                
+                                                if target_x_val > fee_multiplier:
+                                                    calculated_bet = (session['accumulated_loss'] + session['base_bet'] * fee_multiplier) / (target_x_val - fee_multiplier)
                                                     next_bet = round(calculated_bet, 2)
                                                 else:
                                                     next_bet = session['base_bet']
@@ -390,7 +409,7 @@ def start_async_loop(session):
 
 def main():
     os.system('clear')
-    print_log("CRASHX ADMIN XD-BOT - BÙ LỖ THÔNG MINH (CHỐNG HAO HỤT)", C_CYAN)
+    print_log("CRASHX ADMIN XD-BOT - HỖ TRỢ LƯU CẤU HÌNH & CHẠY VÔ HẠN", C_CYAN)
     
     json_data = get_multiline_json()
     print_log("\n[HETHONG] Dang xac thuc...", C_YELLOW)
@@ -419,52 +438,78 @@ def main():
         "pending_summary": None,
         "observe_count": 0,
         "consecutive_losses": 0,
-        "accumulated_loss": 0, # Biến theo dõi tổng nợ cần gỡ
+        "accumulated_loss": 0,
         "configs": {},
         "auth_connected": False,
         "is_waiting_for_result": False,
         "spam_count": 0
     }
 
+    saved_config = load_saved_config()
+    use_saved = False
+    
+    if saved_config:
+        choice = input(f"\n{C_CYAN}[HỆ THỐNG] Phát hiện cấu hình đã lưu. Bạn có muốn sử dụng lại không? (y/n): {C_RESET}").strip().lower()
+        if choice == 'y':
+            use_saved = True
+
     try:
-        for i in range(1, 4):
-            print_log(f"\n--- NHẬP THÔNG SỐ CHO CẤU HÌNH {i} ---", C_YELLOW)
-            cfg = {}
-            # Tiền cược gốc giờ có thể nhập số thập phân (VD: 3.6)
-            cfg['base_bet'] = float(input(f"{C_CYAN}Nhap so tien cuoc goc (VD: 3.6): {C_RESET}"))
-            
-            target_input = input(f"{C_CYAN}Nhap Toa Do X (VD: 1.5): {C_RESET}").strip().lower()
-            if target_input == 'auto':
-                cfg['auto_x'] = True
-                cfg['target_x'] = 1.15
-            else:
-                cfg['auto_x'] = False
-                cfg['target_x'] = float(target_input)
+        if use_saved:
+            # Chuyển đổi lại key từ string sang integer (1, 2, 3)
+            session['configs'] = {int(k): v for k, v in saved_config['configs'].items()}
+            session['take_profit'] = saved_config.get('take_profit', 0.0)
+            session['stop_loss'] = saved_config.get('stop_loss', 0.0)
+            session['observe_target'] = saved_config.get('observe_target', 0)
+            session['skip_count'] = 0
+            print_log("[*] Đã tải xong toàn bộ cấu hình cũ!", C_GREEN)
+        else:
+            for i in range(1, 4):
+                print_log(f"\n--- NHẬP THÔNG SỐ CHO CẤU HÌNH {i} ---", C_YELLOW)
+                cfg = {}
                 
-            skip_win = input(f"{C_CYAN}Bo qua sau khi THANG (VD: 0-0 hoac 1-2): {C_RESET}").split('-')
-            cfg['skip_win_min'], cfg['skip_win_max'] = int(skip_win[0]), int(skip_win[1])
+                raw_base_bet = input(f"{C_CYAN}Nhap so tien cuoc goc (VD: 3.6 hoac 3,6): {C_RESET}").strip().replace(',', '.')
+                cfg['base_bet'] = float(raw_base_bet)
+                
+                target_input = input(f"{C_CYAN}Nhap Toa Do X (VD: 2.12 hoac 2,12): {C_RESET}").strip().lower().replace(',', '.')
+                if target_input == 'auto':
+                    cfg['auto_x'] = True
+                    cfg['target_x'] = 1.15
+                else:
+                    cfg['auto_x'] = False
+                    cfg['target_x'] = float(target_input)
+                    
+                skip_win = input(f"{C_CYAN}Bo qua sau khi THANG (VD: 0-0 hoac 1-2): {C_RESET}").split('-')
+                cfg['skip_win_min'], cfg['skip_win_max'] = int(skip_win[0]), int(skip_win[1])
+                
+                skip_loss = input(f"{C_CYAN}Bo qua sau khi THUA (VD: 0-0 hoac 1-2): {C_RESET}").split('-')
+                cfg['skip_loss_min'], cfg['skip_loss_max'] = int(skip_loss[0]), int(skip_loss[1])
+                
+                raw_max_bet = input(f"{C_CYAN}Gioi han cuoc khi gap thep (0 = khong gioi han): {C_RESET}").strip().replace(',', '.')
+                cfg['max_bet'] = float(raw_max_bet)
+                
+                session['configs'][i] = cfg
             
-            skip_loss = input(f"{C_CYAN}Bo qua sau khi THUA (VD: 0-0 hoac 1-2): {C_RESET}").split('-')
-            cfg['skip_loss_min'], cfg['skip_loss_max'] = int(skip_loss[0]), int(skip_loss[1])
+            print_log(f"\n--- THÔNG SỐ CHUNG CHO HỆ THỐNG ---", C_YELLOW)
             
-            # ĐÃ XÓA KHAI BÁO HỆ SỐ GẤP THẾP VÌ TOOL ĐÃ TỰ ĐỘNG TÍNH TOÁN
+            tp_input = input(f"{C_CYAN}Nhap Chot Loi (VD: 5000, go 0 de chay vinh vien): {C_RESET}").strip().replace(',', '.')
+            session['take_profit'] = float(tp_input) if tp_input else 0.0
             
-            cfg['max_bet'] = float(input(f"{C_CYAN}Gioi han cuoc khi gap thep (0 = khong gioi han): {C_RESET}"))
+            stop_loss_input = input(f"{C_CYAN}Nhap Cat Lo (VD: 5000, go 0 de bo qua): {C_RESET}").strip().replace(',', '.')
+            session['stop_loss'] = float(stop_loss_input) if stop_loss_input else 0.0
             
-            session['configs'][i] = cfg
-        
-        print_log(f"\n--- THÔNG SỐ CHUNG CHO HỆ THỐNG ---", C_YELLOW)
-        
-        # Tự động chốt lời = Cược gốc cấu hình 1 nhân 2
-        session['take_profit'] = session['configs'][1]['base_bet'] * 2
-        print_log(f"[*] Đã TỰ ĐỘNG thiết lập Chốt Lời: {session['take_profit']} BLD (Gấp đôi mức cược gốc)", C_GREEN)
-        
-        stop_loss_input = input(f"{C_CYAN}Nhap Cat Lo (VD: 5000, go 0 de bo qua): {C_RESET}")
-        session['stop_loss'] = int(stop_loss_input) if stop_loss_input.strip() else 0
-        
-        session['observe_target'] = int(input(f"{C_CYAN}Theo doi truoc khi vao lenh (So van, VD: 0): {C_RESET}"))
-        session['skip_count'] = 0
-        
+            session['observe_target'] = int(input(f"{C_CYAN}Theo doi truoc khi vao lenh (So van, VD: 0): {C_RESET}"))
+            session['skip_count'] = 0
+            
+            # Lưu lại cấu hình để dùng cho lần sau
+            data_to_save = {
+                "configs": session['configs'],
+                "take_profit": session['take_profit'],
+                "stop_loss": session['stop_loss'],
+                "observe_target": session['observe_target']
+            }
+            save_config(data_to_save)
+            print_log("[*] Đã lưu thông số cấu hình vào bot_config.json", C_GREEN)
+            
         apply_config(session, 1)
         session['current_bet'] = session['base_bet']
         
