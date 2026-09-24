@@ -256,38 +256,6 @@ def tym(mediaid, cookie, csrftoken, link_job="", proxy=None):
     except Exception as e:
         return json.dumps({"status": "error", "message": str(e)})
 
-def cmt(mediaid, text, cookie, csrftoken, link_job="", proxy=None):
-    if not mediaid: return '{"status": "error"}'
-    cookie = unquote(cookie)
-    session = c_requests.Session()
-    proxies = format_proxy(proxy)
-    if proxies: session.proxies = proxies
-    
-    fb_dtsg, lsd, jazoest = "", "9zei3OjvTBQ-9YG6E0OMzm", "26312"
-    try:
-        res_home = session.get(link_job if link_job else "https://www.instagram.com/", impersonate="chrome120", timeout=10, allow_redirects=False).text
-        dtsg_match = re.search(r'name="fb_dtsg" value="([^"]+)"', res_home)
-        if dtsg_match: fb_dtsg = dtsg_match.group(1)
-    except: pass
-    
-    session.headers.update(get_ig_headers(cookie, csrftoken, link_job if link_job else "https://www.instagram.com/"))
-    actor_id_match = re.search(r'ds_user_id=(\d+)', cookie)
-    actor_id = actor_id_match.group(1) if actor_id_match else "0"
-    variables = {
-        "connections": [f"client:root:__PolarisPostComments__xdt_api__v1__media__media_id__comments__connection_connection(data:{{}},media_id:\"{mediaid}\",sort_order:\"popular\")"],
-        "data": {"comment_text": text, "media_id": str(mediaid)}
-    }
-    data = {
-        "av": actor_id, "__d": "www", "__user": "0", "__a": "1", "__req": "10",
-        "fb_dtsg": fb_dtsg, "jazoest": jazoest, "lsd": lsd, 
-        "fb_api_req_friendly_name": "PolarisPostCommentInputRevampedMutation",
-        "doc_id": "27261905640092552", "variables": json.dumps(variables)
-    }
-    try:
-        return session.post('https://www.instagram.com/api/graphql', data=data, impersonate="chrome120", timeout=15, allow_redirects=False).text.strip()
-    except Exception as e:
-        return json.dumps({"status": "error", "message": str(e)})
-
 def gui_nhan_xu(job_type, task_list, uid, cookie_check, xsmm_instance):
     global xu
     if not task_list: return
@@ -390,13 +358,6 @@ def run_account_worker(acc_data, xsmm, listnv, dl, doi, timedelays):
                     s_print(f"{yellow} ⏩ {blue}[{idfb}] Follow: {white}{link_job}")
                     kq = follow(target_id, cookie, csf, link_job, proxy=proxy)
                     delay_job = timedelays['sub']
-                    
-                elif rand_job == 'instagram_comment':
-                    idm = nv.get('target_id', '')
-                    noidung = nv.get('comment', '❤️❤️❤️')
-                    s_print(f"{yellow} ⏩ {blue}[{idfb}] Job CMT: {white}{link_job} | ND: {noidung}")
-                    kq = cmt(idm, noidung, cookie, csf, link_job, proxy=proxy)
-                    delay_job = timedelays['cmt']
 
                 max_job += 1
                 try:
@@ -412,7 +373,7 @@ def run_account_worker(acc_data, xsmm, listnv, dl, doi, timedelays):
                         if rand_job == 'instagram_follow' and len(cache_batch_nv) >= 10:
                             gui_nhan_xu(rand_job, cache_batch_nv, idfb, cookie, xsmm)
                             cache_batch_nv = []
-                        elif rand_job in ['instagram_like', 'instagram_comment']:
+                        elif rand_job == 'instagram_like':
                             gui_nhan_xu(rand_job, cache_batch_nv, idfb, cookie, xsmm)
                             cache_batch_nv = []
                             
@@ -420,7 +381,7 @@ def run_account_worker(acc_data, xsmm, listnv, dl, doi, timedelays):
                     s_print(f"{red} ❌ Lỗi JSON {idfb}: {e}")
                     soloi += 1
 
-                # Delay tĩnh (Không đếm ngược trên console tránh đè chữ)
+                # Delay tĩnh ngầm
                 if delay_job > 0:
                     time.sleep(delay_job)
 
@@ -521,31 +482,25 @@ if __name__ == "__main__":
     print(f"{white} ⏩ {blue}Sau bao nhiêu nhiệm vụ thì chuyển vòng : {white}", end="")
     try:
         doi = int(input().strip())
+        if doi <= 0: doi = 99999
     except:
         doi = 99999
 
     listnv = []
-    timedelays = {'tym': 0, 'sub': 0, 'cmt': 0}
+    timedelays = {'tym': 0, 'sub': 0}
 
-    print(f"{yellow} ⏩ {blue}Chế độ Tym (on/off): {white}", end="")
-    if input().strip().lower() == 'on':
+    print(f"{yellow} ⏩ {blue}Chế độ Tym (1: Bật / 2: Tắt): {white}", end="")
+    if input().strip() == '1':
         listnv.append('instagram_like')
         print(f"{yellow} ⏩ {blue}Delay Tym (Nhập 0 để bỏ qua): {white}", end="")
         try: timedelays['tym'] = int(input().strip())
         except: pass
 
-    print(f"{yellow} ⏩ {blue}Chế độ Follow (on/off): {white}", end="")
-    if input().strip().lower() == 'on':
+    print(f"{yellow} ⏩ {blue}Chế độ Follow (1: Bật / 2: Tắt): {white}", end="")
+    if input().strip() == '1':
         listnv.append('instagram_follow')
         print(f"{yellow} ⏩ {blue}Delay Follow (Nhập 0 để bỏ qua): {white}", end="")
         try: timedelays['sub'] = int(input().strip())
-        except: pass
-
-    print(f"{yellow} ⏩ {blue}Chế độ Comment (on/off): {white}", end="")
-    if input().strip().lower() == 'on':
-        listnv.append('instagram_comment')
-        print(f"{yellow} ⏩ {blue}Delay Cmt (Nhập 0 để bỏ qua): {white}", end="")
-        try: timedelays['cmt'] = int(input().strip())
         except: pass
 
     if not listnv:
