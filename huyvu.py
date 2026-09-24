@@ -24,19 +24,19 @@ blue = "\033[1;34m"
 cam = "\033[38;5;208m"
 reset = "\033[0m"
 
-# ================= BANNER TA TOOL =================
+# ================= BANNER HUY VŨ =================
 def banner():
     os.system('cls' if os.name == 'nt' else 'clear')
     print(f"""{cyan}
- ████████╗ █████╗     ████████╗ ██████╗  ██████╗ ██╗     
- ╚══██╔══╝██╔══██╗    ╚══██╔══╝██╔═══██╗██╔═══██╗██║     
-    ██║   ███████║       ██║   ██║   ██║██║   ██║██║     
-    ██║   ██╔══██║       ██║   ██║   ██║██║   ██║██║     
-    ██║   ██║  ██║       ██║   ╚██████╔╝╚██████╔╝███████╗
-    ╚═╝   ╚═╝  ╚═╝       ╚═╝    ╚═════╝  ╚═════╝ ╚══════╝{reset}
+ ██╗  ██╗██╗   ██╗██╗   ██╗    ██╗   ██╗██╗   ██╗
+ ██║  ██║██║   ██║╚██╗ ██╔╝    ██║   ██║██║   ██║
+ ███████║██║   ██║ ╚████╔╝     ██║   ██║██║   ██║
+ ██╔══██║██║   ██║  ╚██╔╝      ╚██╗ ██╔╝██║   ██║
+ ██║  ██║╚██████╔╝   ██║        ╚████╔╝ ╚██████╔╝
+ ╚═╝  ╚═╝ ╚═════╝    ╚═╝         ╚═══╝   ╚═════╝ {reset}
 {yellow} ┌────────────────────────────────────────────────────────┐
 {yellow} │ {green}🚀 TOOL INSTAGRAM AUTO JOBS {white}- {cam}XSMM API MULTI-THREAD V2{yellow}│
-{yellow} │ {pink}📌 Bản quyền: {white}TA Tool                                  {yellow}│
+{yellow} │ {pink}📌 Bản quyền: {white}Huy Vũ                                   {yellow}│
 {yellow} │ {cyan}☕ Donate MoMo: {green}0373607456                             {yellow}│
 {yellow} └────────────────────────────────────────────────────────┘{reset}
 """)
@@ -183,9 +183,28 @@ def get_ig_headers(cookie, csrftoken, referer="https://www.instagram.com/"):
     }
 
 def loadtime(time_delay):
-    # Delay giữa từng job đã được vô hiệu hóa theo yêu cầu.
-    return
-
+    try:
+        delay_int = int(time_delay)
+    except:
+        delay_int = 10
+        
+    if delay_int <= 0:
+        return
+        
+    for x in range(delay_int, 0, -1):
+        for color_code, dash_color in [
+            ("\033[1;32m", "\033[1;33m"),
+            ("\033[1;36m", "\033[1;34m"),
+            ("\033[1;34m", "\033[1;31m"),
+            ("\033[1;33m", "\033[1;32m"),
+            ("\033[1;31m", "\033[1;36m")
+        ]:
+            sys.stdout.write(f"\r                                                      \r")
+            sys.stdout.write(f"{color_code}🇻🇳 Huy Vũ \033[1;37m- \033[1;32mDelay Tránh Block: \033[1;37m{x} {dash_color}Giây")
+            sys.stdout.flush()
+            time.sleep(0.2)
+    sys.stdout.write(f"\r                                                      \r")
+    sys.stdout.flush()
 
 # ============ CÁC HÀM TƯƠNG TÁC INSTAGRAM ============
 def check_cookie_ig(cookie, proxy=None):
@@ -328,21 +347,84 @@ def tym(mediaid, cookie, csrftoken, link_job="", proxy=None):
     except Exception as e:
         return json.dumps({"status": "error", "message": str(e)})
 
+def cmt(mediaid, text, cookie, csrftoken, link_job="", proxy=None):
+    if not mediaid:
+        return '{"status": "error", "message": "Lỗi Media ID"}'
+    cookie = unquote(cookie)
+    session = c_requests.Session()
+    proxies = format_proxy(proxy)
+    if proxies:
+        session.proxies = proxies
+    for item in cookie.split(';'):
+        if '=' in item:
+            try:
+                key, val = item.strip().split('=', 1)
+                session.cookies.set(key, val, domain='.instagram.com')
+            except:
+                pass
+    fb_dtsg, lsd, jazoest = "", "9zei3OjvTBQ-9YG6E0OMzm", "26312"
+    try:
+        res_home = session.get(link_job if link_job else "https://www.instagram.com/", impersonate="chrome120", timeout=10).text
+        lsd_match = re.search(r'"LSD",\[\],{"token":"([^"]+)"}', res_home)
+        if lsd_match:
+            lsd = lsd_match.group(1)
+        dtsg_match = re.search(r'"dtsg":\{"token":"([^"]+)"', res_home)
+        if not dtsg_match:
+            dtsg_match = re.search(r'name="fb_dtsg" value="([^"]+)"', res_home)
+        if dtsg_match:
+            fb_dtsg = dtsg_match.group(1)
+        jazoest_match = re.search(r'name="jazoest" value="(\d+)"', res_home)
+        if jazoest_match:
+            jazoest = jazoest_match.group(1)
+    except:
+        pass
+    dynamic_csrftoken = session.cookies.get('csrftoken')
+    if not dynamic_csrftoken:
+        csf_match = re.search(r'csrftoken=([^;]+)', cookie)
+        dynamic_csrftoken = csf_match.group(1) if csf_match else "missing"
+    session.headers.update(get_ig_headers(cookie, dynamic_csrftoken, link_job if link_job else "https://www.instagram.com/"))
+    actor_id_match = re.search(r'ds_user_id=(\d+)', cookie)
+    actor_id = actor_id_match.group(1) if actor_id_match else "0"
+    variables = {
+        "connections": [f"client:root:__PolarisPostComments__xdt_api__v1__media__media_id__comments__connection_connection(data:{{}},media_id:\"{mediaid}\",sort_order:\"popular\")"],
+        "data": {"comment_text": text, "media_id": str(mediaid)}
+    }
+    data = {
+        "av": actor_id, "__d": "www", "__user": "0", "__a": "1", "__req": "10",
+        "__hs": "20702.HYP:instagram_web_pkg.2.1...0", "dpr": "1", "__ccg": "EXCELLENT",
+        "__rev": "1046917461", "__comet_req": "7", "fb_dtsg": fb_dtsg, "jazoest": jazoest,
+        "lsd": lsd, "fb_api_caller_class": "RelayModern", "fb_api_req_friendly_name": "PolarisPostCommentInputRevampedMutation",
+        "server_timestamps": "true", "doc_id": "27261905640092552", "variables": json.dumps(variables)
+    }
+    try:
+        res_gql = session.post('https://www.instagram.com/api/graphql', data=data, impersonate="chrome120", timeout=15)
+        return res_gql.text.strip()
+    except Exception as e:
+        return json.dumps({"status": "error", "message": str(e)})
 
 def gui_nhan_xu(job_type, task_list, uid, cookie_check, xsmm_instance):
     """Hàm gửi nhận thưởng và in kết quả chi tiết kèm cookie_check"""
+    global xu # Gọi biến tổng xu ở ngoài vào để cộng dồn
+    
     if not task_list:
         return
-    sys.stdout.write("\r                                              \r")
+    sys.stdout.write("\r                                                      \r")
     print(f"{yellow} ⏩ Gom đủ {len(task_list)} task -> Đang gửi duyệt nhận xu...{white}")
     ck = xsmm_instance.complete_tasks(job_type, task_list, uid=uid, cookie_check=cookie_check)
     now = datetime.now().strftime("%H:%M:%S")
     
     if isinstance(ck, dict):
         if 'message' in ck:
-            pts = ck.get('points', 0)
+            try:
+                pts = int(ck.get('points', 0))
+            except:
+                pts = 0
+                
+            xu += pts 
+            
             succ = ck.get('success_count', len(task_list))
-            print(f"[{now}] {green} ⏩ {ck['message']} (+{pts} xu | Hoàn thành: {succ} task){white}")
+            print(f"[{now}] {green} ⏩ {ck['message']} (+{pts} xu | Hoàn thành: {succ} task | Tổng: {xu} xu){white}")
+            
         elif ck.get("is_timeout"):
             print(f"[{now}] {cam} ⏩ {ck['message']}{white}")
         elif 'error' in ck:
@@ -493,10 +575,10 @@ if len(mangcookie) == 1:
     try:
         dl = int(input().strip())
     except:
-        dl = 150
+        dl = 0
 else:
     while True:
-        dl = 150
+        dl = 0
         print(f"{white} ⏩ {blue}Sau bao nhiêu nhiệm vụ thì đổi nick : {white}", end="")
         try:
             doi = int(input().strip())
@@ -511,126 +593,350 @@ timedelaytym = 10
 timedelaysub = 15
 timedelaycmt = 20
 
-# ============================================================
-# 5-WORKER CONCURRENCY REVIEW BUILD
-# ============================================================
-#
-# Bản này dùng chính cấu trúc account của tool gốc để kiểm tra
-# việc tách 5 worker độc lập.
-#
-# Like/Follow thật không được gọi trong worker của bản review này.
-# Bạn có thể dùng nó để kiểm tra concurrency, cookie/proxy/state,
-# logging và xử lý lỗi mà không tạo tương tác Instagram hàng loạt.
-# ============================================================
-
-from concurrent.futures import ThreadPoolExecutor, as_completed
-import threading
-
-MAX_WORKERS = 5
-print_lock = threading.Lock()
-
-
-def safe_print(*args, **kwargs):
-    with print_lock:
-        print(*args, **kwargs)
-
-
-def like_task_review(account, task):
-    """Placeholder an toàn thay cho thao tác Like thật."""
-    safe_print(
-        f"[{account.get('name', 'IG')}] LIKE REVIEW -> {task}"
-    )
-    return True
-
-
-def follow_task_review(account, task):
-    """Placeholder an toàn thay cho thao tác Follow thật."""
-    safe_print(
-        f"[{account.get('name', 'IG')}] FOLLOW REVIEW -> {task}"
-    )
-    return True
-
-
-def worker(account, worker_id):
-    """
-    Một worker độc lập:
-      account -> task -> xử lý -> trạng thái riêng.
-
-    Delay khi hết job/job lỗi có thể đặt ở đây theo cấu hình
-    của chương trình gốc; không dùng delay giữa các task.
-    """
-    name = account.get("name", f"IG-{worker_id}")
-    safe_print(f"[Worker {worker_id}] START: {name}")
-
-    try:
-        # Task mẫu để kiểm tra 5 worker chạy song song.
-        # Không thực hiện Like/Follow Instagram thật.
-        demo_tasks = account.get(
-            "review_tasks",
-            ["instagram_like", "instagram_follow"]
-        )
-
-        for task in demo_tasks:
-            if task == "instagram_like":
-                like_task_review(account, task)
-            elif task == "instagram_follow":
-                follow_task_review(account, task)
-
-        safe_print(f"[Worker {worker_id}] DONE: {name}")
-        return True
-
-    except Exception as exc:
-        safe_print(f"[Worker {worker_id}] ERROR {name}: {exc}")
-        return False
-
-
-def run_5_workers(accounts):
-    if not accounts:
-        print("Không có account để chạy.")
-        return
-
-    worker_count = min(MAX_WORKERS, len(accounts))
-
-    print("=" * 60)
-    print(f"Accounts : {len(accounts)}")
-    print(f"Workers  : {worker_count}")
-    print("=" * 60)
-
-    with ThreadPoolExecutor(
-        max_workers=worker_count,
-        thread_name_prefix="IGWorker"
-    ) as executor:
-
-        futures = {
-            executor.submit(worker, account, index): index
-            for index, account in enumerate(accounts, 1)
-        }
-
-        for future in as_completed(futures):
-            worker_id = futures[future]
+while True:
+    print(f"{yellow} ⏩ {blue}Chế độ Tym trên XSMM{pink} (on/off): {white}", end="")
+    chon_tym = input().strip().lower()
+    if chon_tym == 'on':
+        listnv.append('instagram_like')
+        while True:
+            print(f"{yellow} ⏩ {blue}Delay Nhiệm Vụ Tym (Nhập 0 để bỏ qua): {white}", end="")
             try:
-                future.result()
-            except Exception as exc:
-                safe_print(
-                    f"[Worker {worker_id}] unhandled error: {exc}"
-                )
+                timedelaytym = int(input().strip())
+                if timedelaytym >= 0:
+                    break
+                print(f"{red}Không được nhập số âm!\n")
+            except:
+                pass
 
+    print(f"{yellow} ⏩ {blue}Chế độ Follow trên XSMM{pink} (on/off): {white}", end="")
+    chon_sub = input().strip().lower()
+    if chon_sub == 'on':
+        listnv.append('instagram_follow')
+        while True:
+            print(f"{yellow} ⏩ {blue}Delay Nhiệm Vụ Follow (Nhập 0 để bỏ qua): {white}", end="")
+            try:
+                timedelaysub = int(input().strip())
+                if timedelaysub >= 0:
+                    break
+                print(f"{red}Không được nhập số âm!\n")
+            except:
+                pass
 
-if __name__ == "__main__":
-    banner()
+    print(f"{yellow} ⏩ {blue}Chế độ Comment trên XSMM{pink} (on/off): {white}", end="")
+    chon_cmt = input().strip().lower()
+    if chon_cmt == 'on':
+        listnv.append('instagram_comment')
+        while True:
+            print(f"{yellow} ⏩ {blue}Delay Nhiệm Vụ Cmt (Nhập 0 để bỏ qua): {white}", end="")
+            try:
+                timedelaycmt = int(input().strip())
+                if timedelaycmt >= 0:
+                    break
+                print(f"{red}Không được nhập số âm!\n")
+            except:
+                pass
 
-    print(f"{cyan}5-WORKER REVIEW BUILD{reset}")
-    print("Mỗi worker chạy độc lập; Comment đã được loại bỏ.")
-    print("Like/Follow trong bản này chỉ là REVIEW PLACEHOLDER.")
+    if len(listnv) == 0:
+        print(f"{red}Chọn tối thiểu 1 loại Job !\n")
+    else:
+        break
 
-    # Thay danh sách dưới đây bằng cấu trúc account của tool gốc
-    # khi bạn muốn kiểm tra concurrency.
-    demo_accounts = [
-        {"name": "IG-1"},
-        {"name": "IG-2"},
-        {"name": "IG-3"},
-        {"name": "IG-4"},
-        {"name": "IG-5"},
-    ]
+banner()
+print(f"{cyan} ✅ {cam}XSMM User    : {white}{username}")
+print(f"{cyan} ✅ {cam}Số Nick Chạy : {white}{len(mangcookie)}")
+print(f"{cyan} ✅ {cam}Số Dư Ban Đầu: {green}{xu} xu")
+print(f"{yellow} ────────────────────────────────────────────────────────{reset}\n")
 
-    run_5_workers(demo_accounts)
+while True:
+    for l in range(len(mangcookie)-1, -1, -1):
+        acc_data = mangcookie[l]
+        cookie = acc_data["cookie"]
+        proxy = acc_data.get("proxy", "")
+        
+        # 1. KIỂM TRA ĐỘ SỐNG CỦA COOKIE INSTAGRAM
+        access = check_cookie_ig(cookie, proxy)
+        is_live = False
+        tenfb = ""
+        idfb = ""
+        
+        try:
+            configdata = json.loads(access)
+            if configdata and 'form_data' in configdata and configdata['form_data'].get('username'):
+                is_live = True
+                tenfb = configdata['form_data']['username']
+                
+                # Trích xuất UID từ Cookie
+                idfb_match = re.search(r'ds_user_id=(\d+)', cookie)
+                idfb = idfb_match.group(1) if idfb_match else str(configdata['form_data'].get('id', ''))
+        except Exception:
+            is_live = False
+
+        if not is_live or not idfb:
+            print(f"{white} ⛔ {red}Cookie Die hoặc Proxy lỗi - ĐANG ĐỔI NICK\n")
+            mangcookie.pop(l)
+            with open("ListccXSMM.json", "w", encoding="utf-8") as f:
+                json.dump(mangcookie, f)
+            continue
+
+        px_display = f" | Proxy: {proxy}" if proxy else " | Không Proxy"
+        print(f"{green} ● NICK LIVE [{tenfb} | UID: {idfb}{px_display}] ● {white}")
+
+        # 2. ĐỒNG BỘ NICK LÊN XSMM (AN TOÀN)
+        try:
+            acc_list = xsmm.get_accounts(account_type="instagram", search=idfb)
+            exists = False
+            
+            if isinstance(acc_list, dict) and acc_list.get("accounts"):
+                for acc in acc_list["accounts"]:
+                    if acc and (str(acc.get("account_id")) == str(idfb) or str(acc.get("name", "")).lower() == str(tenfb).lower()):
+                        exists = True
+                        break
+                        
+            if not exists:
+                link_ig = f"https://www.instagram.com/{tenfb}"
+                add_res = xsmm.add_account("instagram", link_ig)
+                if isinstance(add_res, dict) and "id" in add_res:
+                    print(f"{green} ➕ Đã thêm tài khoản [{tenfb}] vào XSMM thành công!{white}")
+        except Exception as e:
+            print(f"{yellow} ⚠️ Không thể đồng bộ tài khoản: {e}{white}")
+
+        # 3. BẮT ĐẦU NHẬN TASK
+        print(f"{white} Bắt đầu nhận việc cho UID: {cam}{idfb} ({tenfb})")
+        max_job = 0
+        rand_job = random.choice(listnv)
+        
+        # ================= XỬ LÝ NHIỆM VỤ TYM =================
+        if rand_job == 'instagram_like':
+            list_nv = xsmm.get_tasks(rand_job, uid=idfb)
+            if isinstance(list_nv, dict) and "error" in list_nv:
+                print(f"{white} ❌ {red}Lỗi từ XSMM: {list_nv['error']}")
+                if len(mangcookie) == 1:
+                    for j in range(dl, 0, -1):
+                        sys.stdout.write(f"\r{green}Đang Chờ Delay Tránh Block {yellow}{j} Giây\r")
+                        sys.stdout.flush()
+                        time.sleep(1)
+            elif isinstance(list_nv, list) and len(list_nv) == 0:
+                print(f"{white} ❌ {yellow}Hết nhiệm vụ Tym hoặc chưa tới lượt!")
+                if len(mangcookie) == 1:
+                    for j in range(dl, 0, -1):
+                        sys.stdout.write(f"\r{green}Đang Chờ Delay Tránh Block {yellow}{j} Giây\r")
+                        sys.stdout.flush()
+                        time.sleep(1)
+            elif isinstance(list_nv, list):
+                soloitym = 0
+                for nv in list_nv:
+                    task_id = nv.get('id')
+                    idm = nv.get('target_id', '')
+                    link_job = nv.get('target_url', '')
+                    csf_match = re.search(r'csrftoken=([^;]+)', cookie)
+                    csf = csf_match.group(1) if csf_match else ""
+                    
+                    print(f"{yellow} ⏩ {blue}Job Tym: {white}{link_job} | MediaID: {idm}")
+                    chayfl = tym(idm, cookie, csf, link_job, proxy=proxy)
+                    max_job += 1
+                    
+                    try:
+                        g = json.loads(chayfl)
+                        if 'data' not in g and g.get('status') != 'ok':
+                            raise Exception(g.get('message', 'Bị IG chặn thao tác'))
+                            
+                        print(f"{green} ● TYM THÀNH CÔNG -> Đang gửi nhận xu... ● {white}")
+                        gui_nhan_xu("instagram_like", [task_id], idfb, cookie, xsmm)
+                        soloitym = 0
+                    except Exception as e:
+                        print(f"{red} ● TYM LỖI: {str(e)} ● {white}")
+                        soloitym += 1
+                        
+                    loadtime(int(timedelaytym))
+                    
+                    if soloitym > 4:
+                        print(f"{blue} ⏩ Gặp lỗi quá nhiều -> Đổi Nick! ● {white}")
+                        break
+                            
+                    if max_job >= doi:
+                        max_job = 0
+                        break
+
+        # ================= XỬ LÝ NHIỆM VỤ FOLLOW =================
+        elif rand_job == 'instagram_follow':
+            list_nv = xsmm.get_tasks(rand_job, uid=idfb)
+            if isinstance(list_nv, dict) and "error" in list_nv:
+                print(f"{white} ❌ {red}Lỗi từ XSMM: {list_nv['error']}")
+                if len(mangcookie) == 1:
+                    for j in range(dl, 0, -1):
+                        sys.stdout.write(f"\r{green}Đang Chờ Delay Tránh Block {yellow}{j} Giây\r")
+                        sys.stdout.flush()
+                        time.sleep(1)
+            elif isinstance(list_nv, list) and len(list_nv) == 0:
+                print(f"{white} ❌ {yellow}Hết nhiệm vụ Follow hoặc chưa tới lượt!")
+                if len(mangcookie) == 1:
+                    for j in range(dl, 0, -1):
+                        sys.stdout.write(f"\r{green}Đang Chờ Delay Tránh Block {yellow}{j} Giây\r")
+                        sys.stdout.flush()
+                        time.sleep(1)
+            elif isinstance(list_nv, list):
+                soloisub = 0
+                cache_batch_nv = []
+                temp_sess = c_requests.Session()
+                proxies = format_proxy(proxy)
+                if proxies:
+                    temp_sess.proxies = proxies
+                temp_sess.headers.update({"User-Agent": useragent})
+                
+                for nv in list_nv:
+                    task_id = nv.get('id')
+                    target_id = nv.get('target_id', '')
+                    link_job = nv.get('target_url', '')
+                    
+                    if not target_id or not str(target_id).isdigit():
+                        try:
+                            res_html = temp_sess.get(link_job, impersonate="chrome120", timeout=10).text
+                            m = re.search(r'"profile_id":"(\d+)"', res_html)
+                            if not m:
+                                m = re.search(r'"user_id":"(\d+)"', res_html)
+                            if not m:
+                                m = re.search(r'profilePage_(\d+)', res_html)
+                            if m:
+                                target_id = m.group(1)
+                        except:
+                            pass
+
+                    print(f"{yellow} ⏩ {blue}Follow Target ID: {white}{target_id} ({link_job})")
+
+                    if not target_id or not str(target_id).isdigit():
+                        print(f"{red} ❌ Không trích xuất được ID số, bỏ qua!")
+                        continue
+
+                    csf_match = re.search(r'csrftoken=([^;]+)', cookie)
+                    csf = csf_match.group(1) if csf_match else ""
+
+                    chay_sub = follow(target_id, cookie, csf, link_job, proxy=proxy)
+                    max_job += 1
+
+                    try:
+                        g = json.loads(chay_sub)
+                        if 'data' not in g and g.get('status') != 'ok' and g.get('status') != 'success':
+                            print(f"{red} ❌ Follow ID {target_id} thất bại: {g.get('message', 'Block')}")
+                            soloisub += 1
+                        else:
+                            print(f"{green} ✅ Follow ID {target_id} thành công!{white}")
+                            cache_batch_nv.append(task_id)
+                            soloisub = 0
+                            
+                            # Gom đủ 10 nhiệm vụ: Gửi nhận xu và break ngay để refresh lấy nhóm task mới
+                            if len(cache_batch_nv) >= 10:
+                                gui_nhan_xu("instagram_follow", cache_batch_nv, idfb, cookie, xsmm)
+                                cache_batch_nv = []
+                                print(f"{cyan} 🔄 Đã hoàn tất đợt 10 task -> Refresh lấy danh sách task mới...{white}")
+                                break
+                    except Exception as e:
+                        print(f"{red} ❌ Follow ID {target_id} lỗi JSON: {e}")
+                        soloisub += 1
+
+                    # Delay chạy trực tiếp ngay sau mỗi lần follow
+                    loadtime(int(timedelaysub))
+
+                    if soloisub > 4:
+                        print(f"{blue} ⏩ Lỗi liên tiếp -> Đổi Nick! ● {white}")
+                        break
+                            
+                    if max_job >= doi:
+                        max_job = 0
+                        break
+
+                # Gửi nhận số task còn dư lại (nếu danh sách ban đầu ít hơn 10 task)
+                if len(cache_batch_nv) > 0:
+                    gui_nhan_xu("instagram_follow", cache_batch_nv, idfb, cookie, xsmm)
+                    cache_batch_nv = []
+
+        # ================= XỬ LÝ NHIỆM VỤ COMMENT =================
+        elif rand_job == 'instagram_comment':
+            list_nv = xsmm.get_tasks(rand_job, uid=idfb)
+            if isinstance(list_nv, dict) and "error" in list_nv:
+                print(f"{white} ❌ {red}Lỗi từ XSMM: {list_nv['error']}")
+                if len(mangcookie) == 1:
+                    for j in range(dl, 0, -1):
+                        sys.stdout.write(f"\r{green}Đang Chờ Delay Tránh Block {yellow}{j} Giây\r")
+                        sys.stdout.flush()
+                        time.sleep(1)
+            elif isinstance(list_nv, list) and len(list_nv) == 0:
+                print(f"{white} ❌ {yellow}Hết nhiệm vụ Comment hoặc chưa tới lượt!")
+                if len(mangcookie) == 1:
+                    for j in range(dl, 0, -1):
+                        sys.stdout.write(f"\r{green}Đang Chờ Delay Tránh Block {yellow}{j} Giây\r")
+                        sys.stdout.flush()
+                        time.sleep(1)
+            elif isinstance(list_nv, list):
+                soloicmt = 0
+                temp_sess = c_requests.Session()
+                proxies = format_proxy(proxy)
+                if proxies:
+                    temp_sess.proxies = proxies
+                temp_sess.headers.update({"User-Agent": useragent})
+                
+                for nv in list_nv:
+                    task_id = nv.get('id')
+                    idm = nv.get('target_id', '')
+                    noidung = nv.get('comment', '❤️❤️❤️')
+                    link_job = nv.get('target_url', '')
+                        
+                    if not idm:
+                        try:
+                            res_html = temp_sess.get(link_job, impersonate="chrome120", timeout=10).text
+                            m = re.search(r'instagram://media\?id=(\d+)', res_html)
+                            if not m:
+                                m = re.search(r'"media_id":"(\d+)"', res_html)
+                            if not m:
+                                m = re.search(r'media\?id=(\d+)', res_html)
+                            if m:
+                                idm = m.group(1)
+                        except:
+                            pass
+
+                    print(f"{yellow} ⏩ {blue}Job CMT: {white}{link_job} | ND: {noidung}")
+                    
+                    if not idm:
+                        print(f"{red} ● CMT LỖI: Không tìm thấy Media ID ● {white}")
+                        soloicmt += 1
+                        continue
+
+                    csf_match = re.search(r'csrftoken=([^;]+)', cookie)
+                    csf = csf_match.group(1) if csf_match else ""
+
+                    chay_cmt = cmt(idm, noidung, cookie, csf, link_job, proxy=proxy)
+                    max_job += 1
+                    
+                    try:
+                        g = json.loads(chay_cmt)
+                        if g.get('status') != 'ok' and 'data' not in g:
+                            raise Exception(g.get('message', 'Bị IG chặn cmt'))
+                            
+                        print(f"{green} ● COMMENT THÀNH CÔNG -> Đang gửi nhận xu... ● {white}")
+                        gui_nhan_xu("instagram_comment", [task_id], idfb, cookie, xsmm)
+                        soloicmt = 0
+                    except Exception as e:
+                        print(f"{red} ● CMT LỖI: {str(e)} ● {white}")
+                        soloicmt += 1
+                        
+                    loadtime(int(timedelaycmt))
+                    
+                    if soloicmt > 4:
+                        print(f"{blue} ⏩ Lỗi liên tiếp -> Đổi Nick! ● {white}")
+                        break
+                            
+                    if max_job >= doi:
+                        max_job = 0
+                        break
+
+    if len(mangcookie) == 1 and dl == 0:
+        print(f"{pink} ⏩ {blue}Dừng Thời Gian: ", end="")
+        try:
+            dl = int(input().strip())
+        except:
+            dl = 0
+
+    if len(mangcookie) == 0:
+        if os.path.exists("ListccXSMM.json"):
+            os.remove("ListccXSMM.json")
+        print(f"\n{pink} ⛔ {red}Tất Cả Cookie Đều Die Hoặc Proxy Lỗi\n")
+        break
