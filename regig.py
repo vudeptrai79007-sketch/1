@@ -81,7 +81,7 @@ def banner():
 {Colors.BANNER8}  ░        ░░░ ░ ░ ░  ░  ░        ░      ░ ░ ░ ▒  ░ ░ ░ ▒    ░ ░
 {Colors.BANNER9}             ░            ░                  ░ ░      ░ ░      ░  ░
 {Colors.RESET}""")
-    print(f"{Colors.DEVICE_INFO}[</>] {Colors.KEY}ADMIN: {Colors.VALUE}NHƯ ANH ĐÃ THẤY EM   {Colors.DEVICE_INFO}Phiên Bản: {Colors.VALUE}v5.4 (Chuẩn Popup & Tọa Độ){Colors.RESET}")
+    print(f"{Colors.DEVICE_INFO}[</>] {Colors.KEY}ADMIN: {Colors.VALUE}NHƯ ANH ĐÃ THẤY EM   {Colors.DEVICE_INFO}Phiên Bản: {Colors.VALUE}v5.5 (Fix Tọa Độ Popup & Trượt Form){Colors.RESET}")
     print(f"{Colors.DEVICE_INFO}[</>] {Colors.KEY}Nhóm Telegram: {Colors.VALUE}https://t.me/se_meo_bao_an{Colors.RESET}")
     print(f"{Colors.LINE}{'─'*70}{Colors.RESET}")
 
@@ -580,7 +580,7 @@ class starts(threading.Thread):
                     # 3. Chọn Ngày, Tháng, Năm sinh
                     print(f"{Colors.color_text(f'[{serial}] Chọn Ngày, Tháng, Năm sinh...', Colors.INFO)}")
                     
-                    # === Chọn Ngày (ngẫu nhiên 1 - 5) ===
+                    # === Chọn Ngày (ngẫu nhiên 1 - 5) - Chặn hoàn toàn vùng đáy màn hình chứa nút tab "1" ===
                     day_box = d(textMatches=r"(?i)^\s*Ngày\s*$|^\s*Day\s*$")
                     if day_box.exists(timeout=2):
                         b = day_box.info['bounds']
@@ -588,12 +588,21 @@ class starts(threading.Thread):
                         time.sleep(1.5)
                         
                         random_day = str(random.randint(1, 5))
-                        # Bắt buộc dùng CheckedTextView để nháy chuẩn vào Popup List
-                        day_item = d(className="android.widget.CheckedTextView", text=random_day)
-                        if day_item.exists(timeout=2): 
-                            day_item.click()
-                        elif d(text=random_day).exists(timeout=2):
-                            d(text=random_day).click()
+                        # Duyệt qua các đối tượng CheckedTextView hoặc TextView, loại bỏ những cái nằm dưới đáy (Y > size[1]*0.85)
+                        clicked_day = False
+                        for item in d(classNameMatches=".*(?:CheckedTextView|TextView).*"):
+                            try:
+                                txt = item.get_text()
+                                if txt == random_day:
+                                    ib = item.info['bounds']
+                                    # Chỉ bấm nếu nằm ở nửa giữa màn hình (tránh nút Tab 1 ở đáy)
+                                    if ib['top'] < size[1] * 0.85:
+                                        d.click((ib['left'] + ib['right']) // 2, (ib['top'] + ib['bottom']) // 2)
+                                        clicked_day = True
+                                        break
+                            except: continue
+                        if not clicked_day:
+                            d.click(size[0] * 0.2, size[1] * 0.6) # Fallback bấm đại vào vùng giữa popup
                         time.sleep(1)
 
                     # === Chọn Tháng (ngẫu nhiên 1 - 5) ===
@@ -604,19 +613,24 @@ class starts(threading.Thread):
                         time.sleep(1.5)
                         
                         random_month = str(random.randint(1, 5))
-                        month_item_1 = d(className="android.widget.CheckedTextView", text=f"Tháng {random_month}")
-                        month_item_2 = d(className="android.widget.CheckedTextView", text=random_month)
+                        target_texts = [f"Tháng {random_month}", random_month]
+                        clicked_month = False
                         
-                        if month_item_1.exists(timeout=2): 
-                            month_item_1.click()
-                        elif month_item_2.exists(timeout=2):
-                            month_item_2.click()
-                        else:
-                            if d(text=f"Tháng {random_month}").exists(): d(text=f"Tháng {random_month}").click()
-                            elif d(text=random_month).exists(): d(text=random_month).click()
+                        for item in d(classNameMatches=".*(?:CheckedTextView|TextView).*"):
+                            try:
+                                txt = item.get_text()
+                                if txt in target_texts:
+                                    ib = item.info['bounds']
+                                    if ib['top'] < size[1] * 0.85:
+                                        d.click((ib['left'] + ib['right']) // 2, (ib['top'] + ib['bottom']) // 2)
+                                        clicked_month = True
+                                        break
+                            except: continue
+                        if not clicked_month:
+                            d.click(size[0] * 0.5, size[1] * 0.6)
                         time.sleep(1)
 
-                    # === Chọn Năm (ngẫu nhiên 1996 - 2005) ===
+                    # === Chọn Năm (ngẫu nhiên 1996 - 2005) - Bằng tọa độ tâm chính xác ===
                     year_box = d(textMatches=r"(?i)^\s*Năm\s*$|^\s*Year\s*$")
                     if year_box.exists(timeout=2):
                         b = year_box.info['bounds']
@@ -627,65 +641,82 @@ class starts(threading.Thread):
                         found_year = False
                         
                         for _ in range(8):
-                            year_item = d(className="android.widget.CheckedTextView", text=random_year)
-                            if year_item.exists():
-                                year_item.click()
-                                found_year = True
-                                break
+                            for item in d(classNameMatches=".*(?:CheckedTextView|TextView).*"):
+                                try:
+                                    if item.get_text() == random_year:
+                                        ib = item.info['bounds']
+                                        if ib['top'] < size[1] * 0.85:
+                                            d.click((ib['left'] + ib['right']) // 2, (ib['top'] + ib['bottom']) // 2)
+                                            found_year = True
+                                            break
+                                except: continue
+                            if found_year: break
+                            
                             d.swipe(size[0] * 0.85, size[1] * 0.7, size[0] * 0.85, size[1] * 0.55, duration=1.5)
                             time.sleep(1.5) 
                             
                         if not found_year:
                             for backup_year in ["2005", "2004", "2003", "2002", "2001", "2000"]:
-                                b_item = d(className="android.widget.CheckedTextView", text=backup_year)
-                                if b_item.exists():
-                                    b_item.click()
-                                    break
-                            else:
+                                for item in d(classNameMatches=".*(?:CheckedTextView|TextView).*"):
+                                    try:
+                                        if item.get_text() == backup_year:
+                                            ib = item.info['bounds']
+                                            if ib['top'] < size[1] * 0.85:
+                                                d.click((ib['left'] + ib['right']) // 2, (ib['top'] + ib['bottom']) // 2)
+                                                found_year = True
+                                                break
+                                    except: continue
+                                if found_year: break
+                            if not found_year:
                                 d.click(size[0] * 0.85, size[1] * 0.5) 
                         time.sleep(1)
 
-                    # Vuốt trang xuống để hiện Tên đầy đủ (Để nó không bấm nhầm vào Email/Mật khẩu)
-                    d.swipe(size[0] * 0.5, size[1] * 0.8, size[0] * 0.5, size[1] * 0.3)
+                    # === VUỐT NHẸ MỘT XÍU LÊN TRÊN ĐỂ HIỆN RÕ 2 Ô TÊN VÀ USERNAME (Tránh bị khuất nửa) ===
+                    d.swipe(size[0] * 0.5, size[1] * 0.65, size[0] * 0.5, size[1] * 0.45, duration=0.8)
                     time.sleep(1.5)
 
                     # 4. Điền Tên đầy đủ
                     print(f"{Colors.color_text(f'[{serial}] Nhập Tên đầy đủ...', Colors.INFO)}")
                     name_field = d(textMatches=r"(?i).*Tên đầy đủ.*|.*Họ và tên.*|.*Full name.*")
                     if name_field.exists(timeout=2):
-                        name_field.click()
+                        b = name_field.info['bounds']
+                        d.click((b['left'] + b['right']) // 2, (b['top'] + b['bottom']) // 2)
                     else:
                         edits = d(className="android.widget.EditText")
                         clicked = False
                         for i in range(edits.count):
-                            if edits[i].info['bounds']['top'] > size[1] * 0.3: # Lấy ô ở nửa dưới màn hình
-                                edits[i].click()
+                            if edits[i].info['bounds']['top'] > size[1] * 0.25: 
+                                b = edits[i].info['bounds']
+                                d.click((b['left'] + b['right']) // 2, (b['top'] + b['bottom']) // 2)
                                 clicked = True
                                 break
                         if not clicked and edits.count > 0:
-                            edits[edits.count - 1].click()
+                            b = edits[edits.count - 2 if edits.count >= 2 else 0].info['bounds']
+                            d.click((b['left'] + b['right']) // 2, (b['top'] + b['bottom']) // 2)
                     
                     time.sleep(0.5)
                     d.send_keys(full_name)
                     time.sleep(1)
-                    d.press("back") 
+                    d.press("back") # Gập bàn phím 1 lần
                     time.sleep(1.5)
 
                     # 5. Điền Username
                     print(f"{Colors.color_text(f'[{serial}] Nhập Username...', Colors.INFO)}")
                     user_field = d(textMatches=r"(?i).*Tên người dùng.*|.*Username.*")
                     if user_field.exists(timeout=2):
-                        user_field.click()
+                        b = user_field.info['bounds']
+                        d.click((b['left'] + b['right']) // 2, (b['top'] + b['bottom']) // 2)
                     else:
                         edits = d(className="android.widget.EditText")
                         if edits.count > 0: 
-                            edits[edits.count - 1].click() # Username thường là ô cuối cùng
+                            b = edits[edits.count - 1].info['bounds']
+                            d.click((b['left'] + b['right']) // 2, (b['top'] + b['bottom']) // 2)
                     time.sleep(0.5)
                     d.clear_text()
                     time.sleep(0.5)
                     d.send_keys(username)
                     time.sleep(1)
-                    d.press("back") 
+                    d.press("back") # Gập bàn phím 1 lần
                     time.sleep(1.5)
 
                     # 6. Bấm nút Gửi
