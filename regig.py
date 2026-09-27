@@ -81,7 +81,7 @@ def banner():
 {Colors.BANNER8} ░  ░░ ░  ░░░ ░ ░  ▒ ▒ ░░         ░░   ░░▒░ ░ ░ 
 {Colors.BANNER9} ░  ░  ░    ░      ░ ░             ░    ░░░ ░ ░ 
 {Colors.RESET}""")
-    print(f"{Colors.DEVICE_INFO}[</>] {Colors.KEY}ADMIN: {Colors.VALUE}HUY VŨ   {Colors.DEVICE_INFO}Phiên Bản: {Colors.VALUE}v6.10 (Random Ngày/Tháng 2-7){Colors.RESET}")
+    print(f"{Colors.DEVICE_INFO}[</>] {Colors.KEY}ADMIN: {Colors.VALUE}HUY VŨ   {Colors.DEVICE_INFO}Phiên Bản: {Colors.VALUE}v6.11 (Vuốt từ trên xuống dưới){Colors.RESET}")
     print(f"{Colors.LINE}{'─'*70}{Colors.RESET}")
 
     width = 70
@@ -696,14 +696,12 @@ class starts(threading.Thread):
                     print(f"{Colors.color_text(f'[{serial}] Lỗi điền form: {e}', Colors.ERROR)}")
                     return None
 
-                # --- ĐỢI VÀ VUỐT MẠNH LÊN ĐỂ TÌM Ô OTP ---
-                print(f"{Colors.color_text(f'[{serial}] Đợi 8s load trang, sau đó vuốt hiện Form OTP...', Colors.INFO)}")
-                time.sleep(8) 
+                # --- ĐỢI VÀ VUỐT TỪ TRÊN XUỐNG DƯỚI ĐỂ HIỆN RÕ FORM OTP (CUỘN TRANG LÊN) ---
+                print(f"{Colors.color_text(f'[{serial}] Đợi 5s load trang, sau đó vuốt từ trên xuống dưới...', Colors.INFO)}")
+                time.sleep(5) 
                 
-                # Vuốt mạnh từ dưới lên 2 lần để cuộn tới đáy trang web (nơi chứa ô OTP)
-                d.swipe(size[0] * 0.5, size[1] * 0.8, size[0] * 0.5, size[1] * 0.2, duration=0.5)
-                time.sleep(1)
-                d.swipe(size[0] * 0.5, size[1] * 0.8, size[0] * 0.5, size[1] * 0.2, duration=0.5)
+                # Vuốt màn hình từ trên xuống dưới (Kéo màn hình xuống để cuộn nội dung lên trên)
+                d.swipe(size[0] * 0.5, size[1] * 0.3, size[0] * 0.5, size[1] * 0.8, duration=0.6)
                 time.sleep(1.5)
 
                 # --- DỪNG TOOL LẠI ĐỂ ĐỢI VÀ NHẬP OTP ---
