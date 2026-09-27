@@ -81,7 +81,7 @@ def banner():
 {Colors.BANNER8}  ░        ░░░ ░ ░ ░  ░  ░        ░      ░ ░ ░ ▒  ░ ░ ░ ▒    ░ ░
 {Colors.BANNER9}             ░            ░                  ░ ░      ░ ░      ░  ░
 {Colors.RESET}""")
-    print(f"{Colors.DEVICE_INFO}[</>] {Colors.KEY}ADMIN: {Colors.VALUE}NHƯ ANH ĐÃ THẤY EM   {Colors.DEVICE_INFO}Phiên Bản: {Colors.VALUE}v6.2 (Chốt Form Tuần Tự + Smart Wait Cookie){Colors.RESET}")
+    print(f"{Colors.DEVICE_INFO}[</>] {Colors.KEY}ADMIN: {Colors.VALUE}NHƯ ANH ĐÃ THẤY EM   {Colors.DEVICE_INFO}Phiên Bản: {Colors.VALUE}v6.3 (Khôi Phục Điền Form v6.1 + Smart Wait){Colors.RESET}")
     print(f"{Colors.DEVICE_INFO}[</>] {Colors.KEY}Nhóm Telegram: {Colors.VALUE}https://t.me/se_meo_bao_an{Colors.RESET}")
     print(f"{Colors.LINE}{'─'*70}{Colors.RESET}")
 
@@ -551,6 +551,8 @@ class starts(threading.Thread):
                     time.sleep(3)
                     size = d.window_size()
 
+                    # KHÔI PHỤC LẠI CHUẨN FORM V6.1 "NGON" (DÙNG NÚT BACK ĐỂ ẨN PHÍM)
+                    
                     # 1. Điền Email (Ô Nhập Đầu Tiên)
                     print(f"{Colors.color_text(f'[{serial}] Nhập Email...', Colors.INFO)}")
                     email_field = d(textMatches=r"(?i).*di động hoặc email.*|.*email.*")
@@ -561,7 +563,7 @@ class starts(threading.Thread):
                     time.sleep(0.5)
                     d.send_keys(used_email)
                     time.sleep(1)
-                    d.click(size[0] * 0.5, size[1] * 0.05) # Chạm mép trên để gập phím
+                    d.press("back") 
                     time.sleep(1)
 
                     # 2. Điền Mật khẩu (Ô Nhập Thứ Hai)
@@ -576,7 +578,7 @@ class starts(threading.Thread):
                     time.sleep(0.5)
                     d.send_keys(secure_pass)
                     time.sleep(1)
-                    d.click(size[0] * 0.5, size[1] * 0.05) # Chạm mép trên để gập phím
+                    d.press("back") 
                     time.sleep(1.5)
 
                     # Vuốt trang xuống NHẸ NHÀNG để khu vực Ngày Sinh vào giữa màn hình
@@ -632,7 +634,7 @@ class starts(threading.Thread):
                     time.sleep(0.5)
                     d.send_keys(full_name)
                     time.sleep(1)
-                    d.click(size[0] * 0.5, size[1] * 0.05) # Chạm mép trên để gập phím
+                    d.press("back") # Gập bàn phím
                     time.sleep(1.5)
 
                     # 5. Điền Username (Ô Nhập Thứ Tư - Cuối cùng)
@@ -652,7 +654,7 @@ class starts(threading.Thread):
                     time.sleep(0.5)
                     d.send_keys(username)
                     time.sleep(1)
-                    d.click(size[0] * 0.5, size[1] * 0.05) # Chạm mép trên để gập phím
+                    d.press("back") # Gập bàn phím
                     time.sleep(1.5)
 
                     # 6. Bấm nút Gửi
@@ -675,10 +677,7 @@ class starts(threading.Thread):
                 if not otp_code or len(otp_code) != 6: return None
                 
                 try:
-                    # Kéo ngược màn hình lên trên cùng phòng trường hợp layout bị đẩy xuống
-                    d.swipe(size[0]*0.5, size[1]*0.3, size[0]*0.5, size[1]*0.8, duration=0.6)
-                    time.sleep(1.5)
-
+                    # ĐÃ LOẠI BỎ LỆNH VUỐT XUỐNG GÂY REFRESH MÀN HÌNH Ở BẢN V6.2!
                     otp_input = d(className="android.widget.EditText")
                     if otp_input.exists(timeout=5):
                         otp_input.click()
@@ -686,15 +685,16 @@ class starts(threading.Thread):
                         d.send_keys(otp_code)
                         time.sleep(1.5)
                         
-                        # CHẠM VÙNG ĐEN TÍT TRÊN CÙNG ĐỂ GẬP PHÍM (TRÁNH LỖI ẤN BACK VĂNG WEB)
-                        d.click(size[0] * 0.5, size[1] * 0.05) 
+                        # CHẠM VÀO KHOẢNG TRỐNG AN TOÀN (Lề 10%, Chiều dọc 30%) ĐỂ ẨN PHÍM. 
+                        # Không dùng nút Back vì sợ văng trang, không dùng tọa độ 5% vì dính thanh URL.
+                        d.click(size[0] * 0.1, size[1] * 0.3) 
                         time.sleep(1.5)
                         
                         btn_confirm = d(className="android.widget.Button", textMatches=r"(?i).*Tiếp.*|.*Next.*|.*Xác nhận.*|.*Confirm.*|.*Gửi.*")
                         if btn_confirm.exists(timeout=3): 
                             btn_confirm.click()
                         else:
-                            d.click(size[0] * 0.5, size[1] * 0.5) # Fallback bấm giữa màn hình nếu lấp nút
+                            d.click(size[0] * 0.5, size[1] * 0.5) # Fallback bấm giữa màn hình
                         
                         # --- CHỜ THÔNG MINH: NHÌN THẤY TRANG CHỦ LÀ CHỐT ---
                         print(f"{Colors.color_text(f'[{serial}] Đang chờ load vào trang chủ (Tối đa 120s)...', Colors.WARNING)}")
