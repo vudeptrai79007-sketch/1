@@ -81,7 +81,7 @@ def banner():
 {Colors.BANNER8}  ░        ░░░ ░ ░ ░  ░  ░        ░      ░ ░ ░ ▒  ░ ░ ░ ▒    ░ ░
 {Colors.BANNER9}             ░            ░                  ░ ░      ░ ░      ░  ░
 {Colors.RESET}""")
-    print(f"{Colors.DEVICE_INFO}[</>] {Colors.KEY}ADMIN: {Colors.VALUE}NHƯ ANH ĐÃ THẤY EM   {Colors.DEVICE_INFO}Phiên Bản: {Colors.VALUE}v4.7 (Chống Zoom Web){Colors.RESET}")
+    print(f"{Colors.DEVICE_INFO}[</>] {Colors.KEY}ADMIN: {Colors.VALUE}NHƯ ANH ĐÃ THẤY EM   {Colors.DEVICE_INFO}Phiên Bản: {Colors.VALUE}v4.8 (Gập Bàn Phím & Chọn Tuổi){Colors.RESET}")
     print(f"{Colors.DEVICE_INFO}[</>] {Colors.KEY}Nhóm Telegram: {Colors.VALUE}https://t.me/se_meo_bao_an{Colors.RESET}")
     print(f"{Colors.LINE}{'─'*70}{Colors.RESET}")
 
@@ -487,11 +487,9 @@ class starts(threading.Thread):
                 try:
                     size = d.window_size()
                     
-                    # 1. Bấm vào 3 gạch ở góc phải dưới cùng
                     d.click(size[0] * 0.90, size[1] * 0.93)
                     time.sleep(1.5)
                     
-                    # 2. Bấm vào "Trang máy tính"
                     desktop_btn = d(textMatches=r"(?i).*Trang máy tính.*|.*Desktop.*")
                     if desktop_btn.exists(timeout=2):
                         desktop_btn.click()
@@ -499,7 +497,6 @@ class starts(threading.Thread):
                         d.click(size[0] * 0.5, size[1] * 0.80)
                     time.sleep(1.5)
                     
-                    # 3. Bấm vào khoảng trống phía trên màn hình để đóng menu
                     d.click(size[0] * 0.5, size[1] * 0.20)
                     time.sleep(1)
                     
@@ -510,7 +507,6 @@ class starts(threading.Thread):
                 try:
                     size = d.window_size()
                     
-                    # 4. Bấm vào ô tìm kiếm ở giữa màn hình
                     d.click(size[0] * 0.5, size[1] * 0.45)
                     time.sleep(1)
                     
@@ -558,24 +554,11 @@ class starts(threading.Thread):
                 secure_pass = generate_secure_password()
                 print(f"{Colors.color_text(f'[{serial}] Đang điền form đăng ký Web...', Colors.INFO)}")
 
-                # --- PHẦN 3.2: ĐIỀN FORM TRÊN WEB (CHỐNG ZOOM & CUỘN TRANG) ---
+                # --- PHẦN 3.2: ĐIỀN FORM TRÊN WEB (GẬP BÀN PHÍM VÀ CHỌN NGÀY SINH) ---
                 try:
                     time.sleep(3)
                     size = d.window_size()
 
-                    # Hàm phụ trợ: Ẩn bàn phím và ép trình duyệt thu nhỏ (Zoom out)
-                    def hide_kb_and_zoom_out():
-                        auto_obj.Back() # Ẩn bàn phím
-                        time.sleep(1)
-                        # 1. Dùng gesture chụm 2 ngón tay để thu nhỏ (Zoom out)
-                        try:
-                            d(className="android.webkit.WebView").pinch_in(percent=100, steps=30)
-                        except:
-                            pass
-                        # 2. Double tap vào phần rìa trên cùng để reset tỷ lệ khung hình
-                        d.double_click(size[0] * 0.5, size[1] * 0.12)
-                        time.sleep(1.5)
-                        
                     # 1. Điền Email
                     print(f"{Colors.color_text(f'[{serial}] Nhập Email...', Colors.INFO)}")
                     if d(textMatches=r"(?i).*di động hoặc email.*|.*email.*").exists(timeout=2):
@@ -584,7 +567,9 @@ class starts(threading.Thread):
                         d(className="android.widget.EditText")[0].click()
                     time.sleep(0.5)
                     d.send_keys(used_email)
-                    hide_kb_and_zoom_out()
+                    time.sleep(1)
+                    d.press("back") # Bấm phím Back 1 lần để gập bàn phím
+                    time.sleep(1)
 
                     # 2. Điền Mật khẩu
                     print(f"{Colors.color_text(f'[{serial}] Nhập Mật khẩu...', Colors.INFO)}")
@@ -592,36 +577,65 @@ class starts(threading.Thread):
                         d(textMatches=r"(?i).*Mật khẩu.*|.*Password.*").click()
                     else:
                         edits = d(className="android.widget.EditText")
-                        if edits.count > 1:
-                            edits[1].click()
-                        elif edits.count == 1:
-                            edits[0].click()
+                        if edits.count > 1: edits[1].click()
+                        elif edits.count == 1: edits[0].click()
                     time.sleep(0.5)
                     d.send_keys(secure_pass)
-                    hide_kb_and_zoom_out()
+                    time.sleep(1)
+                    d.press("back") # Gập bàn phím
+                    time.sleep(1)
 
-                    # Vuốt mạnh xuống để hiện Ngày Sinh
-                    d.swipe(size[0] * 0.5, size[1] * 0.8, size[0] * 0.5, size[1] * 0.2)
+                    # Vuốt trang xuống để nhìn thấy rõ toàn bộ khu vực Ngày Sinh
+                    d.swipe(size[0] * 0.5, size[1] * 0.8, size[0] * 0.5, size[1] * 0.3)
                     time.sleep(1.5)
 
-                    # 3. Chọn Năm sinh
-                    print(f"{Colors.color_text(f'[{serial}] Chọn Năm sinh...', Colors.INFO)}")
-                    year_box = d(textMatches=r"(?i).*Năm.*|.*Year.*")
-                    if not year_box.exists(timeout=2):
-                        d.swipe(size[0] * 0.5, size[1] * 0.7, size[0] * 0.5, size[1] * 0.3)
+                    # 3. Chọn Ngày, Tháng, Năm sinh ngẫu nhiên
+                    print(f"{Colors.color_text(f'[{serial}] Chọn Ngày, Tháng, Năm sinh...', Colors.INFO)}")
                     
+                    # Chọn Ngày (ngẫu nhiên 1 - 6)
+                    day_box = d(textMatches=r"(?i).*Ngày.*|.*Day.*")
+                    if day_box.exists(timeout=2):
+                        day_box.click()
+                        time.sleep(1)
+                        random_day = str(random.randint(1, 6))
+                        if d(textMatches=f"(?i).*{random_day}.*").exists(timeout=2):
+                            d(textMatches=f"(?i).*{random_day}.*").click()
+                        time.sleep(1)
+
+                    # Chọn Tháng (ngẫu nhiên 1 - 6)
+                    month_box = d(textMatches=r"(?i).*Tháng.*|.*Month.*")
+                    if month_box.exists(timeout=2):
+                        month_box.click()
+                        time.sleep(1)
+                        random_month = str(random.randint(1, 6))
+                        if d(textMatches=f"(?i).*Tháng {random_month}.*|.*\\b{random_month}\\b.*").exists(timeout=2):
+                            d(textMatches=f"(?i).*Tháng {random_month}.*|.*\\b{random_month}\\b.*").click()
+                        time.sleep(1)
+
+                    # Chọn Năm (ngẫu nhiên 1996 - 2008 để đủ 18-30 tuổi)
+                    year_box = d(textMatches=r"(?i).*Năm.*|.*Year.*")
                     if year_box.exists(timeout=2):
                         year_box.click()
                         time.sleep(1.5)
-                        if d(text="2000").exists(timeout=2): 
-                            d(text="2000").click()
-                        elif d(text="1999").exists(timeout=2): 
-                            d(text="1999").click()
-                        else: 
-                            d.click(size[0] * 0.5, size[1] * 0.6) 
+                        random_year = str(random.randint(1996, 2008))
+                        
+                        found_year = False
+                        # Thực hiện vuốt danh sách năm lên trên (cuộn xuống các năm cũ) tối đa 5 lần
+                        for _ in range(5):
+                            if d(text=random_year).exists():
+                                d(text=random_year).click()
+                                found_year = True
+                                break
+                            # Vuốt từ giữa màn hình lên trên để cuộn bảng chọn năm
+                            d.swipe(size[0] * 0.5, size[1] * 0.8, size[0] * 0.5, size[1] * 0.4)
+                            time.sleep(1)
+                            
+                        # Nếu vuốt mãi không thấy số chính xác, click đại vào một năm cũ đang hiển thị trên màn hình
+                        if not found_year:
+                            d.click(size[0] * 0.5, size[1] * 0.5) 
                         time.sleep(1)
 
-                    # Vuốt mạnh xuống phần Tên
+                    # Vuốt trang xuống phần Tên
                     d.swipe(size[0] * 0.5, size[1] * 0.8, size[0] * 0.5, size[1] * 0.3)
                     time.sleep(1.5)
 
@@ -631,15 +645,15 @@ class starts(threading.Thread):
                         d(textMatches=r"(?i).*Tên đầy đủ.*|.*Full name.*").click()
                     else:
                         edits = d(className="android.widget.EditText")
-                        if edits.count >= 2:
-                            edits[edits.count - 2].click()
-                        elif edits.count > 0:
-                            edits[0].click()
+                        if edits.count >= 2: edits[edits.count - 2].click()
+                        elif edits.count > 0: edits[0].click()
                     time.sleep(0.5)
                     d.send_keys(full_name)
-                    hide_kb_and_zoom_out()
+                    time.sleep(1)
+                    d.press("back") # Gập bàn phím
+                    time.sleep(1)
 
-                    # Vuốt xuống phần Username
+                    # Vuốt trang xuống phần Username
                     d.swipe(size[0] * 0.5, size[1] * 0.7, size[0] * 0.5, size[1] * 0.3)
                     time.sleep(1.5)
 
@@ -649,13 +663,14 @@ class starts(threading.Thread):
                         d(textMatches=r"(?i).*Tên người dùng.*|.*Username.*").click()
                     else:
                         edits = d(className="android.widget.EditText")
-                        if edits.count > 0:
-                            edits[edits.count - 1].click()
+                        if edits.count > 0: edits[edits.count - 1].click()
                     time.sleep(0.5)
                     d.clear_text()
                     time.sleep(0.5)
                     d.send_keys(username)
-                    hide_kb_and_zoom_out()
+                    time.sleep(1)
+                    d.press("back") # Gập bàn phím
+                    time.sleep(1)
 
                     # Vuốt kịch kim xuống tận cùng để lộ nút Gửi
                     d.swipe(size[0] * 0.5, size[1] * 0.8, size[0] * 0.5, size[1] * 0.1)
@@ -668,10 +683,8 @@ class starts(threading.Thread):
                         btn_signup.click()
                     else:
                         btns = d(className="android.widget.Button")
-                        if btns.count > 0:
-                            btns[btns.count - 1].click()
-                        else:
-                            d.click(size[0] * 0.5, size[1] * 0.8)
+                        if btns.count > 0: btns[btns.count - 1].click()
+                        else: d.click(size[0] * 0.5, size[1] * 0.8)
                     time.sleep(8)
                 except Exception as e:
                     print(f"{Colors.color_text(f'[{serial}] Lỗi điền form: {e}', Colors.ERROR)}")
@@ -689,7 +702,8 @@ class starts(threading.Thread):
                         otp_input.click()
                         d.send_keys(otp_code)
                         time.sleep(1)
-                        auto_obj.Back()
+                        
+                        d.press("back")
                         time.sleep(1)
                         btn_confirm = d(className="android.widget.Button", textMatches=r"(?i).*Tiếp.*|.*Next.*|.*Xác nhận.*|.*Confirm.*")
                         if btn_confirm.exists(): btn_confirm.click()
@@ -730,7 +744,7 @@ class starts(threading.Thread):
                                         break
                                 except: continue
 
-                        auto_obj.Back()
+                        d.press("back")
                         time.sleep(1)
                     else:
                         print(f"{Colors.color_text(f'[{serial}] Không thấy nút Xem cookie.', Colors.WARNING)}")
