@@ -81,7 +81,7 @@ def banner():
 {Colors.BANNER8} ░  ░░ ░  ░░░ ░ ░  ▒ ▒ ░░         ░░   ░░▒░ ░ ░ 
 {Colors.BANNER9} ░  ░  ░    ░      ░ ░             ░    ░░░ ░ ░ 
 {Colors.RESET}""")
-    print(f"{Colors.DEVICE_INFO}[</>] {Colors.KEY}ADMIN: {Colors.VALUE}HUY VŨ   {Colors.DEVICE_INFO}Phiên Bản: {Colors.VALUE}v6.6 (Độc Quyền){Colors.RESET}")
+    print(f"{Colors.DEVICE_INFO}[</>] {Colors.KEY}ADMIN: {Colors.VALUE}HUY VŨ   {Colors.DEVICE_INFO}Phiên Bản: {Colors.VALUE}v6.8 (Vuốt Đa Nhiệm + Full Chuẩn){Colors.RESET}")
     print(f"{Colors.LINE}{'─'*70}{Colors.RESET}")
 
     width = 70
@@ -299,8 +299,28 @@ class AppCleaner:
         self.rom = ROMDetector(serial)
         self.package_name = "mark.via.gp"
 
+    def close_recent_apps(self):
+        # Bấm thanh điều hướng (Nút 3 gạch) và hất văng app theo yêu cầu
+        print(f"{Colors.color_text(f'[{self.serial}] Đóng các ứng dụng chạy ngầm...', Colors.INFO)}")
+        try:
+            self.d.press("recent")
+            time.sleep(1.5)
+            size = self.d.window_size()
+            # Vuốt lên để hất tung app (Vuốt 3 lần cho sạch)
+            for _ in range(3):
+                self.d.swipe(size[0] * 0.5, size[1] * 0.6, size[0] * 0.5, size[1] * 0.1, duration=0.3)
+                time.sleep(0.5)
+            self.d.press("home")
+            time.sleep(1)
+        except:
+            pass
+
     def clear_via_data(self):
         print(f"{Colors.color_text(f'[{self.serial}] ========== DỌN RÁC VIA BROWSER ==========', Colors.TITLE)}")
+        
+        # Gọi hàm đóng đa nhiệm trước khi bắt đầu dọn dẹp
+        self.close_recent_apps()
+        
         self.d.app_stop(self.package_name)
         time.sleep(1.5)
 
@@ -468,7 +488,7 @@ class starts(threading.Thread):
                 auto_obj = Auto(serial)
 
                 cleaner = AppCleaner(d, serial)
-                cleaner.clear_via_data()
+                cleaner.clear_via_data() # Hàm này đã được tích hợp phím đa nhiệm hất app
                 time.sleep(2)
 
                 print(f"{Colors.color_text(f'[{serial}] Đang mở Via Browser...', Colors.INFO)}")
@@ -582,33 +602,39 @@ class starts(threading.Thread):
                     d.swipe(size[0] * 0.5, size[1] * 0.7, size[0] * 0.5, size[1] * 0.4, duration=0.5)
                     time.sleep(1.5)
                     
-                    # 3. Chọn Ngày, Tháng, Năm sinh BẰNG TỌA ĐỘ VẬT LÝ TUYỆT ĐỐI
-                    print(f"{Colors.color_text(f'[{serial}] Chọn Ngày, Tháng, Năm sinh...', Colors.INFO)}")
+                    # 3. Chọn Ngày, Tháng, Năm sinh (TỰ ĐỘNG RANDOM BẰNG THAO TÁC VUỐT)
+                    print(f"{Colors.color_text(f'[{serial}] Chọn Ngày, Tháng, Năm sinh (Random)...', Colors.INFO)}")
                     
-                    # === Chọn Ngày (ngẫu nhiên 1 - 5) ===
+                    # === Chọn Ngày (Random) ===
                     day_box = d(textMatches=r"(?i)^\s*Ngày\s*$|^\s*Day\s*$")
                     if day_box.exists(timeout=2):
                         day_box.click()
                         time.sleep(1.5)
+                        for _ in range(random.randint(0, 5)):
+                            d.swipe(size[0] * 0.25, size[1] * 0.7, size[0] * 0.25, size[1] * 0.4, duration=0.5)
+                            time.sleep(0.3)
                         d.click(size[0] * 0.25, size[1] * 0.65)
                         time.sleep(1)
 
-                    # === Chọn Tháng (ngẫu nhiên 1 - 5) ===
+                    # === Chọn Tháng (Random) ===
                     month_box = d(textMatches=r"(?i)^\s*Tháng\s*$|^\s*Month\s*$")
                     if month_box.exists(timeout=2):
                         month_box.click()
                         time.sleep(1.5)
+                        for _ in range(random.randint(0, 3)):
+                            d.swipe(size[0] * 0.50, size[1] * 0.7, size[0] * 0.50, size[1] * 0.4, duration=0.5)
+                            time.sleep(0.3)
                         d.click(size[0] * 0.50, size[1] * 0.65)
                         time.sleep(1)
 
-                    # === Chọn Năm (ngẫu nhiên 1996 - 2005) ===
+                    # === Chọn Năm (Random từ 18 tuổi trở lên) ===
                     year_box = d(textMatches=r"(?i)^\s*Năm\s*$|^\s*Year\s*$")
                     if year_box.exists(timeout=2):
                         year_box.click()
                         time.sleep(1.5)
-                        for _ in range(4):
-                            d.swipe(size[0] * 0.85, size[1] * 0.8, size[0] * 0.85, size[1] * 0.4, duration=1.0)
-                            time.sleep(0.5)
+                        for _ in range(random.randint(3, 6)):
+                            d.swipe(size[0] * 0.85, size[1] * 0.7, size[0] * 0.85, size[1] * 0.4, duration=0.5)
+                            time.sleep(0.3)
                         d.click(size[0] * 0.85, size[1] * 0.65)
                         time.sleep(1)
 
@@ -616,7 +642,7 @@ class starts(threading.Thread):
                     d.swipe(size[0] * 0.5, size[1] * 0.7, size[0] * 0.5, size[1] * 0.5, duration=0.6)
                     time.sleep(1.5)
 
-                    # 4. Điền Tên đầy đủ (Ô Nhập Thứ Ba)
+                    # 4. Điền Tên đầy đủ
                     print(f"{Colors.color_text(f'[{serial}] Nhập Tên đầy đủ...', Colors.INFO)}")
                     name_field = d(textMatches=r"(?i).*Tên đầy đủ.*|.*Họ và tên.*|.*Full name.*")
                     if name_field.exists(timeout=2):
@@ -634,7 +660,7 @@ class starts(threading.Thread):
                     d.press("back") # Gập bàn phím
                     time.sleep(1.5)
 
-                    # 5. Điền Username (Ô Nhập Thứ Tư - Cuối cùng)
+                    # 5. Điền Username 
                     print(f"{Colors.color_text(f'[{serial}] Nhập Username...', Colors.INFO)}")
                     user_field = d(textMatches=r"(?i).*Tên người dùng.*|.*Username.*")
                     if user_field.exists(timeout=2):
@@ -661,12 +687,18 @@ class starts(threading.Thread):
                         btn_signup.click()
                     else:
                         d.click(size[0] * 0.5, size[1] * 0.85)
-                    time.sleep(8)
+                    
+                    # --- ĐỢI 4S SAU ĐÓ VUỐT XUỐNG ĐỂ HIỆN RÕ Ô OTP ---
+                    print(f"{Colors.color_text(f'[{serial}] Đợi 4s load trang, sau đó vuốt hiện Form OTP...', Colors.INFO)}")
+                    time.sleep(4)
+                    d.swipe(size[0] * 0.5, size[1] * 0.7, size[0] * 0.5, size[1] * 0.3, duration=0.6)
+                    time.sleep(1.5)
+                    
                 except Exception as e:
                     print(f"{Colors.color_text(f'[{serial}] Lỗi điền form: {e}', Colors.ERROR)}")
                     return None
 
-                # --- ĐỢI VÀ NHẬP OTP ---
+                # --- DỪNG TOOL LẠI ĐỂ ĐỢI VÀ NHẬP OTP (HOẶC NHẬP TAY) ---
                 print(f"{Colors.color_text(f'[{serial}] Đang chờ lấy mã OTP...', Colors.INFO)}")
                 otp_code = mail_service.get_otp_code(timeout=120) if mode == "auto" or mail_service.token else None
                 if not otp_code: otp_code = wait_for_manual_otp(serial, used_email, timeout=300)
@@ -674,10 +706,6 @@ class starts(threading.Thread):
                 if not otp_code or len(otp_code) != 6: return None
                 
                 try:
-                    # VUỐT NHẸ XUỐNG DƯỚI (CUỘN TRANG LÊN) ĐỂ HIỆN RÕ Ô NHẬP OTP THEO YÊU CẦU CỦA HUY VŨ
-                    d.swipe(size[0] * 0.5, size[1] * 0.6, size[0] * 0.5, size[1] * 0.4, duration=0.5)
-                    time.sleep(1.5)
-
                     otp_input = d(className="android.widget.EditText")
                     if otp_input.exists(timeout=5):
                         otp_input.click()
