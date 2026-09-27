@@ -81,7 +81,7 @@ def banner():
 {Colors.BANNER8}  ░        ░░░ ░ ░ ░  ░  ░        ░      ░ ░ ░ ▒  ░ ░ ░ ▒    ░ ░
 {Colors.BANNER9}             ░            ░                  ░ ░      ░ ░      ░  ░
 {Colors.RESET}""")
-    print(f"{Colors.DEVICE_INFO}[</>] {Colors.KEY}ADMIN: {Colors.VALUE}NHƯ ANH ĐÃ THẤY EM   {Colors.DEVICE_INFO}Phiên Bản: {Colors.VALUE}v6.3 (Khôi Phục Điền Form v6.1 + Smart Wait){Colors.RESET}")
+    print(f"{Colors.DEVICE_INFO}[</>] {Colors.KEY}ADMIN: {Colors.VALUE}NHƯ ANH ĐÃ THẤY EM   {Colors.DEVICE_INFO}Phiên Bản: {Colors.VALUE}v6.4 (Wait 30s & In Full Cookie){Colors.RESET}")
     print(f"{Colors.DEVICE_INFO}[</>] {Colors.KEY}Nhóm Telegram: {Colors.VALUE}https://t.me/se_meo_bao_an{Colors.RESET}")
     print(f"{Colors.LINE}{'─'*70}{Colors.RESET}")
 
@@ -551,8 +551,6 @@ class starts(threading.Thread):
                     time.sleep(3)
                     size = d.window_size()
 
-                    # KHÔI PHỤC LẠI CHUẨN FORM V6.1 "NGON" (DÙNG NÚT BACK ĐỂ ẨN PHÍM)
-                    
                     # 1. Điền Email (Ô Nhập Đầu Tiên)
                     print(f"{Colors.color_text(f'[{serial}] Nhập Email...', Colors.INFO)}")
                     email_field = d(textMatches=r"(?i).*di động hoặc email.*|.*email.*")
@@ -677,7 +675,6 @@ class starts(threading.Thread):
                 if not otp_code or len(otp_code) != 6: return None
                 
                 try:
-                    # ĐÃ LOẠI BỎ LỆNH VUỐT XUỐNG GÂY REFRESH MÀN HÌNH Ở BẢN V6.2!
                     otp_input = d(className="android.widget.EditText")
                     if otp_input.exists(timeout=5):
                         otp_input.click()
@@ -686,7 +683,6 @@ class starts(threading.Thread):
                         time.sleep(1.5)
                         
                         # CHẠM VÀO KHOẢNG TRỐNG AN TOÀN (Lề 10%, Chiều dọc 30%) ĐỂ ẨN PHÍM. 
-                        # Không dùng nút Back vì sợ văng trang, không dùng tọa độ 5% vì dính thanh URL.
                         d.click(size[0] * 0.1, size[1] * 0.3) 
                         time.sleep(1.5)
                         
@@ -696,21 +692,9 @@ class starts(threading.Thread):
                         else:
                             d.click(size[0] * 0.5, size[1] * 0.5) # Fallback bấm giữa màn hình
                         
-                        # --- CHỜ THÔNG MINH: NHÌN THẤY TRANG CHỦ LÀ CHỐT ---
-                        print(f"{Colors.color_text(f'[{serial}] Đang chờ load vào trang chủ (Tối đa 120s)...', Colors.WARNING)}")
-                        home_loaded = False
-                        for _ in range(24): # 24 lần x 5s = 120s
-                            # Các dấu hiệu cho thấy đã vào được Instagram thành công
-                            if d(textMatches=r"(?i).*Trang chủ.*|.*Home.*|.*Lưu thông tin đăng nhập.*|.*Save info.*|.*Bật thông báo.*|.*Turn on notifications.*|.*Không phải bây giờ.*|.*Not now.*").exists():
-                                home_loaded = True
-                                break
-                            time.sleep(5)
-
-                        if home_loaded:
-                            print(f"{Colors.color_text(f'[{serial}] Đã vào trang chủ thành công!', Colors.SUCCESS)}")
-                            time.sleep(3) # Cho web thở thêm tí xíu trước khi lấy cookie
-                        else:
-                            print(f"{Colors.color_text(f'[{serial}] Hết thời gian chờ Trang chủ, tiến hành thử lấy Cookie...', Colors.WARNING)}")
+                        # --- CHỜ ĐÚNG 30S NHƯ YÊU CẦU ---
+                        print(f"{Colors.color_text(f'[{serial}] Đang chờ đúng 30s để load vào nick...', Colors.WARNING)}")
+                        time.sleep(30)
                 except: return None
 
                 # --- LẤY COOKIE TỪ VIA BROWSER ---
@@ -759,7 +743,7 @@ class starts(threading.Thread):
                 print(f"{Colors.KEY}Email:    {Colors.EMAIL}{used_email}{Colors.RESET}")
                 print(f"{Colors.KEY}Password: {Colors.PASSWORD}{secure_pass}{Colors.RESET}")
                 print(f"{Colors.KEY}Username: {Colors.USERNAME}{username}{Colors.RESET}")
-                print(f"{Colors.KEY}Cookie:   {Colors.VALUE}{'Đã lấy thành công' if extracted_cookie else 'Trống'}{Colors.RESET}")
+                print(f"{Colors.KEY}Cookie:   {Colors.VALUE}{extracted_cookie if extracted_cookie else 'Trống'}{Colors.RESET}")
                 print(f"{Colors.color_text('─'*70, Colors.LINE)}\n")
                 
                 save_account(serial, used_email, secure_pass, username, full_name, mode, extracted_cookie)
