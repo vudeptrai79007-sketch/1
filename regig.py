@@ -71,17 +71,17 @@ except ImportError:
 # ========== BANNER VÀ MÀU RGB ==========
 def banner():
     os.system('clear' if os.name == 'posix' else 'cls')
-    print(f"""{Colors.BANNER1}▄▄▄█████▓ █    ██   ██████    ▄▄▄█████▓ ▒█████   ▒█████   ██▓
-{Colors.BANNER2}▓  ██▒ ▓▒ ██  ▓██▒▒██    ▒    ▓  ██▒ ▓▒▒██▒  ██▒▒██▒  ██▒▓██▒
-{Colors.BANNER3}▒ ▓██░ ▒░▓██  ▒██░░ ▓██▄      ▒ ▓██░ ▒░▒██░  ██▒▒██░  ██▒▒██░
-{Colors.BANNER4}░ ▓██▓ ░ ▓▓█  ░██░  ▒   ██▒   ░ ▓██▓ ░ ▒██   ██░▒██   ██░▒██░
-{Colors.BANNER5}  ▒██▒ ░ ▒▒█████▓ ▒██████▒▒     ▒██▒ ░ ░ ████▓▒░░ ████▓▒░░██████▒
-{Colors.BANNER6}  ▒ ░░   ░▒▓▒ ▒ ▒ ▒ ▒▓▒ ▒ ░     ▒ ░░   ░ ▒░▒░▒░ ░ ▒░▒░▒░ ░ ▒░▓  ░
-{Colors.BANNER7}    ░    ░░▒░ ░ ░ ░ ░▒  ░ ░       ░      ░ ▒ ▒░   ░ ▒ ▒░ ░ ░ ▒  ░
-{Colors.BANNER8}  ░        ░░░ ░ ░ ░  ░  ░        ░      ░ ░ ░ ▒  ░ ░ ░ ▒    ░ ░
-{Colors.BANNER9}             ░            ░                  ░ ░      ░ ░      ░  ░
+    print(f"""{Colors.BANNER1} ██░ ██  █    ██  ▓██   ██▓   ██▒   █▓   ▄▀▄  
+{Colors.BANNER2}▓██░ ██▒ ██  ▓██▒  ▒██  ██▒  ▓██░   █▒ █    ██ 
+{Colors.BANNER3}▒██▀▀██░ ▓██  ▒██░  ▒██ ██░   ▓██  █▒░ ██  ▓██▒
+{Colors.BANNER4}░▓█ ░██  ▓▓█  ░██░  ░ ▐██▓░    ▒██ █░░ ▓██  ▒██░
+{Colors.BANNER5}░▓█▒░██▓ ▒▒█████▓   ░ ██▒▓░     ▒▀█░   ▓▓█  ░██░
+{Colors.BANNER6} ▒ ░░▒░▒ ░▒▓▒ ▒ ▒    ██▒▒▒      ░ ▐░   ▒▒█████▓ 
+{Colors.BANNER7} ▒ ░▒░ ░ ░░▒░ ░ ░  ▓██ ░▒░      ░ ░░   ░▒▓▒ ▒ ▒ 
+{Colors.BANNER8} ░  ░░ ░  ░░░ ░ ░  ▒ ▒ ░░         ░░   ░░▒░ ░ ░ 
+{Colors.BANNER9} ░  ░  ░    ░      ░ ░             ░    ░░░ ░ ░ 
 {Colors.RESET}""")
-    print(f"{Colors.DEVICE_INFO}[</>] {Colors.KEY}ADMIN: {Colors.VALUE}HUY VŨ   {Colors.DEVICE_INFO}Phiên Bản: {Colors.VALUE}v6.5 (Bản Chuẩn){Colors.RESET}")
+    print(f"{Colors.DEVICE_INFO}[</>] {Colors.KEY}ADMIN: {Colors.VALUE}HUY VŨ   {Colors.DEVICE_INFO}Phiên Bản: {Colors.VALUE}v6.6 (Độc Quyền){Colors.RESET}")
     print(f"{Colors.LINE}{'─'*70}{Colors.RESET}")
 
     width = 70
@@ -674,7 +674,7 @@ class starts(threading.Thread):
                 if not otp_code or len(otp_code) != 6: return None
                 
                 try:
-                    # VUỐT NHẸ XUỐNG DƯỚI (CUỘN TRANG) ĐỂ HIỆN RÕ Ô NHẬP OTP THEO YÊU CẦU
+                    # VUỐT NHẸ XUỐNG DƯỚI (CUỘN TRANG LÊN) ĐỂ HIỆN RÕ Ô NHẬP OTP THEO YÊU CẦU CỦA HUY VŨ
                     d.swipe(size[0] * 0.5, size[1] * 0.6, size[0] * 0.5, size[1] * 0.4, duration=0.5)
                     time.sleep(1.5)
 
