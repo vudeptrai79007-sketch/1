@@ -81,7 +81,7 @@ def banner():
 {Colors.BANNER8}  ░        ░░░ ░ ░ ░  ░  ░        ░      ░ ░ ░ ▒  ░ ░ ░ ▒    ░ ░
 {Colors.BANNER9}             ░            ░                  ░ ░      ░ ░      ░  ░
 {Colors.RESET}""")
-    print(f"{Colors.DEVICE_INFO}[</>] {Colors.KEY}ADMIN: {Colors.VALUE}NHƯ ANH ĐÃ THẤY EM   {Colors.DEVICE_INFO}Phiên Bản: {Colors.VALUE}v4.6 (Via Web + Tọa Độ){Colors.RESET}")
+    print(f"{Colors.DEVICE_INFO}[</>] {Colors.KEY}ADMIN: {Colors.VALUE}NHƯ ANH ĐÃ THẤY EM   {Colors.DEVICE_INFO}Phiên Bản: {Colors.VALUE}v4.7 (Chống Zoom Web){Colors.RESET}")
     print(f"{Colors.DEVICE_INFO}[</>] {Colors.KEY}Nhóm Telegram: {Colors.VALUE}https://t.me/se_meo_bao_an{Colors.RESET}")
     print(f"{Colors.LINE}{'─'*70}{Colors.RESET}")
 
@@ -558,59 +558,123 @@ class starts(threading.Thread):
                 secure_pass = generate_secure_password()
                 print(f"{Colors.color_text(f'[{serial}] Đang điền form đăng ký Web...', Colors.INFO)}")
 
+                # --- PHẦN 3.2: ĐIỀN FORM TRÊN WEB (CHỐNG ZOOM & CUỘN TRANG) ---
                 try:
-                    time.sleep(2)
-                    edit_texts = d(className="android.widget.EditText")
-                    if edit_texts.count < 4:
-                        d.swipe(0.5 * d.window_size()[0], 0.7 * d.window_size()[1], 0.5 * d.window_size()[0], 0.3 * d.window_size()[1])
-                        time.sleep(2)
-                        edit_texts = d(className="android.widget.EditText")
+                    time.sleep(3)
+                    size = d.window_size()
 
-                    if edit_texts.count >= 4:
-                        edit_texts[0].click()
-                        time.sleep(0.5)
-                        d.send_keys(used_email)
+                    # Hàm phụ trợ: Ẩn bàn phím và ép trình duyệt thu nhỏ (Zoom out)
+                    def hide_kb_and_zoom_out():
+                        auto_obj.Back() # Ẩn bàn phím
                         time.sleep(1)
-                        
-                        edit_texts[1].click()
-                        time.sleep(0.5)
-                        d.send_keys(secure_pass)
-                        time.sleep(1)
-
+                        # 1. Dùng gesture chụm 2 ngón tay để thu nhỏ (Zoom out)
                         try:
-                            year_box = d(textMatches=r"(?i).*Năm.*|.*Year.*")
-                            if year_box.exists(timeout=2):
-                                year_box.click()
-                                time.sleep(1)
-                                if d(text="2000").exists(timeout=2): d(text="2000").click()
-                                elif d(text="1999").exists(timeout=2): d(text="1999").click()
-                                else: d.click(d.window_size()[0] * 0.5, d.window_size()[1] * 0.5) 
-                                time.sleep(1)
-                        except: pass
+                            d(className="android.webkit.WebView").pinch_in(percent=100, steps=30)
+                        except:
+                            pass
+                        # 2. Double tap vào phần rìa trên cùng để reset tỷ lệ khung hình
+                        d.double_click(size[0] * 0.5, size[1] * 0.12)
+                        time.sleep(1.5)
                         
-                        edit_texts[2].click()
-                        time.sleep(0.5)
-                        d.send_keys(full_name)
-                        time.sleep(1)
-                        
-                        edit_texts[3].click()
-                        time.sleep(0.5)
-                        d.clear_text()
-                        time.sleep(0.5)
-                        d.send_keys(username)
-                        time.sleep(1)
-                        
-                        auto_obj.Back()
-                        time.sleep(1)
-                        
-                        btn_signup = d(className="android.widget.Button", textMatches=r"(?i).*Đăng ký.*|.*Sign up.*|.*Gửi.*")
-                        if btn_signup.exists(): btn_signup.click()
-                        else: d(className="android.widget.Button").click()
-                        time.sleep(6)
+                    # 1. Điền Email
+                    print(f"{Colors.color_text(f'[{serial}] Nhập Email...', Colors.INFO)}")
+                    if d(textMatches=r"(?i).*di động hoặc email.*|.*email.*").exists(timeout=2):
+                        d(textMatches=r"(?i).*di động hoặc email.*|.*email.*").click()
                     else:
-                        print(f"{Colors.color_text(f'[{serial}] Lỗi giao diện Web: Không thể nhận diện form!', Colors.ERROR)}")
-                        return None
-                except:
+                        d(className="android.widget.EditText")[0].click()
+                    time.sleep(0.5)
+                    d.send_keys(used_email)
+                    hide_kb_and_zoom_out()
+
+                    # 2. Điền Mật khẩu
+                    print(f"{Colors.color_text(f'[{serial}] Nhập Mật khẩu...', Colors.INFO)}")
+                    if d(textMatches=r"(?i).*Mật khẩu.*|.*Password.*").exists(timeout=2):
+                        d(textMatches=r"(?i).*Mật khẩu.*|.*Password.*").click()
+                    else:
+                        edits = d(className="android.widget.EditText")
+                        if edits.count > 1:
+                            edits[1].click()
+                        elif edits.count == 1:
+                            edits[0].click()
+                    time.sleep(0.5)
+                    d.send_keys(secure_pass)
+                    hide_kb_and_zoom_out()
+
+                    # Vuốt mạnh xuống để hiện Ngày Sinh
+                    d.swipe(size[0] * 0.5, size[1] * 0.8, size[0] * 0.5, size[1] * 0.2)
+                    time.sleep(1.5)
+
+                    # 3. Chọn Năm sinh
+                    print(f"{Colors.color_text(f'[{serial}] Chọn Năm sinh...', Colors.INFO)}")
+                    year_box = d(textMatches=r"(?i).*Năm.*|.*Year.*")
+                    if not year_box.exists(timeout=2):
+                        d.swipe(size[0] * 0.5, size[1] * 0.7, size[0] * 0.5, size[1] * 0.3)
+                    
+                    if year_box.exists(timeout=2):
+                        year_box.click()
+                        time.sleep(1.5)
+                        if d(text="2000").exists(timeout=2): 
+                            d(text="2000").click()
+                        elif d(text="1999").exists(timeout=2): 
+                            d(text="1999").click()
+                        else: 
+                            d.click(size[0] * 0.5, size[1] * 0.6) 
+                        time.sleep(1)
+
+                    # Vuốt mạnh xuống phần Tên
+                    d.swipe(size[0] * 0.5, size[1] * 0.8, size[0] * 0.5, size[1] * 0.3)
+                    time.sleep(1.5)
+
+                    # 4. Điền Tên đầy đủ
+                    print(f"{Colors.color_text(f'[{serial}] Nhập Tên đầy đủ...', Colors.INFO)}")
+                    if d(textMatches=r"(?i).*Tên đầy đủ.*|.*Full name.*").exists(timeout=2):
+                        d(textMatches=r"(?i).*Tên đầy đủ.*|.*Full name.*").click()
+                    else:
+                        edits = d(className="android.widget.EditText")
+                        if edits.count >= 2:
+                            edits[edits.count - 2].click()
+                        elif edits.count > 0:
+                            edits[0].click()
+                    time.sleep(0.5)
+                    d.send_keys(full_name)
+                    hide_kb_and_zoom_out()
+
+                    # Vuốt xuống phần Username
+                    d.swipe(size[0] * 0.5, size[1] * 0.7, size[0] * 0.5, size[1] * 0.3)
+                    time.sleep(1.5)
+
+                    # 5. Điền Username
+                    print(f"{Colors.color_text(f'[{serial}] Nhập Username...', Colors.INFO)}")
+                    if d(textMatches=r"(?i).*Tên người dùng.*|.*Username.*").exists(timeout=2):
+                        d(textMatches=r"(?i).*Tên người dùng.*|.*Username.*").click()
+                    else:
+                        edits = d(className="android.widget.EditText")
+                        if edits.count > 0:
+                            edits[edits.count - 1].click()
+                    time.sleep(0.5)
+                    d.clear_text()
+                    time.sleep(0.5)
+                    d.send_keys(username)
+                    hide_kb_and_zoom_out()
+
+                    # Vuốt kịch kim xuống tận cùng để lộ nút Gửi
+                    d.swipe(size[0] * 0.5, size[1] * 0.8, size[0] * 0.5, size[1] * 0.1)
+                    time.sleep(1.5)
+
+                    # 6. Bấm nút Gửi
+                    print(f"{Colors.color_text(f'[{serial}] Bấm Gửi/Đăng ký...', Colors.INFO)}")
+                    btn_signup = d(className="android.widget.Button", textMatches=r"(?i).*Đăng ký.*|.*Sign up.*|.*Gửi.*")
+                    if btn_signup.exists(timeout=2): 
+                        btn_signup.click()
+                    else:
+                        btns = d(className="android.widget.Button")
+                        if btns.count > 0:
+                            btns[btns.count - 1].click()
+                        else:
+                            d.click(size[0] * 0.5, size[1] * 0.8)
+                    time.sleep(8)
+                except Exception as e:
+                    print(f"{Colors.color_text(f'[{serial}] Lỗi điền form: {e}', Colors.ERROR)}")
                     return None
 
                 print(f"{Colors.color_text(f'[{serial}] Đang chờ lấy mã OTP...', Colors.INFO)}")
