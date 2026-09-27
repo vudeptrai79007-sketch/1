@@ -83,7 +83,7 @@ def banner():
 {Colors.BANNER8} ░  ░░ ░  ░░░ ░ ░  ▒ ▒ ░░         ░░   ░░▒░ ░ ░ 
 {Colors.BANNER9} ░  ░  ░    ░      ░ ░             ░    ░░░ ░ ░ 
 {Colors.RESET}""")
-    print(f"{Colors.DEVICE_INFO}[</>] {Colors.KEY}ADMIN: {Colors.VALUE}HUY VŨ   {Colors.DEVICE_INFO}Phiên Bản: {Colors.VALUE}v7.0 (VIP IMAP GMAIL){Colors.RESET}")
+    print(f"{Colors.DEVICE_INFO}[</>] {Colors.KEY}ADMIN: {Colors.VALUE}HUY VŨ   {Colors.DEVICE_INFO}Phiên Bản: {Colors.VALUE}v7.1 (VIP IMAP GMAIL){Colors.RESET}")
     print(f"{Colors.LINE}{'─'*70}{Colors.RESET}")
 
     width = 70
@@ -139,7 +139,7 @@ Cookie:   {cookie}
     except:
         return None
 
-# ========== GMAIL IMAP SERVICE (Tích hợp code gốc của bạn) ==========
+# ========== GMAIL IMAP SERVICE ==========
 class GmailIMAPService:
     def __init__(self, base_email, app_password):
         self.base_email = base_email
@@ -226,7 +226,7 @@ class GmailIMAPService:
                                 from_addr = self.decode_mime(msg.get("From", ""))
                                 to_addr = self.decode_mime(msg.get("To", ""))
                                 
-                                # Lọc đúng mail Instagram gửi về biến thể hiện tại
+                                # Lọc đúng mail Instagram gửi
                                 if "instagram" in subject.lower() or "instagram" in from_addr.lower():
                                     self.seen_uids.add(uid) # Đánh dấu đã đọc
                                     body = self.get_text(msg)
@@ -385,7 +385,6 @@ def ensure_atx_agent_health(d, serial):
         except: pass
 
 class MailService:
-    # Class cũ dành cho Mail.tm (Giữ lại cho Mode 1)
     def __init__(self):
         self.base_url = "https://api.mail.tm"
         self.token = None
@@ -506,6 +505,14 @@ def select_mode():
         elif choice == "2": return "manual"
         elif choice == "3": return "gmail_imap"
 
+# >>> ĐÂY LÀ HÀM BỊ THIẾU MÀ MÌNH ĐÃ THÊM LẠI VÀO ĐÂY <<<
+def select_account_count():
+    while True:
+        try:
+            count = input(f"{Colors.KEY}Nhập số lượng tài khoản \033[97m[ 1-10 ]: {Colors.RESET}").strip()
+            return int(count) if count and 1 <= int(count) <= 10 else 1
+        except: pass
+
 class starts(threading.Thread):
     def __init__(self, device, mode, manual_emails=None, manual_password=None, account_count=1, base_gmail=None, app_password=None):
         super().__init__()
@@ -522,7 +529,6 @@ class starts(threading.Thread):
         mode = self.mode
         account_count = self.account_count
         
-        # Khởi tạo dịch vụ Gmail IMAP sẵn cho Thread này nếu đang ở Mode 3
         imap_service = None
         if mode == "gmail_imap":
             imap_service = GmailIMAPService(self.base_gmail, self.app_password)
@@ -582,7 +588,6 @@ class starts(threading.Thread):
                     else: return None
                 except: return None
                 
-                # --- PHÂN LẠI LUỒNG LẤY EMAIL CHO CẢ 3 CHẾ ĐỘ ---
                 used_email = ""
                 mail_service = None
                 
@@ -610,13 +615,12 @@ class starts(threading.Thread):
                     if not self.manual_emails:
                         print(f"{Colors.color_text(f'[{serial}] Lỗi: Đã dùng hết biến thể Gmail!', Colors.ERROR)}")
                         return None
-                    used_email = self.manual_emails.pop() # Lấy 1 biến thể từ danh sách đã tạo
+                    used_email = self.manual_emails.pop() 
                     print(f"{Colors.color_text(f'[{serial}] Đang sử dụng biến thể: {used_email}', Colors.SUCCESS)}")
 
                 secure_pass = generate_secure_password()
                 print(f"{Colors.color_text(f'[{serial}] Đang điền form đăng ký Web...', Colors.INFO)}")
 
-                # --- ĐIỀN FORM V6.11 CHUẨN ---
                 try:
                     time.sleep(3)
                     size = d.window_size()
@@ -718,13 +722,11 @@ class starts(threading.Thread):
                     
                 except Exception as e: return None
 
-                # --- ĐỢI VÀ VUỐT TỪ TRÊN XUỐNG DƯỚI LỘ FORM OTP ---
                 print(f"{Colors.color_text(f'[{serial}] Đợi 5s load trang, sau đó vuốt từ trên xuống dưới...', Colors.INFO)}")
                 time.sleep(5) 
                 d.swipe(size[0] * 0.5, size[1] * 0.3, size[0] * 0.5, size[1] * 0.8, duration=0.6)
                 time.sleep(1.5)
 
-                # --- XỬ LÝ OTP TÙY THEO CHẾ ĐỘ ---
                 print(f"{Colors.color_text(f'[{serial}] Đang chờ lấy mã OTP...', Colors.INFO)}")
                 otp_code = None
                 
@@ -758,7 +760,6 @@ class starts(threading.Thread):
                         time.sleep(30)
                 except: return None
 
-                # --- LẤY COOKIE ---
                 print(f"{Colors.color_text(f'[{serial}] Đang mở menu để lấy Cookie...', Colors.INFO)}")
                 extracted_cookie = ""
                 try:
@@ -795,7 +796,6 @@ class starts(threading.Thread):
                         time.sleep(1)
                 except: pass
 
-                # --- HOÀN TẤT ---
                 print(f"\n{Colors.color_text('─'*70, Colors.LINE)}")
                 print(f"{Colors.color_text(f'[{serial}]  HOÀN TẤT TÀI KHOẢN THỨ {account_index}!', Colors.SUCCESS)}")
                 print(f"{Colors.KEY}Email:    {Colors.EMAIL}{used_email}{Colors.RESET}")
@@ -847,7 +847,6 @@ if __name__ == "__main__":
         base_gmail = input(f"{Colors.KEY}Nhập Gmail gốc (VD: huyvu@gmail.com): {Colors.RESET}").strip()
         app_password = input(f"{Colors.KEY}Nhập App Password (16 ký tự): {Colors.RESET}").strip().replace(" ", "")
         
-        # Gọi hàm tạo biến thể dấu chấm
         manual_emails = generate_dot_variants(base_gmail)
         print(f"{Colors.color_text(f'Đã tự động tạo {len(manual_emails)} biến thể dấu chấm từ {base_gmail}.', Colors.SUCCESS)}")
     
