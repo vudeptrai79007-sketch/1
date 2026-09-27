@@ -11,9 +11,11 @@ import platform
 import imaplib
 import email
 from email.header import decode_header
+import json
 
 # BIẾN TOÀN CỤC ĐỂ DỪNG TOOL
 STOP_EVENT = threading.Event()
+CONFIG_FILE = "config_gmail.json"
 
 # ========== CÀI ĐẶT MÀU RGB TOÀN CỤC ==========
 class Colors:
@@ -54,7 +56,7 @@ except ImportError:
     import requests
     import uiautomator2 as u2
 
-# ========== HÀM CƠ BẢN ==========
+# ========== HÀM CƠ BẢN VÀ LƯU TRỮ CẤU HÌNH ==========
 def banner():
     os.system('clear' if os.name == 'posix' else 'cls')
     print(f"""{Colors.BANNER1} ██░ ██  █    ██  ▓██   ██▓   ██▒   █▓   ▄▀▄  
@@ -63,8 +65,22 @@ def banner():
 {Colors.BANNER4}░▓█ ░██  ▓▓█  ░██░  ░ ▐██▓░    ▒██ █░░ ▓██  ▒██░
 {Colors.BANNER5}░▓█▒░██▓ ▒▒█████▓   ░ ██▒▓░     ▒▀█░   ▓▓█  ░██░
 {Colors.RESET}""")
-    print(f"{Colors.DEVICE_INFO}[</>] {Colors.KEY}ADMIN: {Colors.VALUE}HUY VŨ   {Colors.DEVICE_INFO}Phiên Bản: {Colors.VALUE}v7.7 (Full Code Tiêu Chuẩn){Colors.RESET}")
+    print(f"{Colors.DEVICE_INFO}[</>] {Colors.KEY}ADMIN: {Colors.VALUE}HUY VŨ   {Colors.DEVICE_INFO}Phiên Bản: {Colors.VALUE}v7.8 (Auto Tùy Chỉnh Đổi IP + Lưu Mật Khẩu){Colors.RESET}")
     print(f"{Colors.LINE}{'─'*70}{Colors.RESET}\n")
+
+def load_config():
+    if os.path.exists(CONFIG_FILE):
+        try:
+            with open(CONFIG_FILE, 'r', encoding='utf-8') as f:
+                return json.load(f)
+        except: pass
+    return {}
+
+def save_config(data):
+    try:
+        with open(CONFIG_FILE, 'w', encoding='utf-8') as f:
+            json.dump(data, f, indent=4)
+    except: pass
 
 def save_account(serial, email, password, username, full_name, mode="auto", cookie=""):
     folder_name = "Instagram_reg"
@@ -435,11 +451,12 @@ def select_mode():
 
 # ========== MAIN THREAD ==========
 class starts(threading.Thread):
-    def __init__(self, device, mode, account_count, manual_emails=None, manual_password=None, multi_gmail_list=None, base_gmail=None, app_password=None):
+    def __init__(self, device, mode, account_count, ip_change_freq, manual_emails=None, manual_password=None, multi_gmail_list=None, base_gmail=None, app_password=None):
         super().__init__()
         self.device = device
         self.mode = mode
         self.account_count = account_count
+        self.ip_change_freq = ip_change_freq
         self.manual_emails = manual_emails if manual_emails else []
         self.manual_password = manual_password
         self.multi_gmail_list = multi_gmail_list if multi_gmail_list else []
@@ -768,9 +785,9 @@ class starts(threading.Thread):
             if create_one_account(self.device, i):
                 success_count += 1
             
-            # Auto đảo mạng sau 4 acc
+            # Auto đảo mạng sau tùy chỉnh acc
             if i < self.account_count and not STOP_EVENT.is_set():
-                if i % 4 == 0: 
+                if self.ip_change_freq > 0 and i % self.ip_change_freq == 0: 
                     toggle_airplane_mode(self.device)
                 else: 
                     time.sleep(random.uniform(10, 20))
@@ -781,6 +798,10 @@ class starts(threading.Thread):
 if __name__ == "__main__":
     banner()
     print(f"{Colors.color_text('MẸO: Bạn có thể ấn tổ hợp phím Ctrl + C bất cứ lúc nào để DỪNG TOOL an toàn.', Colors.WARNING)}\n")
+    
+    # Load cấu hình
+    config_data = load_config()
+    
     mode = select_mode()
     
     manual_emails = []
@@ -802,7 +823,25 @@ if __name__ == "__main__":
             manual_password = input(f"{Colors.KEY}Nhập mật khẩu (mail.tm): {Colors.RESET}").strip() or "TempPass123!"
 
     elif mode == "multi_gmail":
-        file_path = input(f"{Colors.KEY}Nhập đường dẫn file txt (Định dạng: email|app_password): {Colors.RESET}").strip().strip('"').strip("'")
+        print(f"\n{Colors.TITLE}--- CẤU HÌNH NHIỀU GMAIL IMAP ---{Colors.RESET}")
+        
+        saved_path = config_data.get("multi_gmail_path", "")
+        file_path = ""
+        
+        if saved_path and os.path.isfile(saved_path):
+            print(f"{Colors.KEY}Đã tìm thấy file cũ: {Colors.VALUE}{saved_path}{Colors.RESET}")
+            print(f"1. Dùng file cũ")
+            print(f"2. Nhập file mới")
+            choice = input(f"{Colors.KEY}>> {Colors.RESET}").strip()
+            
+            if choice == "1":
+                file_path = saved_path
+                
+        if not file_path:
+            file_path = input(f"{Colors.KEY}Nhập đường dẫn file txt (Định dạng: email|app_password): {Colors.RESET}").strip().strip('"').strip("'")
+            config_data["multi_gmail_path"] = file_path
+            save_config(config_data)
+            
         if os.path.isfile(file_path):
             with open(file_path, 'r', encoding='utf-8') as f:
                 for line in f:
@@ -815,14 +854,45 @@ if __name__ == "__main__":
             sys.exit()
 
     elif mode == "dot_trick":
-        base_gmail = input(f"{Colors.KEY}Nhập Gmail gốc (VD: huyvu@gmail.com): {Colors.RESET}").strip()
-        app_password = input(f"{Colors.KEY}Nhập App Password (16 ký tự): {Colors.RESET}").strip()
+        print(f"\n{Colors.TITLE}--- CẤU HÌNH GMAIL DOT TRICK ---{Colors.RESET}")
+        
+        saved_email = config_data.get("dot_trick_email", "")
+        saved_pass = config_data.get("dot_trick_app_pass", "")
+        
+        if saved_email and saved_pass:
+            print(f"{Colors.KEY}Đã lưu cấu hình cũ: {Colors.VALUE}{saved_email}{Colors.RESET}")
+            print(f"1. Sử dụng file gmail cũ")
+            print(f"2. Nhập mới")
+            choice = input(f"{Colors.KEY}>> {Colors.RESET}").strip()
+            
+            if choice == "1":
+                base_gmail = saved_email
+                app_password = saved_pass
+                
+        if not base_gmail:
+            base_gmail = input(f"{Colors.KEY}Nhập Gmail gốc (VD: huyvu@gmail.com): {Colors.RESET}").strip()
+            app_password = input(f"{Colors.KEY}Nhập App Password (16 ký tự): {Colors.RESET}").strip()
+            # Lưu lại cấu hình
+            config_data["dot_trick_email"] = base_gmail
+            config_data["dot_trick_app_pass"] = app_password
+            save_config(config_data)
+            
         manual_emails = generate_dot_variants(base_gmail)
         print(f"{Colors.color_text(f'Đã tạo ra {len(manual_emails)} biến thể.', Colors.SUCCESS)}")
 
     while True:
         try:
-            account_count = int(input(f"{Colors.KEY}Nhập số lượng tài khoản cần tạo \033[97m[VD: 100]: {Colors.RESET}").strip())
+            account_count = int(input(f"\n{Colors.KEY}Nhập số lượng tài khoản cần tạo \033[97m[VD: 100]: {Colors.RESET}").strip())
+            break
+        except: pass
+        
+    ip_change_freq = 4
+    while True:
+        try:
+            freq_str = input(f"{Colors.KEY}Sau bao nhiêu acc thành công thì Đổi IP? (Nhập 0 để Tắt) \033[97m[Mặc định: 4]: {Colors.RESET}").strip()
+            if not freq_str:
+                break # Mặc định là 4
+            ip_change_freq = int(freq_str)
             break
         except: pass
 
@@ -830,7 +900,7 @@ if __name__ == "__main__":
     
     if devices:
         try:
-            threads = [starts(serial, mode, account_count, manual_emails, manual_password, multi_gmail_list, base_gmail, app_password) for serial in devices]
+            threads = [starts(serial, mode, account_count, ip_change_freq, manual_emails, manual_password, multi_gmail_list, base_gmail, app_password) for serial in devices]
             for t in threads: t.start()
             for t in threads: t.join()
             print(f"\n{Colors.color_text('  AUTO HOÀN THÀNH TOÀN BỘ!  ', Colors.SUCCESS)}")
