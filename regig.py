@@ -83,7 +83,7 @@ def banner():
 {Colors.BANNER8} ░  ░░ ░  ░░░ ░ ░  ▒ ▒ ░░         ░░   ░░▒░ ░ ░ 
 {Colors.BANNER9} ░  ░  ░    ░      ░ ░             ░    ░░░ ░ ░ 
 {Colors.RESET}""")
-    print(f"{Colors.DEVICE_INFO}[</>] {Colors.KEY}ADMIN: {Colors.VALUE}HUY VŨ   {Colors.DEVICE_INFO}Phiên Bản: {Colors.VALUE}v7.1 (VIP IMAP GMAIL){Colors.RESET}")
+    print(f"{Colors.DEVICE_INFO}[</>] {Colors.KEY}ADMIN: {Colors.VALUE}HUY VŨ   {Colors.DEVICE_INFO}Phiên Bản: {Colors.VALUE}v7.2 (Ngâm OTP 90s){Colors.RESET}")
     print(f"{Colors.LINE}{'─'*70}{Colors.RESET}")
 
     width = 70
@@ -505,7 +505,6 @@ def select_mode():
         elif choice == "2": return "manual"
         elif choice == "3": return "gmail_imap"
 
-# >>> ĐÂY LÀ HÀM BỊ THIẾU MÀ MÌNH ĐÃ THÊM LẠI VÀO ĐÂY <<<
 def select_account_count():
     while True:
         try:
@@ -727,7 +726,7 @@ class starts(threading.Thread):
                 d.swipe(size[0] * 0.5, size[1] * 0.3, size[0] * 0.5, size[1] * 0.8, duration=0.6)
                 time.sleep(1.5)
 
-                print(f"{Colors.color_text(f'[{serial}] Đang chờ lấy mã OTP...', Colors.INFO)}")
+                print(f"{Colors.color_text(f'[{serial}] Đang quét mã OTP từ mail...', Colors.INFO)}")
                 otp_code = None
                 
                 if mode == "gmail_imap":
@@ -740,6 +739,14 @@ class starts(threading.Thread):
                 if not otp_code or len(otp_code) != 6: 
                     print(f"{Colors.color_text(f'[{serial}] Không tìm thấy OTP. Bỏ qua nick.', Colors.ERROR)}")
                     return None
+                
+                # --- CHỜ 90S TRƯỚC KHI NHẬP OTP ĐỂ BYPASS BOT THEO CHỈ ĐẠO CỦA SẾP ---
+                print(f"{Colors.color_text(f'[{serial}] Đã bắt được mã OTP: {otp_code}!', Colors.SUCCESS)}")
+                print(f"{Colors.color_text(f'[{serial}] Đang ngâm OTP 1 phút 30 giây (90s) để tránh bị ăn gậy...', Colors.WARNING)}")
+                for wait_time in range(90, 0, -10):
+                    print(f"{Colors.color_text(f'[{serial}] Còn lại {wait_time} giây...', Colors.INFO)}")
+                    time.sleep(10)
+                print(f"{Colors.color_text(f'[{serial}] Đã ngâm xong, tiến hành nhập OTP...', Colors.SUCCESS)}")
                 
                 try:
                     otp_input = d(className="android.widget.EditText")
