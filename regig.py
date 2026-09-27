@@ -81,7 +81,7 @@ def banner():
 {Colors.BANNER8}  ░        ░░░ ░ ░ ░  ░  ░        ░      ░ ░ ░ ▒  ░ ░ ░ ▒    ░ ░
 {Colors.BANNER9}             ░            ░                  ░ ░      ░ ░      ░  ░
 {Colors.RESET}""")
-    print(f"{Colors.DEVICE_INFO}[</>] {Colors.KEY}ADMIN: {Colors.VALUE}NHƯ ANH ĐÃ THẤY EM   {Colors.DEVICE_INFO}Phiên Bản: {Colors.VALUE}v4.5 (Via Web + Cookie){Colors.RESET}")
+    print(f"{Colors.DEVICE_INFO}[</>] {Colors.KEY}ADMIN: {Colors.VALUE}NHƯ ANH ĐÃ THẤY EM   {Colors.DEVICE_INFO}Phiên Bản: {Colors.VALUE}v4.6 (Via Web + Tọa Độ){Colors.RESET}")
     print(f"{Colors.DEVICE_INFO}[</>] {Colors.KEY}Nhóm Telegram: {Colors.VALUE}https://t.me/se_meo_bao_an{Colors.RESET}")
     print(f"{Colors.LINE}{'─'*70}{Colors.RESET}")
 
@@ -485,33 +485,51 @@ class starts(threading.Thread):
 
                 print(f"{Colors.color_text(f'[{serial}] Đang bật chế độ Trang máy tính...', Colors.INFO)}")
                 try:
-                    menu_btn = d(resourceId="mark.via.gp:id/menu")
-                    if menu_btn.exists(timeout=2): menu_btn.click()
-                    else: d.click(d.window_size()[0] * 0.9, d.window_size()[1] * 0.95)
+                    size = d.window_size()
+                    
+                    # 1. Bấm vào 3 gạch ở góc phải dưới cùng
+                    d.click(size[0] * 0.90, size[1] * 0.93)
                     time.sleep(1.5)
                     
+                    # 2. Bấm vào "Trang máy tính"
                     desktop_btn = d(textMatches=r"(?i).*Trang máy tính.*|.*Desktop.*")
                     if desktop_btn.exists(timeout=2):
                         desktop_btn.click()
-                        time.sleep(1.5)
                     else:
-                        d.click(d.window_size()[0] * 0.5, d.window_size()[1] * 0.2)
-                except: pass
+                        d.click(size[0] * 0.5, size[1] * 0.80)
+                    time.sleep(1.5)
+                    
+                    # 3. Bấm vào khoảng trống phía trên màn hình để đóng menu
+                    d.click(size[0] * 0.5, size[1] * 0.20)
+                    time.sleep(1)
+                    
+                except Exception as e:
+                    print(f"{Colors.color_text(f'[{serial}] Lỗi khi bật Trang máy tính: {e}', Colors.WARNING)}")
 
                 print(f"{Colors.color_text(f'[{serial}] Đang truy cập Instagram Web...', Colors.INFO)}")
-                search_box = d(resourceId="mark.via.gp:id/search")
-                if not search_box.exists(timeout=2): search_box = d(className="android.widget.EditText")
-                
-                if search_box.exists():
-                    search_box.click()
+                try:
+                    size = d.window_size()
+                    
+                    # 4. Bấm vào ô tìm kiếm ở giữa màn hình
+                    d.click(size[0] * 0.5, size[1] * 0.45)
                     time.sleep(1)
-                    d.clear_text()
-                    d.send_keys("https://www.instagram.com/accounts/emailsignup/")
-                    time.sleep(1.5)
-                    d.press("enter")
-                    time.sleep(10) 
-                else:
-                    print(f"{Colors.color_text(f'[{serial}] Lỗi: Không tìm thấy thanh địa chỉ!', Colors.ERROR)}")
+                    
+                    search_box = d(className="android.widget.EditText")
+                    if search_box.exists(timeout=3):
+                        search_box.click()
+                        time.sleep(0.5)
+                        d.clear_text()
+                        time.sleep(0.5)
+                        d.send_keys("https://www.instagram.com/accounts/emailsignup/")
+                        time.sleep(1.5)
+                        d.press("enter")
+                        print(f"{Colors.color_text(f'[{serial}] Đang đợi tải trang web (10s)...', Colors.INFO)}")
+                        time.sleep(10)
+                    else:
+                        print(f"{Colors.color_text(f'[{serial}] Lỗi: Không tìm thấy ô nhập link!', Colors.ERROR)}")
+                        return None
+                except Exception as e:
+                    print(f"{Colors.color_text(f'[{serial}] Lỗi khi nhập link: {e}', Colors.ERROR)}")
                     return None
                 
                 mail_service = MailService()
