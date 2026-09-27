@@ -81,7 +81,7 @@ def banner():
 {Colors.BANNER8} ░  ░░ ░  ░░░ ░ ░  ▒ ▒ ░░         ░░   ░░▒░ ░ ░ 
 {Colors.BANNER9} ░  ░  ░    ░      ░ ░             ░    ░░░ ░ ░ 
 {Colors.RESET}""")
-    print(f"{Colors.DEVICE_INFO}[</>] {Colors.KEY}ADMIN: {Colors.VALUE}HUY VŨ   {Colors.DEVICE_INFO}Phiên Bản: {Colors.VALUE}v6.9 (Fix Ngày 1-7 & Cuộn OTP){Colors.RESET}")
+    print(f"{Colors.DEVICE_INFO}[</>] {Colors.KEY}ADMIN: {Colors.VALUE}HUY VŨ   {Colors.DEVICE_INFO}Phiên Bản: {Colors.VALUE}v6.10 (Random Ngày/Tháng 2-7){Colors.RESET}")
     print(f"{Colors.LINE}{'─'*70}{Colors.RESET}")
 
     width = 70
@@ -602,25 +602,25 @@ class starts(threading.Thread):
                     # 3. Chọn Ngày, Tháng, Năm sinh 
                     print(f"{Colors.color_text(f'[{serial}] Chọn Ngày, Tháng, Năm sinh...', Colors.INFO)}")
                     
-                    # === Chọn Ngày (Random ngẫu nhiên 1 - 7 bằng TEXT) ===
+                    # === Chọn Ngày (Random ngẫu nhiên 2 - 7) ===
                     day_box = d(textMatches=r"(?i)^\s*Ngày\s*$|^\s*Day\s*$")
                     if day_box.exists(timeout=2):
                         day_box.click()
                         time.sleep(1.5)
-                        random_day = str(random.randint(1, 7))
+                        random_day = str(random.randint(2, 7))
                         target_day = d(classNameMatches=".*(?:CheckedTextView|TextView).*", text=random_day)
                         if target_day.exists(timeout=2): 
                             target_day.click()
                         else: 
-                            d.click(size[0] * 0.25, size[1] * 0.4) # Fallback nếu không thấy
+                            d.click(size[0] * 0.25, size[1] * 0.4) 
                         time.sleep(1)
 
-                    # === Chọn Tháng (Random ngẫu nhiên 1 - 7 bằng TEXT) ===
+                    # === Chọn Tháng (Random ngẫu nhiên 2 - 7) ===
                     month_box = d(textMatches=r"(?i)^\s*Tháng\s*$|^\s*Month\s*$")
                     if month_box.exists(timeout=2):
                         month_box.click()
                         time.sleep(1.5)
-                        random_month = str(random.randint(1, 7))
+                        random_month = str(random.randint(2, 7))
                         target_m1 = d(classNameMatches=".*(?:CheckedTextView|TextView).*", text=f"Tháng {random_month}")
                         target_m2 = d(classNameMatches=".*(?:CheckedTextView|TextView).*", text=random_month)
                         if target_m1.exists(timeout=2): 
@@ -698,7 +698,7 @@ class starts(threading.Thread):
 
                 # --- ĐỢI VÀ VUỐT MẠNH LÊN ĐỂ TÌM Ô OTP ---
                 print(f"{Colors.color_text(f'[{serial}] Đợi 8s load trang, sau đó vuốt hiện Form OTP...', Colors.INFO)}")
-                time.sleep(8) # Chờ 8s cho trang tải hẳn, tránh vuốt quá sớm
+                time.sleep(8) 
                 
                 # Vuốt mạnh từ dưới lên 2 lần để cuộn tới đáy trang web (nơi chứa ô OTP)
                 d.swipe(size[0] * 0.5, size[1] * 0.8, size[0] * 0.5, size[1] * 0.2, duration=0.5)
