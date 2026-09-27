@@ -81,8 +81,7 @@ def banner():
 {Colors.BANNER8}  ░        ░░░ ░ ░ ░  ░  ░        ░      ░ ░ ░ ▒  ░ ░ ░ ▒    ░ ░
 {Colors.BANNER9}             ░            ░                  ░ ░      ░ ░      ░  ░
 {Colors.RESET}""")
-    print(f"{Colors.DEVICE_INFO}[</>] {Colors.KEY}ADMIN: {Colors.VALUE}NHƯ ANH ĐÃ THẤY EM   {Colors.DEVICE_INFO}Phiên Bản: {Colors.VALUE}v6.4 (Wait 30s & In Full Cookie){Colors.RESET}")
-    print(f"{Colors.DEVICE_INFO}[</>] {Colors.KEY}Nhóm Telegram: {Colors.VALUE}https://t.me/se_meo_bao_an{Colors.RESET}")
+    print(f"{Colors.DEVICE_INFO}[</>] {Colors.KEY}ADMIN: {Colors.VALUE}HUY VŨ   {Colors.DEVICE_INFO}Phiên Bản: {Colors.VALUE}v6.5 (Bản Chuẩn){Colors.RESET}")
     print(f"{Colors.LINE}{'─'*70}{Colors.RESET}")
 
     width = 70
@@ -551,7 +550,7 @@ class starts(threading.Thread):
                     time.sleep(3)
                     size = d.window_size()
 
-                    # 1. Điền Email (Ô Nhập Đầu Tiên)
+                    # 1. Điền Email
                     print(f"{Colors.color_text(f'[{serial}] Nhập Email...', Colors.INFO)}")
                     email_field = d(textMatches=r"(?i).*di động hoặc email.*|.*email.*")
                     if email_field.exists(timeout=2):
@@ -564,7 +563,7 @@ class starts(threading.Thread):
                     d.press("back") 
                     time.sleep(1)
 
-                    # 2. Điền Mật khẩu (Ô Nhập Thứ Hai)
+                    # 2. Điền Mật khẩu
                     print(f"{Colors.color_text(f'[{serial}] Nhập Mật khẩu...', Colors.INFO)}")
                     pass_field = d(textMatches=r"(?i).*Mật khẩu.*|.*Password.*")
                     if pass_field.exists(timeout=2):
@@ -625,7 +624,7 @@ class starts(threading.Thread):
                     else:
                         edits = d(className="android.widget.EditText")
                         if edits.count >= 3:
-                            edits[2].click() # Ô nhập thứ 3 đếm từ trên xuống
+                            edits[2].click() 
                         elif edits.count > 0:
                             edits[edits.count - 2 if edits.count >= 2 else 0].click()
                     
@@ -643,9 +642,9 @@ class starts(threading.Thread):
                     else:
                         edits = d(className="android.widget.EditText")
                         if edits.count >= 4:
-                            edits[3].click() # Ô nhập thứ 4 đếm từ trên xuống
+                            edits[3].click() 
                         elif edits.count > 0:
-                            edits[edits.count - 1].click() # Ưu tiên lấy ô dưới cùng nếu thiếu
+                            edits[edits.count - 1].click() 
                     
                     time.sleep(0.5)
                     d.clear_text()
@@ -675,6 +674,10 @@ class starts(threading.Thread):
                 if not otp_code or len(otp_code) != 6: return None
                 
                 try:
+                    # VUỐT NHẸ XUỐNG DƯỚI (CUỘN TRANG) ĐỂ HIỆN RÕ Ô NHẬP OTP THEO YÊU CẦU
+                    d.swipe(size[0] * 0.5, size[1] * 0.6, size[0] * 0.5, size[1] * 0.4, duration=0.5)
+                    time.sleep(1.5)
+
                     otp_input = d(className="android.widget.EditText")
                     if otp_input.exists(timeout=5):
                         otp_input.click()
