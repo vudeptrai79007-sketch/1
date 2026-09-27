@@ -81,7 +81,7 @@ def banner():
 {Colors.BANNER8}  ░        ░░░ ░ ░ ░  ░  ░        ░      ░ ░ ░ ▒  ░ ░ ░ ▒    ░ ░
 {Colors.BANNER9}             ░            ░                  ░ ░      ░ ░      ░  ░
 {Colors.RESET}""")
-    print(f"{Colors.DEVICE_INFO}[</>] {Colors.KEY}ADMIN: {Colors.VALUE}NHƯ ANH ĐÃ THẤY EM   {Colors.DEVICE_INFO}Phiên Bản: {Colors.VALUE}v6.1 (Nhập Tuần Tự Chuẩn){Colors.RESET}")
+    print(f"{Colors.DEVICE_INFO}[</>] {Colors.KEY}ADMIN: {Colors.VALUE}NHƯ ANH ĐÃ THẤY EM   {Colors.DEVICE_INFO}Phiên Bản: {Colors.VALUE}v6.2 (Chốt Form Tuần Tự + Smart Wait Cookie){Colors.RESET}")
     print(f"{Colors.DEVICE_INFO}[</>] {Colors.KEY}Nhóm Telegram: {Colors.VALUE}https://t.me/se_meo_bao_an{Colors.RESET}")
     print(f"{Colors.LINE}{'─'*70}{Colors.RESET}")
 
@@ -561,7 +561,7 @@ class starts(threading.Thread):
                     time.sleep(0.5)
                     d.send_keys(used_email)
                     time.sleep(1)
-                    d.press("back") 
+                    d.click(size[0] * 0.5, size[1] * 0.05) # Chạm mép trên để gập phím
                     time.sleep(1)
 
                     # 2. Điền Mật khẩu (Ô Nhập Thứ Hai)
@@ -576,7 +576,7 @@ class starts(threading.Thread):
                     time.sleep(0.5)
                     d.send_keys(secure_pass)
                     time.sleep(1)
-                    d.press("back") 
+                    d.click(size[0] * 0.5, size[1] * 0.05) # Chạm mép trên để gập phím
                     time.sleep(1.5)
 
                     # Vuốt trang xuống NHẸ NHÀNG để khu vực Ngày Sinh vào giữa màn hình
@@ -613,7 +613,7 @@ class starts(threading.Thread):
                         d.click(size[0] * 0.85, size[1] * 0.65)
                         time.sleep(1)
 
-                    # === VUỐT SIÊU NHẸ ĐỂ HIỆN RÕ 2 Ô TÊN VÀ USERNAME (KHÔNG TRƯỢT XUỐNG ĐÁY) ===
+                    # === VUỐT SIÊU NHẸ ĐỂ HIỆN RÕ 2 Ô TÊN VÀ USERNAME ===
                     d.swipe(size[0] * 0.5, size[1] * 0.7, size[0] * 0.5, size[1] * 0.5, duration=0.6)
                     time.sleep(1.5)
 
@@ -632,7 +632,7 @@ class starts(threading.Thread):
                     time.sleep(0.5)
                     d.send_keys(full_name)
                     time.sleep(1)
-                    d.press("back") # Gập bàn phím
+                    d.click(size[0] * 0.5, size[1] * 0.05) # Chạm mép trên để gập phím
                     time.sleep(1.5)
 
                     # 5. Điền Username (Ô Nhập Thứ Tư - Cuối cùng)
@@ -652,7 +652,7 @@ class starts(threading.Thread):
                     time.sleep(0.5)
                     d.send_keys(username)
                     time.sleep(1)
-                    d.press("back") # Gập bàn phím
+                    d.click(size[0] * 0.5, size[1] * 0.05) # Chạm mép trên để gập phím
                     time.sleep(1.5)
 
                     # 6. Bấm nút Gửi
@@ -667,6 +667,7 @@ class starts(threading.Thread):
                     print(f"{Colors.color_text(f'[{serial}] Lỗi điền form: {e}', Colors.ERROR)}")
                     return None
 
+                # --- ĐỢI VÀ NHẬP OTP ---
                 print(f"{Colors.color_text(f'[{serial}] Đang chờ lấy mã OTP...', Colors.INFO)}")
                 otp_code = mail_service.get_otp_code(timeout=120) if mode == "auto" or mail_service.token else None
                 if not otp_code: otp_code = wait_for_manual_otp(serial, used_email, timeout=300)
@@ -674,6 +675,10 @@ class starts(threading.Thread):
                 if not otp_code or len(otp_code) != 6: return None
                 
                 try:
+                    # Kéo ngược màn hình lên trên cùng phòng trường hợp layout bị đẩy xuống
+                    d.swipe(size[0]*0.5, size[1]*0.3, size[0]*0.5, size[1]*0.8, duration=0.6)
+                    time.sleep(1.5)
+
                     otp_input = d(className="android.widget.EditText")
                     if otp_input.exists(timeout=5):
                         otp_input.click()
@@ -681,18 +686,31 @@ class starts(threading.Thread):
                         d.send_keys(otp_code)
                         time.sleep(1.5)
                         
-                        d.press("back") 
-                        time.sleep(1)
+                        # CHẠM VÙNG ĐEN TÍT TRÊN CÙNG ĐỂ GẬP PHÍM (TRÁNH LỖI ẤN BACK VĂNG WEB)
+                        d.click(size[0] * 0.5, size[1] * 0.05) 
+                        time.sleep(1.5)
                         
                         btn_confirm = d(className="android.widget.Button", textMatches=r"(?i).*Tiếp.*|.*Next.*|.*Xác nhận.*|.*Confirm.*|.*Gửi.*")
-                        if btn_confirm.exists(timeout=3): btn_confirm.click()
+                        if btn_confirm.exists(timeout=3): 
+                            btn_confirm.click()
                         else:
-                            d.swipe(size[0] * 0.5, size[1] * 0.7, size[0] * 0.5, size[1] * 0.5)
-                            time.sleep(1)
-                            d(className="android.widget.Button").click()
-                            
-                        print(f"{Colors.color_text(f'[{serial}] Đang chờ 120s (2 phút) để load vào nick...', Colors.WARNING)}")
-                        time.sleep(120)
+                            d.click(size[0] * 0.5, size[1] * 0.5) # Fallback bấm giữa màn hình nếu lấp nút
+                        
+                        # --- CHỜ THÔNG MINH: NHÌN THẤY TRANG CHỦ LÀ CHỐT ---
+                        print(f"{Colors.color_text(f'[{serial}] Đang chờ load vào trang chủ (Tối đa 120s)...', Colors.WARNING)}")
+                        home_loaded = False
+                        for _ in range(24): # 24 lần x 5s = 120s
+                            # Các dấu hiệu cho thấy đã vào được Instagram thành công
+                            if d(textMatches=r"(?i).*Trang chủ.*|.*Home.*|.*Lưu thông tin đăng nhập.*|.*Save info.*|.*Bật thông báo.*|.*Turn on notifications.*|.*Không phải bây giờ.*|.*Not now.*").exists():
+                                home_loaded = True
+                                break
+                            time.sleep(5)
+
+                        if home_loaded:
+                            print(f"{Colors.color_text(f'[{serial}] Đã vào trang chủ thành công!', Colors.SUCCESS)}")
+                            time.sleep(3) # Cho web thở thêm tí xíu trước khi lấy cookie
+                        else:
+                            print(f"{Colors.color_text(f'[{serial}] Hết thời gian chờ Trang chủ, tiến hành thử lấy Cookie...', Colors.WARNING)}")
                 except: return None
 
                 # --- LẤY COOKIE TỪ VIA BROWSER ---
@@ -728,7 +746,7 @@ class starts(threading.Thread):
                                         break
                                 except: continue
 
-                        d.press("back")
+                        d.click(size[0] * 0.5, size[1] * 0.1) # Chạm trên cùng để thoát menu
                         time.sleep(1)
                     else:
                         print(f"{Colors.color_text(f'[{serial}] Không thấy nút Xem cookie.', Colors.WARNING)}")
