@@ -70,7 +70,7 @@ def banner():
 {Colors.BANNER4}░▓█ ░██  ▓▓█  ░██░  ░ ▐██▓░    ▒██ █░░ ▓██  ▒██░
 {Colors.BANNER5}░▓█▒░██▓ ▒▒█████▓   ░ ██▒▓░     ▒▀█░   ▓▓█  ░██░
 {Colors.RESET}""")
-    print(f"{Colors.DEVICE_INFO}[</>] {Colors.KEY}ADMIN: {Colors.VALUE}HUY VŨ   {Colors.DEVICE_INFO}Phiên Bản: {Colors.VALUE}v9.1 (Fix Cuộn OTP Thông Minh){Colors.RESET}")
+    print(f"{Colors.DEVICE_INFO}[</>] {Colors.KEY}ADMIN: {Colors.VALUE}HUY VŨ   {Colors.DEVICE_INFO}Phiên Bản: {Colors.VALUE}v9.2 (Fix Cuộn Đáy Trang OTP){Colors.RESET}")
     print(f"{Colors.LINE}{'─'*70}{Colors.RESET}\n")
 
 def load_config():
@@ -169,7 +169,7 @@ class GmailIMAPService:
                 if uids:
                     return int(uids[-1]) 
         except Exception as e: 
-            print(f"Lỗi lấy UID: {e}")
+            pass
         return 0
 
     def decode_mime(self, value):
@@ -669,25 +669,16 @@ class starts(threading.Thread):
                 time.sleep(8) 
                 
                 # =================================================================================
-                # FIX LOGIC: VUỐT LIÊN TỤC CHO ĐẾN KHI THẤY Ô NHẬP OTP (CHỐNG KẸT)
+                # FIX LOGIC: VUỐT NGƯỢC LÊN ĐỈNH TRANG (KỊCH TRẦN) THAY VÌ VUỐT XUỐNG ĐÁY
                 # =================================================================================
-                otp_input = None
-                found_otp = False
+                print(f"{Colors.color_text(f'[{serial}] Căn chỉnh lại màn hình để tìm ô OTP...', Colors.INFO)}")
+                # Kéo từ trên (y=0.3) xuống dưới (y=0.8) để cuộn trang web lên kịch trần (Top)
+                d.swipe(size[0]*0.5, size[1]*0.3, size[0]*0.5, size[1]*0.8, duration=0.5)
+                time.sleep(1.5)
                 
-                print(f"{Colors.color_text(f'[{serial}] Quét tìm ô nhập OTP...', Colors.INFO)}")
-                for search_attempt in range(3):
-                    otp_input = d(className="android.widget.EditText")
-                    if otp_input.exists(timeout=3):
-                        found_otp = True
-                        break
-                    
-                    # Nếu chưa thấy, vuốt từ dưới lên trên để lôi form OTP ra
-                    print(f"{Colors.color_text(f'[{serial}] Chưa thấy ô OTP, đang vuốt cuộn màn hình lần {search_attempt + 1}...', Colors.WARNING)}")
-                    # Vuốt ngón tay từ dưới lên để cuộn trang web xuống dưới
-                    d.swipe(size[0]*0.5, size[1]*0.8, size[0]*0.5, size[1]*0.3, duration=0.6)
-                    time.sleep(2)
-                
-                if not found_otp:
+                # Sau khi ở đầu trang, tìm ô OTP, gia hạn thêm thời gian chờ
+                otp_input = d(className="android.widget.EditText")
+                if not otp_input.exists(timeout=8):
                     print(f"{Colors.color_text(f'[{serial}] LỖI: Không chuyển được sang trang OTP. Kẹt nút Gửi hoặc Username bị lỗi. Bỏ qua acc!', Colors.ERROR)}")
                     return False
 
