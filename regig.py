@@ -70,7 +70,7 @@ def banner():
 {Colors.BANNER4}░▓█ ░██  ▓▓█  ░██░  ░ ▐██▓░    ▒██ █░░ ▓██  ▒██░
 {Colors.BANNER5}░▓█▒░██▓ ▒▒█████▓   ░ ██▒▓░     ▒▀█░   ▓▓█  ░██░
 {Colors.RESET}""")
-    print(f"{Colors.DEVICE_INFO}[</>] {Colors.KEY}ADMIN: {Colors.VALUE}HUY VŨ   {Colors.DEVICE_INFO}Phiên Bản: {Colors.VALUE}v9.0 (Đại Tu - Full Tính Năng + Chống Văng){Colors.RESET}")
+    print(f"{Colors.DEVICE_INFO}[</>] {Colors.KEY}ADMIN: {Colors.VALUE}HUY VŨ   {Colors.DEVICE_INFO}Phiên Bản: {Colors.VALUE}v9.1 (Fix Cuộn OTP Thông Minh){Colors.RESET}")
     print(f"{Colors.LINE}{'─'*70}{Colors.RESET}\n")
 
 def load_config():
@@ -159,7 +159,6 @@ class GmailIMAPService:
             return False
 
     def get_latest_uid(self):
-        # Trả về 0 nếu hộp thư trống hoặc lỗi, tránh văng tool
         if not self.mail and not self.connect(): 
             return 0
         try:
@@ -226,12 +225,9 @@ class GmailIMAPService:
                     uids = data[0].split()
                     
                     for uid_bytes in reversed(uids[-10:]):
-                        try:
-                            uid_int = int(uid_bytes)
-                        except ValueError:
-                            continue
+                        try: uid_int = int(uid_bytes)
+                        except ValueError: continue
                             
-                        # Tuyệt đối không lấy mail cũ
                         if uid_int <= since_uid: continue
                         if uid_bytes in self.seen_uids: continue
                             
@@ -248,7 +244,6 @@ class GmailIMAPService:
                                 from_addr = self.decode_mime(msg.get("From", "")).lower()
                                 to_addr = self.decode_mime(msg.get("To", "")).lower()
                                 
-                                # Phải gửi đúng biến thể mới lấy
                                 if target_email.lower() not in to_addr: continue
                                     
                                 if "instagram" in subject or "instagram" in from_addr:
@@ -256,9 +251,7 @@ class GmailIMAPService:
                                     body = self.get_text(msg)
                                     match = re.search(r'\b(\d{6})\b', body)
                                     if match: return match.group(1)
-            except Exception as e: 
-                pass # Chặn crash văng tool
-                
+            except Exception: pass
             time.sleep(5) 
         return None
 
@@ -277,7 +270,7 @@ def generate_dot_variants(gmail):
     random.shuffle(variants)
     return variants
 
-# ========== MODULES KHÁC ==========
+# ========== MODULES CŨ ==========
 class MailService:
     def __init__(self):
         self.base_url = "https://api.mail.tm"
@@ -581,19 +574,14 @@ class starts(threading.Thread):
                 d.swipe(size[0]*0.5, size[1]*0.7, size[0]*0.5, size[1]*0.4, duration=0.5)
                 time.sleep(1.5)
 
-                # =================================================================================
-                # FIX LOGIC NGÀY THÁNG NĂM SINH ĐÃ CHUẨN
-                # =================================================================================
                 current_year = BASE_YEAR + random.randint(-3, 3)
                 if current_year < 1990: current_year = 1990
                 if current_year > 2007: current_year = 2007
-                
                 current_day = random.randint(2, 7)
                 current_month = random.randint(2, 7)
                 
                 print(f"{Colors.color_text(f'[{serial}] Chọn Ngày {current_day}, Tháng {current_month}, Năm ~{current_year}', Colors.INFO)}")
                 
-                # CHỌN NGÀY (2-7, Bấm luôn không vuốt)
                 day_btn = d(textMatches=r"(?i)^\s*Ngày\s*$|^\s*Day\s*$")
                 if day_btn.exists(timeout=2):
                     day_btn.click()
@@ -605,46 +593,32 @@ class starts(threading.Thread):
                         d.click(size[0]*0.25, size[1]*0.4) 
                     time.sleep(1)
 
-                # CHỌN THÁNG (2-7, Bấm luôn không vuốt)
                 month_btn = d(textMatches=r"(?i)^\s*Tháng\s*$|^\s*Month\s*$")
                 if month_btn.exists(timeout=2):
                     month_btn.click()
                     time.sleep(1.5)
                     target_month = str(current_month)
                     target_month_text = f"Tháng {current_month}"
-                    
-                    if d(text=target_month_text).exists(timeout=2):
-                        d(text=target_month_text).click()
-                    elif d(text=target_month).exists(timeout=2):
-                        d(text=target_month).click()
-                    else:
-                        d.click(size[0]*0.50, size[1]*0.4)
+                    if d(text=target_month_text).exists(timeout=2): d(text=target_month_text).click()
+                    elif d(text=target_month).exists(timeout=2): d(text=target_month).click()
+                    else: d.click(size[0]*0.50, size[1]*0.4)
                     time.sleep(1)
 
-                # CHỌN NĂM (Vuốt đúng 3 nhịp từ dưới lên trên để lấy danh sách năm cũ)
                 year_btn = d(textMatches=r"(?i)^\s*Năm\s*$|^\s*Year\s*$")
                 if year_btn.exists(timeout=2):
                     year_btn.click()
                     time.sleep(1.5)
-                    
                     print(f"{Colors.color_text(f'[{serial}] Vuốt chậm 3 lần để lấy danh sách năm cũ...', Colors.INFO)}")
                     for _ in range(3):
-                        # Kéo từ y=0.75 (dưới) lên y=0.25 (trên) với tốc độ vừa phải
                         d.swipe(size[0]*0.85, size[1]*0.75, size[0]*0.85, size[1]*0.25, duration=0.8)
                         time.sleep(0.4)
-                        
                     target_year_str = str(current_year)
-                    if d(text=target_year_str).exists(timeout=2):
-                        d(text=target_year_str).click()
-                    else:
-                        d.click(size[0]*0.85, size[1]*0.5) # Backup tọa độ giữa list nếu không thấy
+                    if d(text=target_year_str).exists(timeout=2): d(text=target_year_str).click()
+                    else: d.click(size[0]*0.85, size[1]*0.5)
                     time.sleep(1)
                     
-                # Cập nhật năm gốc cho nick tiếp theo (Giảm dần đi 1)
                 BASE_YEAR -= 1
-                if BASE_YEAR < 1990: 
-                    BASE_YEAR = random.randint(1995, 2005)
-                # =================================================================================
+                if BASE_YEAR < 1990: BASE_YEAR = random.randint(1995, 2005)
 
                 d.swipe(size[0]*0.5, size[1]*0.7, size[0]*0.5, size[1]*0.5, duration=0.6)
                 time.sleep(1.5)
@@ -695,23 +669,32 @@ class starts(threading.Thread):
                 time.sleep(8) 
                 
                 # =================================================================================
-                # FIX LOGIC: VUỐT CUỘN ĐỂ LẤY Ô NHẬP OTP BỊ KHUẤT TẦM NHÌN
+                # FIX LOGIC: VUỐT LIÊN TỤC CHO ĐẾN KHI THẤY Ô NHẬP OTP (CHỐNG KẸT)
                 # =================================================================================
-                print(f"{Colors.color_text(f'[{serial}] Vuốt nhẹ màn hình để đảm bảo ô OTP nằm trong tầm nhìn...', Colors.INFO)}")
-                d.swipe(size[0]*0.5, size[1]*0.8, size[0]*0.5, size[1]*0.3, duration=0.6)
-                time.sleep(2)
+                otp_input = None
+                found_otp = False
                 
-                otp_input = d(className="android.widget.EditText")
-                if not otp_input.exists(timeout=5):
+                print(f"{Colors.color_text(f'[{serial}] Quét tìm ô nhập OTP...', Colors.INFO)}")
+                for search_attempt in range(3):
+                    otp_input = d(className="android.widget.EditText")
+                    if otp_input.exists(timeout=3):
+                        found_otp = True
+                        break
+                    
+                    # Nếu chưa thấy, vuốt từ dưới lên trên để lôi form OTP ra
+                    print(f"{Colors.color_text(f'[{serial}] Chưa thấy ô OTP, đang vuốt cuộn màn hình lần {search_attempt + 1}...', Colors.WARNING)}")
+                    # Vuốt ngón tay từ dưới lên để cuộn trang web xuống dưới
+                    d.swipe(size[0]*0.5, size[1]*0.8, size[0]*0.5, size[1]*0.3, duration=0.6)
+                    time.sleep(2)
+                
+                if not found_otp:
                     print(f"{Colors.color_text(f'[{serial}] LỖI: Không chuyển được sang trang OTP. Kẹt nút Gửi hoặc Username bị lỗi. Bỏ qua acc!', Colors.ERROR)}")
-                    # NẾU BỊ KẸT SẼ THOÁT HÀM, KHIẾN TOOL BỎ QUA NICK NÀY MÀ KHÔNG BỊ VĂNG TRẦN (CRASH)
                     return False
 
                 print(f"{Colors.color_text(f'[{serial}] Đã vào trang OTP thành công. Bắt đầu tìm mã...', Colors.SUCCESS)}")
-                
                 if STOP_EVENT.is_set(): return False
+                # =================================================================================
 
-                # --- QUÉT MÃ OTP TỪ MAIL (Có bảo vệ try-except để không văng) ---
                 otp_code = None
                 try:
                     if self.mode in ["multi_gmail", "dot_trick"]:
@@ -742,7 +725,7 @@ class starts(threading.Thread):
                     d.send_keys(otp_code)
                     time.sleep(1.5)
                     
-                    d.click(size[0]*0.1, size[1]*0.3) # Ẩn bàn phím
+                    d.click(size[0]*0.1, size[1]*0.3)
                     time.sleep(1.5)
                     
                     next_btn = d(className="android.widget.Button", textMatches=r"(?i).*Tiếp.*|.*Xác nhận.*")
@@ -772,7 +755,6 @@ class starts(threading.Thread):
                         d.click(size[0]*0.5, size[1]*0.1)
                 except Exception: pass
 
-                # --- SUCCESS ---
                 print(f"\n{Colors.color_text('─'*70, Colors.LINE)}")
                 print(f"{Colors.color_text(f'[{serial}] DONE ACC {account_index}!', Colors.SUCCESS)}")
                 print(f"{Colors.KEY}Mail: {Colors.EMAIL}{used_email}{Colors.RESET}")
@@ -785,23 +767,19 @@ class starts(threading.Thread):
                 return True
                 
             except Exception as e:
-                # Nếu có lỗi bất thường sập cả hàm, in lỗi ra để biết đường mò (giữ nguyên không văng tool tổng)
                 print(f"{Colors.color_text(f'[{serial}] Lỗi ngoại lệ hệ thống: {e}', Colors.ERROR)}")
                 traceback.print_exc()
                 return False
         
-        # VÒNG LẶP CHÍNH CỦA LUỒNG MỖI THIẾT BỊ
         success_count = 0
         for i in range(1, self.account_count + 1):
             if STOP_EVENT.is_set():
                 print(f"{Colors.color_text(f'[{self.device}] Lệnh dừng được kích hoạt. Đang thoát luồng...', Colors.WARNING)}")
                 break
             
-            # Tạo nick
             if create_one_account(self.device, i):
                 success_count += 1
             
-            # Nếu chưa xong và không bị lệnh dừng thì thực hiện đổi IP
             if i < self.account_count and not STOP_EVENT.is_set():
                 if self.ip_change_freq > 0 and i % self.ip_change_freq == 0: 
                     toggle_airplane_mode(self.device)
@@ -815,9 +793,7 @@ if __name__ == "__main__":
     banner()
     print(f"{Colors.color_text('MẸO: Bạn có thể ấn tổ hợp phím Ctrl + C bất cứ lúc nào để DỪNG TOOL an toàn.', Colors.WARNING)}\n")
     
-    # Load cấu hình
     config_data = load_config()
-    
     mode = select_mode()
     
     manual_emails = []
