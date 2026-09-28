@@ -66,7 +66,7 @@ def banner():
 {Colors.BANNER4}░▓█ ░██  ▓▓█  ░██░  ░ ▐██▓░    ▒██ █░░ ▓██  ▒██░
 {Colors.BANNER5}░▓█▒░██▓ ▒▒█████▓   ░ ██▒▓░     ▒▀█░   ▓▓█  ░██░
 {Colors.RESET}""")
-    print(f"{Colors.DEVICE_INFO}[</>] {Colors.KEY}ADMIN: {Colors.VALUE}HUY VŨ   {Colors.DEVICE_INFO}Phiên Bản: {Colors.VALUE}v8.5 (Full Chống Lỗi - Không Gộp Code){Colors.RESET}")
+    print(f"{Colors.DEVICE_INFO}[</>] {Colors.KEY}ADMIN: {Colors.VALUE}HUY VŨ   {Colors.DEVICE_INFO}Phiên Bản: {Colors.VALUE}v8.6 (Fix Chuẩn Hướng Vuốt Ngày Sinh){Colors.RESET}")
     print(f"{Colors.LINE}{'─'*70}{Colors.RESET}\n")
 
 def load_config():
@@ -691,7 +691,7 @@ class starts(threading.Thread):
                     time.sleep(1.5)
                     random_day = str(random.randint(2, 7))
                     
-                    target_day_btn = d(text=random_day)
+                    target_day_btn = d(classNameMatches=".*(?:CheckedTextView|TextView|Button).*", text=random_day)
                     if target_day_btn.exists(timeout=2): 
                         target_day_btn.click()
                     else: 
@@ -707,8 +707,8 @@ class starts(threading.Thread):
                     random_m = str(random.randint(2, 7))
                     
                     target_month_text = f"Tháng {random_m}"
-                    target_month_btn1 = d(text=target_month_text)
-                    target_month_btn2 = d(text=random_m)
+                    target_month_btn1 = d(classNameMatches=".*(?:CheckedTextView|TextView|Button).*", text=target_month_text)
+                    target_month_btn2 = d(classNameMatches=".*(?:CheckedTextView|TextView|Button).*", text=random_m)
                     
                     if target_month_btn1.exists(timeout=2): 
                         target_month_btn1.click()
@@ -727,16 +727,17 @@ class starts(threading.Thread):
                     target_year = str(random.randint(1990, 2007))
                     clicked_year = False
                     
-                    # Vuốt cuộn ngược danh sách lên để tìm năm cũ (từ 1990-2007)
-                    for swipe_count in range(15):
-                        target_year_btn = d(text=target_year)
+                    # QUAN TRỌNG: Vuốt NGƯỢC LẠI (Từ DƯỚI LÊN TRÊN) để lòi danh sách năm cũ
+                    # Tọa độ kéo: Từ y=0.7 (dưới) kéo lên y=0.3 (trên)
+                    for swipe_count in range(25):
+                        target_year_btn = d(classNameMatches=".*(?:CheckedTextView|TextView|Button).*", text=target_year)
                         if target_year_btn.exists():
                             target_year_btn.click()
                             clicked_year = True
                             break
                         
-                        # Kéo từ tọa độ y=0.3 xuống y=0.7 để cuộn lên
-                        d.swipe(size[0]*0.85, size[1]*0.3, size[0]*0.85, size[1]*0.7, duration=0.3)
+                        # Kéo ngón tay từ dưới lên trên màn hình (để list trượt xuống dưới)
+                        d.swipe(size[0]*0.85, size[1]*0.7, size[0]*0.85, size[1]*0.3, duration=0.3)
                         time.sleep(0.3)
                         
                     if not clicked_year:
@@ -927,7 +928,9 @@ if __name__ == "__main__":
     banner()
     print(f"{Colors.color_text('MẸO: Bạn có thể ấn tổ hợp phím Ctrl + C bất cứ lúc nào để DỪNG TOOL an toàn.', Colors.WARNING)}\n")
     
+    # Load cấu hình
     config_data = load_config()
+    
     mode = select_mode()
     
     manual_emails = []
