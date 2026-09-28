@@ -65,7 +65,7 @@ def banner():
 {Colors.BANNER4}░▓█ ░██  ▓▓█  ░██░  ░ ▐██▓░    ▒██ █░░ ▓██  ▒██░
 {Colors.BANNER5}░▓█▒░██▓ ▒▒█████▓   ░ ██▒▓░     ▒▀█░   ▓▓█  ░██░
 {Colors.RESET}""")
-    print(f"{Colors.DEVICE_INFO}[</>] {Colors.KEY}ADMIN: {Colors.VALUE}HUY VŨ   {Colors.DEVICE_INFO}Phiên Bản: {Colors.VALUE}v7.8 (Auto Tùy Chỉnh Đổi IP + Lưu Mật Khẩu){Colors.RESET}")
+    print(f"{Colors.DEVICE_INFO}[</>] {Colors.KEY}ADMIN: {Colors.VALUE}HUY VŨ   {Colors.DEVICE_INFO}Phiên Bản: {Colors.VALUE}v7.9 (Fix Lỗi Nút Gửi + Full Tiện Ích){Colors.RESET}")
     print(f"{Colors.LINE}{'─'*70}{Colors.RESET}\n")
 
 def load_config():
@@ -346,7 +346,6 @@ class AppCleaner:
             
         print(f"{Colors.color_text(f'[{self.serial}] ========== DỌN RÁC VIA BROWSER ==========', Colors.TITLE)}")
         
-        # Đóng đa nhiệm
         try:
             self.d.press("recent")
             time.sleep(1.5)
@@ -359,7 +358,6 @@ class AppCleaner:
         except: 
             pass
         
-        # Dừng và vào cài đặt App
         self.d.app_stop(self.package_name)
         time.sleep(1.5)
         
@@ -369,7 +367,6 @@ class AppCleaner:
             pass
         time.sleep(2.5)
         
-        # Bấm Storage
         for _ in range(2): 
             self.d.swipe(size[0]*0.5, size[1]*0.8, size[0]*0.5, size[1]*0.3, duration=0.3)
             
@@ -381,7 +378,6 @@ class AppCleaner:
             self.d.click(int(size[0]*0.5), int(size[1]*0.6))
         time.sleep(2)
         
-        # Bấm Clear Data
         for sel in [{"textMatches": r"(?i).*(clear data|clear storage|xóa dữ liệu|xóa bộ nhớ).*"}]:
             if self.d(**sel).exists(timeout=3): 
                 self.d(**sel).click()
@@ -390,7 +386,6 @@ class AppCleaner:
             self.d.click(int(size[0]*0.5), int(size[1]*0.75))
         time.sleep(1.5)
         
-        # Bấm Confirm
         for sel in [{"textMatches": r"(?i)^(ok|yes|delete|xóa|clear|đồng ý|xác nhận)$"}, {"resourceId": "android:id/button1"}]:
             if self.d(**sel).exists(timeout=2): 
                 self.d(**sel).click()
@@ -676,16 +671,31 @@ class starts(threading.Thread):
                 d.press("back")
                 time.sleep(1.5)
 
-                # Bấm Submit
-                print(f"{Colors.color_text(f'[{serial}] Bấm Gửi/Đăng ký...', Colors.INFO)}")
-                if d(className="android.widget.Button", textMatches=r"(?i).*Đăng ký.*|.*Sign up.*").exists(timeout=2): 
-                    d(className="android.widget.Button", textMatches=r"(?i).*Đăng ký.*|.*Sign up.*").click()
-                else: 
-                    d.click(size[0]*0.5, size[1]*0.85)
+                # --- BẤM GỬI ĐĂNG KÝ (ĐÃ TỐI ƯU CƠ CHẾ TÌM & CLICK DỰ PHÒNG) ---
+                print(f"{Colors.color_text(f'[{serial}] Đang tìm và bấm nút Đăng ký/Gửi...', Colors.INFO)}")
+                time.sleep(2)
+                
+                submitted = False
+                for btn_sel in [
+                    {"className": "android.widget.Button", "textMatches": r"(?i).*Đăng ký.*|.*Sign up.*|.*Next.*|.*Tiếp.*"},
+                    {"className": "android.widget.TextView", "textMatches": r"(?i).*Đăng ký.*|.*Sign up.*|.*Next.*|.*Tiếp.*"}
+                ]:
+                    try:
+                        btn = d(**btn_sel)
+                        if btn.exists(timeout=3):
+                            btn.click()
+                            submitted = True
+                            print(f"{Colors.color_text(f'[{serial}] Đã bấm nút gửi thành công qua Selector!', Colors.SUCCESS)}")
+                            break
+                    except: pass
+                
+                if not submitted:
+                    print(f"{Colors.color_text(f'[{serial}] Không tìm thấy selector nút, dùng phương án click tọa độ dự phòng...', Colors.WARNING)}")
+                    d.click(size[0] * 0.5, size[1] * 0.88)
 
                 # Vuốt lộ form OTP
-                print(f"{Colors.color_text(f'[{serial}] Đợi 5s cuộn trang lấy form OTP...', Colors.INFO)}")
-                time.sleep(5) 
+                print(f"{Colors.color_text(f'[{serial}] Đợi 6s load trang xác nhận, sau đó cuộn trang lấy form OTP...', Colors.INFO)}")
+                time.sleep(6) 
                 d.swipe(size[0]*0.5, size[1]*0.3, size[0]*0.5, size[1]*0.8, duration=0.6)
                 time.sleep(1.5)
 
@@ -799,9 +809,7 @@ if __name__ == "__main__":
     banner()
     print(f"{Colors.color_text('MẸO: Bạn có thể ấn tổ hợp phím Ctrl + C bất cứ lúc nào để DỪNG TOOL an toàn.', Colors.WARNING)}\n")
     
-    # Load cấu hình
     config_data = load_config()
-    
     mode = select_mode()
     
     manual_emails = []
@@ -872,7 +880,6 @@ if __name__ == "__main__":
         if not base_gmail:
             base_gmail = input(f"{Colors.KEY}Nhập Gmail gốc (VD: huyvu@gmail.com): {Colors.RESET}").strip()
             app_password = input(f"{Colors.KEY}Nhập App Password (16 ký tự): {Colors.RESET}").strip()
-            # Lưu lại cấu hình
             config_data["dot_trick_email"] = base_gmail
             config_data["dot_trick_app_pass"] = app_password
             save_config(config_data)
@@ -891,7 +898,7 @@ if __name__ == "__main__":
         try:
             freq_str = input(f"{Colors.KEY}Sau bao nhiêu acc thành công thì Đổi IP? (Nhập 0 để Tắt) \033[97m[Mặc định: 4]: {Colors.RESET}").strip()
             if not freq_str:
-                break # Mặc định là 4
+                break 
             ip_change_freq = int(freq_str)
             break
         except: pass
