@@ -65,7 +65,7 @@ def banner():
 {Colors.BANNER4}░▓█ ░██  ▓▓█  ░██░  ░ ▐██▓░    ▒██ █░░ ▓██  ▒██░
 {Colors.BANNER5}░▓█▒░██▓ ▒▒█████▓   ░ ██▒▓░     ▒▀█░   ▓▓█  ░██░
 {Colors.RESET}""")
-    print(f"{Colors.DEVICE_INFO}[</>] {Colors.KEY}ADMIN: {Colors.VALUE}HUY VŨ   {Colors.DEVICE_INFO}Phiên Bản: {Colors.VALUE}v7.9 (Fix Lỗi Nút Gửi + Full Tiện Ích){Colors.RESET}")
+    print(f"{Colors.DEVICE_INFO}[</>] {Colors.KEY}ADMIN: {Colors.VALUE}HUY VŨ   {Colors.DEVICE_INFO}Phiên Bản: {Colors.VALUE}v7.9.2 (Chống Lấy Nhầm Mã Cũ){Colors.RESET}")
     print(f"{Colors.LINE}{'─'*70}{Colors.RESET}\n")
 
 def load_config():
@@ -134,7 +134,7 @@ def toggle_airplane_mode(serial):
     except Exception as e:
         print(f"{Colors.color_text(f'[{serial}] Lỗi đổi IP: {e}', Colors.ERROR)}")
 
-# ========== GMAIL IMAP SERVICE (DOT TRICK & MULTI GMAIL) ==========
+# ========== GMAIL IMAP SERVICE (TỐI ƯU HÓA MỐC THỜI GIAN) ==========
 class GmailIMAPService:
     def __init__(self, base_email, app_password):
         self.base_email = base_email
@@ -150,6 +150,21 @@ class GmailIMAPService:
         except Exception as e:
             print(f"{Colors.color_text(f'Lỗi đăng nhập IMAP cho {self.base_email}', Colors.ERROR)}")
             return False
+
+    def get_latest_uid(self):
+        """Lấy ID của email mới nhất trong hộp thư để làm mốc (Bỏ qua email cũ)"""
+        if not self.mail and not self.connect(): 
+            return 0
+        try:
+            self.mail.select("INBOX", readonly=True)
+            status, data = self.mail.uid("search", None, 'ALL')
+            if status == "OK" and data[0]:
+                uids = data[0].split()
+                if uids:
+                    return int(uids[-1]) # Trả về UID lớn nhất
+        except: 
+            pass
+        return 0
 
     def decode_mime(self, value):
         if not value: return ""
@@ -198,12 +213,14 @@ class GmailIMAPService:
             return re.sub(r'<[^>]+>', ' ', "\n".join(html)).strip()
         return ""
 
-    def get_otp_code(self, target_email, timeout=120):
+    def get_otp_code(self, target_email, since_uid=0, timeout=120):
         if not self.mail:
             if not self.connect(): 
                 return None
                 
         start_time = time.time()
+        print(f"{Colors.color_text(f'[HỆ THỐNG MAIL] Bỏ qua các mail cũ (UID <= {since_uid}). Đang chờ mail mới...', Colors.DEBUG)}")
+        
         while time.time() - start_time < timeout:
             if STOP_EVENT.is_set(): 
                 return None
@@ -213,11 +230,19 @@ class GmailIMAPService:
                 status, data = self.mail.uid("search", None, 'ALL')
                 if status == "OK" and data[0]:
                     uids = data[0].split()
-                    for uid in reversed(uids[-8:]):
-                        if uid in self.seen_uids: 
+                    
+                    # Quét ngược các email mới nhất
+                    for uid_bytes in reversed(uids[-10:]):
+                        uid_int = int(uid_bytes)
+                        
+                        # CHỐT CHẶN 1: Tuyệt đối không đọc mail cũ trước lúc bấm nút Gửi
+                        if uid_int <= since_uid:
                             continue
                             
-                        status, fetch_data = self.mail.uid("fetch", uid, "(RFC822)")
+                        if uid_bytes in self.seen_uids: 
+                            continue
+                            
+                        status, fetch_data = self.mail.uid("fetch", uid_bytes, "(RFC822)")
                         if status == "OK" and fetch_data:
                             raw = None
                             for item in fetch_data:
@@ -231,12 +256,12 @@ class GmailIMAPService:
                                 from_addr = self.decode_mime(msg.get("From", "")).lower()
                                 to_addr = self.decode_mime(msg.get("To", "")).lower()
                                 
-                                # Bộ lọc: Mail phải gửi đến đúng biến thể hiện tại
+                                # CHỐT CHẶN 2: Mail phải gửi đến đúng biến thể hiện tại
                                 if target_email.lower() not in to_addr:
                                     continue
                                     
                                 if "instagram" in subject or "instagram" in from_addr:
-                                    self.seen_uids.add(uid) 
+                                    self.seen_uids.add(uid_bytes) 
                                     body = self.get_text(msg)
                                     match = re.search(r'\b(\d{6})\b', body)
                                     if match: 
@@ -244,7 +269,7 @@ class GmailIMAPService:
             except: 
                 pass
                 
-            time.sleep(5)
+            time.sleep(5) # Load đi load lại mỗi 5s để tìm mail
         return None
 
 def generate_dot_variants(gmail):
@@ -668,30 +693,53 @@ class starts(threading.Thread):
                 time.sleep(0.5)
                 d.send_keys(username)
                 time.sleep(1)
-                d.press("back")
-                time.sleep(1.5)
-
-                # --- BẤM GỬI ĐĂNG KÝ (ĐÃ TỐI ƯU CƠ CHẾ TÌM & CLICK DỰ PHÒNG) ---
-                print(f"{Colors.color_text(f'[{serial}] Đang tìm và bấm nút Đăng ký/Gửi...', Colors.INFO)}")
-                time.sleep(2)
+                d.press("back") # Ẩn bàn phím để lộ nút
                 
+                # --- CHẬM 2 GIÂY CHỜ HỆ THỐNG XÁC MINH USERNAME ---
+                print(f"{Colors.color_text(f'[{serial}] Đợi 2s để hệ thống xác nhận username...', Colors.INFO)}")
+                time.sleep(2)
+
+                # --- CẮM MỐC THỜI GIAN UID TRƯỚC KHI BẤM GỬI ---
+                print(f"{Colors.color_text(f'[{serial}] Cắm mốc thời gian hộp thư để lọc đúng OTP mới...', Colors.INFO)}")
+                uid_moc = 0
+                if self.mode in ["multi_gmail", "dot_trick"] and imap_service:
+                    uid_moc = imap_service.get_latest_uid()
+
+                # --- BẤM GỬI ĐĂNG KÝ (FIX LỖI KẸT NÚT) ---
+                print(f"{Colors.color_text(f'[{serial}] Bấm Gửi/Đăng ký...', Colors.INFO)}")
                 submitted = False
+                
+                # Cách 1: Quét mọi class có chứa từ khóa Đăng ký
                 for btn_sel in [
-                    {"className": "android.widget.Button", "textMatches": r"(?i).*Đăng ký.*|.*Sign up.*|.*Next.*|.*Tiếp.*"},
-                    {"className": "android.widget.TextView", "textMatches": r"(?i).*Đăng ký.*|.*Sign up.*|.*Next.*|.*Tiếp.*"}
+                    {"textMatches": r"(?i).*Đăng ký.*|.*Sign up.*|.*Next.*|.*Tiếp.*|.*Sign Up.*|.*Đăng Ký.*"},
+                    {"descriptionMatches": r"(?i).*Đăng ký.*|.*Sign up.*|.*Next.*|.*Tiếp.*|.*Sign Up.*"},
                 ]:
                     try:
                         btn = d(**btn_sel)
-                        if btn.exists(timeout=3):
-                            btn.click()
+                        if btn.exists(timeout=2):
+                            if btn.count > 1:
+                                btn[-1].click() # Nếu có nhiều nút, bấm nút dưới cùng
+                            else:
+                                btn.click()
                             submitted = True
-                            print(f"{Colors.color_text(f'[{serial}] Đã bấm nút gửi thành công qua Selector!', Colors.SUCCESS)}")
+                            print(f"{Colors.color_text(f'[{serial}] Đã bấm nút gửi thành công (Cách 1)!', Colors.SUCCESS)}")
                             break
                     except: pass
                 
+                # Cách 2: Tìm nút Button đang có thể bấm được (Clickable)
                 if not submitted:
-                    print(f"{Colors.color_text(f'[{serial}] Không tìm thấy selector nút, dùng phương án click tọa độ dự phòng...', Colors.WARNING)}")
-                    d.click(size[0] * 0.5, size[1] * 0.88)
+                    try:
+                        btns = d(className="android.widget.Button", clickable=True)
+                        if btns.count > 0:
+                            btns[-1].click()
+                            submitted = True
+                            print(f"{Colors.color_text(f'[{serial}] Đã bấm nút gửi thành công (Cách 2)!', Colors.SUCCESS)}")
+                    except: pass
+                
+                # Cách 3: Click thẳng tọa độ
+                if not submitted:
+                    print(f"{Colors.color_text(f'[{serial}] Dùng phương án click tọa độ...', Colors.WARNING)}")
+                    d.click(size[0] * 0.5, size[1] * 0.85)
 
                 # Vuốt lộ form OTP
                 print(f"{Colors.color_text(f'[{serial}] Đợi 6s load trang xác nhận, sau đó cuộn trang lấy form OTP...', Colors.INFO)}")
@@ -703,11 +751,12 @@ class starts(threading.Thread):
                     return False
 
                 # --- QUÉT MÃ OTP TỪ MAIL ---
-                print(f"{Colors.color_text(f'[{serial}] Đang quét mã OTP từ mail...', Colors.INFO)}")
+                print(f"{Colors.color_text(f'[{serial}] Đang lấy mã OTP từ mail...', Colors.INFO)}")
                 otp_code = None
                 
                 if self.mode in ["multi_gmail", "dot_trick"]:
-                    otp_code = imap_service.get_otp_code(target_email=used_email, timeout=120)
+                    # TRUYỀN MỐC UID VÀO ĐỂ BỎ QUA MAIL CŨ
+                    otp_code = imap_service.get_otp_code(target_email=used_email, since_uid=uid_moc, timeout=120)
                 elif self.mode == "auto" or (self.mode == "manual" and mail_service and mail_service.token):
                     otp_code = mail_service.get_otp_code(timeout=120)
                 
