@@ -17,6 +17,11 @@ import json
 STOP_EVENT = threading.Event()
 CONFIG_FILE = "config_gmail.json"
 
+# BIẾN TOÀN CỤC CHO THUẬT TOÁN TỊNH TIẾN NGÀY SINH
+BASE_YEAR = random.randint(1995, 2005) # Lấy mốc ngẫu nhiên ở giữa
+BASE_MONTH = random.randint(4, 9)
+BASE_DAY = random.randint(10, 20)
+
 # ========== CÀI ĐẶT MÀU RGB TOÀN CỤC ==========
 class Colors:
     PRIMARY = "\033[38;2;255;100;150m"
@@ -66,7 +71,7 @@ def banner():
 {Colors.BANNER4}░▓█ ░██  ▓▓█  ░██░  ░ ▐██▓░    ▒██ █░░ ▓██  ▒██░
 {Colors.BANNER5}░▓█▒░██▓ ▒▒█████▓   ░ ██▒▓░     ▒▀█░   ▓▓█  ░██░
 {Colors.RESET}""")
-    print(f"{Colors.DEVICE_INFO}[</>] {Colors.KEY}ADMIN: {Colors.VALUE}HUY VŨ   {Colors.DEVICE_INFO}Phiên Bản: {Colors.VALUE}v8.6 (Fix Chuẩn Hướng Vuốt Ngày Sinh){Colors.RESET}")
+    print(f"{Colors.DEVICE_INFO}[</>] {Colors.KEY}ADMIN: {Colors.VALUE}HUY VŨ   {Colors.DEVICE_INFO}Phiên Bản: {Colors.VALUE}v8.7 (Tịnh Tiến Sinh Học +-3){Colors.RESET}")
     print(f"{Colors.LINE}{'─'*70}{Colors.RESET}\n")
 
 def load_config():
@@ -125,12 +130,10 @@ def toggle_airplane_mode(serial):
         
     print(f"\n{Colors.color_text(f'[{serial}] [AUTO ĐẢO IP] Đang Bật/Tắt Chế độ máy bay...', Colors.WARNING)}")
     try:
-        # Bật máy bay
         subprocess.run(f"adb -s {serial} shell cmd connectivity airplane-mode enable", shell=True)
         print(f"{Colors.color_text(f'[{serial}] Đã BẬT máy bay. Chờ 5s...', Colors.INFO)}")
         time.sleep(5)
         
-        # Tắt máy bay
         subprocess.run(f"adb -s {serial} shell cmd connectivity airplane-mode disable", shell=True)
         print(f"{Colors.color_text(f'[{serial}] Đã TẮT máy bay. Chờ 10s lấy lại sóng 4G...', Colors.INFO)}")
         time.sleep(10)
@@ -157,10 +160,8 @@ class GmailIMAPService:
             return False
 
     def get_latest_uid(self):
-        # Hàm chốt chặn thời gian
-        if not self.mail:
-            if not self.connect():
-                return 0
+        if not self.mail and not self.connect(): 
+            return 0
         try:
             self.mail.select("INBOX", readonly=True)
             status, data = self.mail.uid("search", None, 'ALL')
@@ -173,65 +174,50 @@ class GmailIMAPService:
         return 0
 
     def decode_mime(self, value):
-        if not value: 
-            return ""
+        if not value: return ""
         parts = decode_header(value)
         out = []
         for text, enc in parts:
             if isinstance(text, bytes):
-                try: 
-                    out.append(text.decode(enc or "utf-8", errors="replace"))
-                except Exception: 
-                    out.append(text.decode("utf-8", errors="replace"))
-            else: 
-                out.append(text)
+                try: out.append(text.decode(enc or "utf-8", errors="replace"))
+                except Exception: out.append(text.decode("utf-8", errors="replace"))
+            else: out.append(text)
         return "".join(out)
 
     def get_text(self, msg):
-        plain = []
-        html = []
+        plain, html = [], []
         if msg.is_multipart():
             for part in msg.walk():
-                if part.get_content_disposition() == "attachment": 
-                    continue
+                if part.get_content_disposition() == "attachment": continue
                 ctype = part.get_content_type()
                 payload = part.get_payload(decode=True)
-                if not payload: 
-                    continue
+                if not payload: continue
                 charset = part.get_content_charset() or "utf-8"
                 text = payload.decode(charset, errors="replace")
                 
-                if ctype == "text/plain": 
-                    plain.append(text)
-                elif ctype == "text/html": 
-                    html.append(text)
+                if ctype == "text/plain": plain.append(text)
+                elif ctype == "text/html": html.append(text)
         else:
             payload = msg.get_payload(decode=True)
             if payload:
                 charset = msg.get_content_charset() or "utf-8"
                 text = payload.decode(charset, errors="replace")
-                if msg.get_content_type() == "text/plain": 
-                    plain.append(text)
-                else: 
-                    html.append(text)
+                if msg.get_content_type() == "text/plain": plain.append(text)
+                else: html.append(text)
                     
-        if plain: 
-            return "\n".join(plain).strip()
-        if html: 
-            return re.sub(r'<[^>]+>', ' ', "\n".join(html)).strip()
+        if plain: return "\n".join(plain).strip()
+        if html: return re.sub(r'<[^>]+>', ' ', "\n".join(html)).strip()
         return ""
 
     def get_otp_code(self, target_email, since_uid=0, timeout=120):
         if not self.mail:
-            if not self.connect(): 
-                return None
+            if not self.connect(): return None
                 
         start_time = time.time()
         print(f"{Colors.color_text(f'[HỆ THỐNG MAIL] Đang chờ mail OTP mới...', Colors.DEBUG)}")
         
         while time.time() - start_time < timeout:
-            if STOP_EVENT.is_set(): 
-                return None
+            if STOP_EVENT.is_set(): return None
                 
             try:
                 self.mail.select("INBOX", readonly=True)
@@ -242,19 +228,15 @@ class GmailIMAPService:
                     for uid_bytes in reversed(uids[-10:]):
                         uid_int = int(uid_bytes)
                         
-                        # Không lấy mail sinh ra trước khi bấm gửi
-                        if uid_int <= since_uid: 
-                            continue
-                        if uid_bytes in self.seen_uids: 
-                            continue
+                        if uid_int <= since_uid: continue
+                        if uid_bytes in self.seen_uids: continue
                             
                         status, fetch_data = self.mail.uid("fetch", uid_bytes, "(RFC822)")
                         if status == "OK" and fetch_data:
                             raw = None
                             for item in fetch_data:
                                 if isinstance(item, tuple): 
-                                    raw = item[1]
-                                    break
+                                    raw = item[1]; break
                                     
                             if raw:
                                 msg = email.message_from_bytes(raw)
@@ -262,36 +244,27 @@ class GmailIMAPService:
                                 from_addr = self.decode_mime(msg.get("From", "")).lower()
                                 to_addr = self.decode_mime(msg.get("To", "")).lower()
                                 
-                                # Chỉ lấy nếu người nhận chuẩn xác
-                                if target_email.lower() not in to_addr: 
-                                    continue
+                                if target_email.lower() not in to_addr: continue
                                     
                                 if "instagram" in subject or "instagram" in from_addr:
                                     self.seen_uids.add(uid_bytes) 
                                     body = self.get_text(msg)
                                     match = re.search(r'\b(\d{6})\b', body)
-                                    if match: 
-                                        return match.group(1)
-            except Exception: 
-                pass
-            
-            # Đợi 5 giây rồi tải lại hộp thư
+                                    if match: return match.group(1)
+            except Exception: pass
             time.sleep(5) 
         return None
 
 def generate_dot_variants(gmail):
     local, sep, domain = gmail.rpartition("@")
-    if not sep or domain.lower() != "gmail.com": 
-        return [gmail]
-    if "." in local: 
-        local = local.replace(".", "")
+    if not sep or domain.lower() != "gmail.com": return [gmail]
+    if "." in local: local = local.replace(".", "")
     variants = []
     if local:
         for mask in range(1 << max(0, len(local) - 1)):
             value = local[0]
             for i in range(1, len(local)):
-                if mask & (1 << (i - 1)): 
-                    value += "."
+                if mask & (1 << (i - 1)): value += "."
                 value += local[i]
             variants.append(value + "@" + domain)
     random.shuffle(variants)
@@ -310,42 +283,35 @@ class MailService:
             if r.status_code == 200: 
                 self.domain = r.json()['hydra:member'][0]['domain']
                 return self.domain
-        except Exception: 
-            return None
+        except Exception: return None
             
     def create_account(self, address=None):
-        if not self.domain and not self.get_domain(): 
-            return None
+        if not self.domain and not self.get_domain(): return None
         name = address if address else f"user_{uuid.uuid4().hex[:8]}"
         try:
             r = requests.post(f"{self.base_url}/accounts", json={"address": f"{name}@{self.domain}", "password": "TempPass123!"}, timeout=10)
             if r.status_code == 201: 
                 self.email_address = r.json()['address']
                 return self.email_address
-        except Exception: 
-            return None
+        except Exception: return None
             
     def authenticate(self, email=None, password="TempPass123!"):
-        if email: 
-            self.email_address = email
+        if email: self.email_address = email
         try:
             r = requests.post(f"{self.base_url}/token", json={"address": self.email_address, "password": password}, timeout=10)
             if r.status_code == 200: 
                 self.token = r.json()['token']
                 return True
-        except Exception: 
-            return False
+        except Exception: return False
             
     def get_otp_code(self, timeout=120):
-        if not self.token: 
-            return None
+        if not self.token: return None
         headers = {"Authorization": f"Bearer {self.token}"}
         start_time = time.time()
         last_id = None
         
         while time.time() - start_time < timeout:
-            if STOP_EVENT.is_set(): 
-                return None
+            if STOP_EVENT.is_set(): return None
             try:
                 r = requests.get(f"{self.base_url}/messages", headers=headers, timeout=10)
                 if r.status_code == 200:
@@ -356,10 +322,8 @@ class MailService:
                                 detail = requests.get(f"{self.base_url}/messages/{last_id}", headers=headers, timeout=10).json()
                                 text = detail.get('text', '') or re.sub('<[^<]+?>', '', str(detail.get('html', '')))
                                 match = re.search(r'\b(\d{6})\b', text)
-                                if match: 
-                                    return match.group(1)
-            except Exception: 
-                pass
+                                if match: return match.group(1)
+            except Exception: pass
             time.sleep(5)
         return None
 
@@ -370,11 +334,9 @@ class AppCleaner:
         self.package_name = "mark.via.gp"
 
     def clear_via_data(self):
-        if STOP_EVENT.is_set(): 
-            return False
+        if STOP_EVENT.is_set(): return False
         print(f"{Colors.color_text(f'[{self.serial}] ========== DỌN RÁC VIA BROWSER ==========', Colors.TITLE)}")
         
-        # Mở đa nhiệm và vuốt xóa
         try:
             self.d.press("recent")
             time.sleep(1.5)
@@ -384,60 +346,37 @@ class AppCleaner:
                 time.sleep(0.5)
             self.d.press("home")
             time.sleep(1)
-        except Exception: 
-            pass
+        except Exception: pass
         
-        # Buộc dừng ứng dụng
         self.d.app_stop(self.package_name)
         time.sleep(1.5)
         
-        # Mở cài đặt chi tiết ứng dụng
-        try: 
-            subprocess.run(f"adb -s {self.serial} shell am start -a android.settings.APPLICATION_DETAILS_SETTINGS -d package:{self.package_name}", shell=True, timeout=8)
-        except Exception: 
-            pass
+        try: subprocess.run(f"adb -s {self.serial} shell am start -a android.settings.APPLICATION_DETAILS_SETTINGS -d package:{self.package_name}", shell=True, timeout=8)
+        except Exception: pass
         time.sleep(2.5)
         
-        # Cuộn xuống tìm mục Lưu trữ
         for _ in range(2): 
             self.d.swipe(size[0]*0.5, size[1]*0.8, size[0]*0.5, size[1]*0.3, duration=0.3)
             
-        storage_found = False
         for sel in [{"textMatches": r"(?i).*(storage|dung lượng|bộ nhớ|storage & cache).*"}]:
-            storage_btn = self.d(**sel)
-            if storage_btn.exists(timeout=3): 
-                storage_btn.click()
-                storage_found = True
+            if self.d(**sel).exists(timeout=3): 
+                self.d(**sel).click()
                 break
-        
-        if not storage_found:
-            self.d.click(int(size[0]*0.5), int(size[1]*0.6))
+        else: self.d.click(int(size[0]*0.5), int(size[1]*0.6))
         time.sleep(2)
         
-        # Bấm xóa dữ liệu
-        clear_found = False
         for sel in [{"textMatches": r"(?i).*(clear data|clear storage|xóa dữ liệu|xóa bộ nhớ).*"}]:
-            clear_btn = self.d(**sel)
-            if clear_btn.exists(timeout=3): 
-                clear_btn.click()
-                clear_found = True
+            if self.d(**sel).exists(timeout=3): 
+                self.d(**sel).click()
                 break
-                
-        if not clear_found:
-            self.d.click(int(size[0]*0.5), int(size[1]*0.75))
+        else: self.d.click(int(size[0]*0.5), int(size[1]*0.75))
         time.sleep(1.5)
         
-        # Xác nhận xóa
-        confirm_found = False
         for sel in [{"textMatches": r"(?i)^(ok|yes|delete|xóa|clear|đồng ý|xác nhận)$"}, {"resourceId": "android:id/button1"}]:
-            confirm_btn = self.d(**sel)
-            if confirm_btn.exists(timeout=2): 
-                confirm_btn.click()
-                confirm_found = True
+            if self.d(**sel).exists(timeout=2): 
+                self.d(**sel).click()
                 break
-                
-        if not confirm_found:
-            self.d.press("enter")
+        else: self.d.press("enter")
         time.sleep(1.5)
         
         return True
@@ -459,8 +398,7 @@ def select_devices():
         for line in lines:
             if "\tdevice" in line:
                 devices.append(line.split("\t")[0])
-    except Exception: 
-        devices = []
+    except Exception: devices = []
         
     if not devices:
         print(f"{Colors.color_text('Không tìm thấy thiết bị kết nối PC! Hãy cắm cáp và bật Gỡ lỗi USB.', Colors.ERROR)}")
@@ -475,12 +413,9 @@ def select_devices():
         try:
             choice = input(f"{Colors.KEY}Chọn thiết bị: {Colors.RESET}")
             c = int(choice)
-            if 1 <= c <= len(devices): 
-                return [devices[c-1]]
-            elif c == len(devices) + 1: 
-                return devices
-        except Exception: 
-            pass
+            if 1 <= c <= len(devices): return [devices[c-1]]
+            elif c == len(devices) + 1: return devices
+        except Exception: pass
 
 def select_mode():
     print(f"{Colors.NUMBER}1. {Colors.VALUE}TỰ ĐỘNG HOÀN TOÀN   \033[97m[ Dùng email Mail.tm tự tạo ]{Colors.RESET}")
@@ -510,31 +445,28 @@ class starts(threading.Thread):
         self.app_password = app_password
     
     def run(self):
+        global BASE_YEAR, BASE_MONTH, BASE_DAY
+        
         def create_one_account(serial, account_index):
+            global BASE_YEAR, BASE_MONTH, BASE_DAY
+            
             if STOP_EVENT.is_set(): 
                 return False
                 
             print(f"\n{Colors.color_text('─'*70, Colors.LINE)}")
             print(f"{Colors.color_text(f'[{serial}]  BẮT ĐẦU TẠO TÀI KHOẢN THỨ {account_index}', Colors.TITLE)}")
             
-            used_email = ""
-            imap_service = None
-            mail_service = None
-            
+            used_email, imap_service, mail_service = "", None, None
             full_name, username = VietnameseNameGenerator()
             
-            # Tạo password ngẫu nhiên 12 ký tự
             chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%"
             secure_pass = ""
-            for _ in range(12):
-                secure_pass += random.choice(chars)
+            for _ in range(12): secure_pass += random.choice(chars)
 
-            # --- SETUP EMAIL ---
             if self.mode == "auto":
                 mail_service = MailService()
                 used_email = mail_service.create_account(username)
-                if not used_email: 
-                    return False
+                if not used_email: return False
                 mail_service.authenticate()
                 
             elif self.mode == "manual":
@@ -545,8 +477,7 @@ class starts(threading.Thread):
                 if "mail.tm" in used_email.lower():
                     mail_service = MailService()
                     pass_to_use = self.manual_password
-                    if not pass_to_use:
-                        pass_to_use = "TempPass123!"
+                    if not pass_to_use: pass_to_use = "TempPass123!"
                     mail_service.authenticate(used_email, pass_to_use)
                     
             elif self.mode == "multi_gmail":
@@ -566,62 +497,39 @@ class starts(threading.Thread):
             print(f"{Colors.color_text(f'[{serial}] Đang dùng Email: {used_email}', Colors.INFO)}")
 
             try:
-                # KẾT NỐI ĐIỆN THOẠI
                 d = u2.connect(serial)
-                try: 
-                    d.healthcheck()
-                except Exception: 
-                    pass
+                try: d.healthcheck()
+                except Exception: pass
                 
                 cleaner = AppCleaner(d, serial)
-                if not cleaner.clear_via_data(): 
-                    return False
-                    
-                if STOP_EVENT.is_set(): 
-                    return False
+                if not cleaner.clear_via_data(): return False
+                if STOP_EVENT.is_set(): return False
                 
-                # MỞ VIA BROWSER
                 print(f"{Colors.color_text(f'[{serial}] Đang mở Via Browser...', Colors.INFO)}")
                 d.app_start("mark.via.gp", stop=True)
                 time.sleep(4)
                 
                 btn_agree = d(textMatches=r"(?i)Đồng ý|Agree|Accept")
-                if btn_agree.exists(timeout=2): 
-                    btn_agree.click()
+                if btn_agree.exists(timeout=2): btn_agree.click()
                     
                 btn_skip = d(textMatches=r"(?i)Bỏ qua|Skip")
-                if btn_skip.exists(timeout=2): 
-                    btn_skip.click()
+                if btn_skip.exists(timeout=2): btn_skip.click()
 
-                # BẬT CHẾ ĐỘ DESKTOP
                 print(f"{Colors.color_text(f'[{serial}] Đang bật chế độ Trang máy tính...', Colors.INFO)}")
                 try:
                     size = d.window_size()
-                    
-                    # Bấm menu 3 gạch góc dưới phải
                     d.click(size[0]*0.90, size[1]*0.93)
                     time.sleep(1.5)
-                    
                     desktop_btn = d(textMatches=r"(?i).*Trang máy tính.*|.*Desktop.*")
-                    if desktop_btn.exists(timeout=2): 
-                        desktop_btn.click()
-                    else: 
-                        # Tọa độ dự phòng của nút Desktop
-                        d.click(size[0]*0.5, size[1]*0.80)
-                        
+                    if desktop_btn.exists(timeout=2): desktop_btn.click()
+                    else: d.click(size[0]*0.5, size[1]*0.80)
                     time.sleep(1.5)
-                    # Bấm ra ngoài để đóng menu
                     d.click(size[0]*0.5, size[1]*0.20)
-                except Exception: 
-                    pass
+                except Exception: pass
 
-                # TRUY CẬP TRANG ĐĂNG KÝ
                 print(f"{Colors.color_text(f'[{serial}] Đang truy cập Instagram Web...', Colors.INFO)}")
-                
-                # Bấm vào thanh địa chỉ
                 d.click(size[0]*0.5, size[1]*0.45)
                 time.sleep(1)
-                
                 search_box = d(className="android.widget.EditText")
                 if search_box.exists(timeout=3):
                     search_box.click()
@@ -631,149 +539,158 @@ class starts(threading.Thread):
                     d.send_keys("https://www.instagram.com/accounts/emailsignup/")
                     time.sleep(1.5)
                     d.press("enter")
-                    
                     print(f"{Colors.color_text(f'[{serial}] Đang đợi tải trang web (10s)...', Colors.INFO)}")
                     time.sleep(10)
-                else: 
-                    return False
+                else: return False
 
-                if STOP_EVENT.is_set(): 
-                    return False
+                if STOP_EVENT.is_set(): return False
 
-                # ĐIỀN EMAIL
                 print(f"{Colors.color_text(f'[{serial}] Đang điền form đăng ký...', Colors.INFO)}")
                 time.sleep(3)
                 
                 email_field = d(textMatches=r"(?i).*email.*")
-                if email_field.exists(timeout=2): 
-                    email_field.click()
+                if email_field.exists(timeout=2): email_field.click()
                 else: 
                     edits = d(className="android.widget.EditText")
-                    if edits.exists and edits.count > 0:
-                        edits[0].click()
-                        
+                    if edits.exists and edits.count > 0: edits[0].click()
                 time.sleep(0.5)
                 d.send_keys(used_email)
                 time.sleep(1)
                 d.press("back")
                 time.sleep(1)
 
-                # ĐIỀN PASSWORD
                 pass_field = d(textMatches=r"(?i).*Mật khẩu.*|.*Password.*")
-                if pass_field.exists(timeout=2): 
-                    pass_field.click()
+                if pass_field.exists(timeout=2): pass_field.click()
                 else:
                     edits = d(className="android.widget.EditText")
-                    if edits.exists and edits.count > 1: 
-                        edits[1].click()
-                    elif edits.exists and edits.count > 0: 
-                        edits[0].click()
-                        
+                    if edits.exists and edits.count > 1: edits[1].click()
+                    elif edits.exists and edits.count > 0: edits[0].click()
                 time.sleep(0.5)
                 d.send_keys(secure_pass)
                 time.sleep(1)
                 d.press("back")
                 time.sleep(1.5)
 
-                # CUỘN XUỐNG TÌM NGÀY SINH
                 d.swipe(size[0]*0.5, size[1]*0.7, size[0]*0.5, size[1]*0.4, duration=0.5)
                 time.sleep(1.5)
 
                 # =================================================================================
-                # CHỌN NGÀY THÁNG NĂM SINH (CHUẨN LOGIC)
+                # FIX LOGIC: THUẬT TOÁN TỊNH TIẾN SINH HỌC
                 # =================================================================================
-                print(f"{Colors.color_text(f'[{serial}] Chọn Ngày (2-7), Tháng (2-7), Năm (1990-2007)...', Colors.INFO)}")
+                # 1. Tính toán mốc ngẫu nhiên cho nick này (Sai số +- 3)
+                current_year = BASE_YEAR + random.randint(-3, 3)
+                current_month = BASE_MONTH + random.randint(-3, 3)
+                current_day = BASE_DAY + random.randint(-3, 3)
                 
-                # 1. Chọn Ngày (2 đến 7)
+                # Ép biên độ hợp lệ (1-28 cho Ngày, 1-12 cho Tháng, 1990-2007 cho Năm)
+                if current_day < 1: current_day = 1
+                if current_day > 28: current_day = 28
+                
+                if current_month < 1: current_month = 1
+                if current_month > 12: current_month = 12
+                
+                if current_year < 1990: current_year = 1990
+                if current_year > 2007: current_year = 2007
+                
+                print(f"{Colors.color_text(f'[{serial}] Tịnh tiến Ngày sinh: {current_day}/{current_month}/{current_year}', Colors.INFO)}")
+                
+                # 2. Xử lý CHỌN NGÀY
                 day_btn = d(textMatches=r"(?i)^\s*Ngày\s*$|^\s*Day\s*$")
                 if day_btn.exists(timeout=2):
                     day_btn.click()
-                    time.sleep(1.5)
-                    random_day = str(random.randint(2, 7))
+                    time.sleep(1)
                     
-                    target_day_btn = d(classNameMatches=".*(?:CheckedTextView|TextView|Button).*", text=random_day)
-                    if target_day_btn.exists(timeout=2): 
-                        target_day_btn.click()
-                    else: 
-                        # Dự phòng tọa độ
+                    target_day = str(current_day)
+                    clicked_day = False
+                    # Vuốt nhẹ 2-3 nhịp từ dưới lên trên (y=0.7 lên y=0.3)
+                    for _ in range(3):
+                        if d(text=target_day).exists(): 
+                            d(text=target_day).click()
+                            clicked_day = True
+                            break
+                        d.swipe(size[0]*0.25, size[1]*0.7, size[0]*0.25, size[1]*0.3, duration=0.2)
+                        time.sleep(0.1)
+                        
+                    # Nếu không thấy sau 3 nhịp, bấm đại 1 ngày đang hiển thị để tránh kẹt
+                    if not clicked_day:
                         d.click(size[0]*0.25, size[1]*0.4) 
                     time.sleep(1)
 
-                # 2. Chọn Tháng (2 đến 7)
+                # 3. Xử lý CHỌN THÁNG
                 month_btn = d(textMatches=r"(?i)^\s*Tháng\s*$|^\s*Month\s*$")
                 if month_btn.exists(timeout=2):
                     month_btn.click()
-                    time.sleep(1.5)
-                    random_m = str(random.randint(2, 7))
+                    time.sleep(1)
                     
-                    target_month_text = f"Tháng {random_m}"
-                    target_month_btn1 = d(classNameMatches=".*(?:CheckedTextView|TextView|Button).*", text=target_month_text)
-                    target_month_btn2 = d(classNameMatches=".*(?:CheckedTextView|TextView|Button).*", text=random_m)
+                    target_month = str(current_month)
+                    target_month_text = f"Tháng {current_month}"
+                    clicked_month = False
                     
-                    if target_month_btn1.exists(timeout=2): 
-                        target_month_btn1.click()
-                    elif target_month_btn2.exists(timeout=2): 
-                        target_month_btn2.click()
-                    else: 
-                        # Dự phòng tọa độ
+                    # Vuốt nhẹ 2-3 nhịp
+                    for _ in range(3):
+                        if d(text=target_month_text).exists():
+                            d(text=target_month_text).click()
+                            clicked_month = True
+                            break
+                        elif d(text=target_month).exists():
+                            d(text=target_month).click()
+                            clicked_month = True
+                            break
+                        d.swipe(size[0]*0.50, size[1]*0.7, size[0]*0.50, size[1]*0.3, duration=0.2)
+                        time.sleep(0.1)
+                        
+                    if not clicked_month:
                         d.click(size[0]*0.50, size[1]*0.4)
                     time.sleep(1)
 
-                # 3. Chọn Năm (1990 đến 2007)
+                # 4. Xử lý CHỌN NĂM (1990 - 2007)
                 year_btn = d(textMatches=r"(?i)^\s*Năm\s*$|^\s*Year\s*$")
                 if year_btn.exists(timeout=2):
                     year_btn.click()
-                    time.sleep(1.5)
-                    target_year = str(random.randint(1990, 2007))
+                    time.sleep(1)
+                    
+                    target_year_str = str(current_year)
                     clicked_year = False
                     
-                    # QUAN TRỌNG: Vuốt NGƯỢC LẠI (Từ DƯỚI LÊN TRÊN) để lòi danh sách năm cũ
-                    # Tọa độ kéo: Từ y=0.7 (dưới) kéo lên y=0.3 (trên)
-                    for swipe_count in range(25):
-                        target_year_btn = d(classNameMatches=".*(?:CheckedTextView|TextView|Button).*", text=target_year)
-                        if target_year_btn.exists():
-                            target_year_btn.click()
+                    # Vuốt nhẹ 3 nhịp kéo từ dưới lên trên để cuộn về năm cũ
+                    for _ in range(4):
+                        if d(text=target_year_str).exists():
+                            d(text=target_year_str).click()
                             clicked_year = True
                             break
-                        
-                        # Kéo ngón tay từ dưới lên trên màn hình (để list trượt xuống dưới)
-                        d.swipe(size[0]*0.85, size[1]*0.7, size[0]*0.85, size[1]*0.3, duration=0.3)
-                        time.sleep(0.3)
+                        # Kéo từ tọa độ y=0.7 (dưới) lên y=0.3 (trên)
+                        d.swipe(size[0]*0.85, size[1]*0.7, size[0]*0.85, size[1]*0.3, duration=0.2)
+                        time.sleep(0.2)
                         
                     if not clicked_year:
-                        # Bấm dự phòng nếu kẹt
                         d.click(size[0]*0.85, size[1]*0.5)
                     time.sleep(1)
+                    
+                # CẬP NHẬT LẠI MỐC CHO NICK TIẾP THEO (Giảm dần đi 1 năm)
+                BASE_YEAR -= 1
+                if BASE_YEAR < 1990: 
+                    BASE_YEAR = random.randint(1995, 2005) # Reset nếu lùi quá sâu
                 # =================================================================================
 
-                # Cuộn xuống tiếp để điền Name và Username
                 d.swipe(size[0]*0.5, size[1]*0.7, size[0]*0.5, size[1]*0.5, duration=0.6)
                 time.sleep(1.5)
 
-                # ĐIỀN TÊN
                 name_field = d(textMatches=r"(?i).*Tên đầy đủ.*")
-                if name_field.exists(timeout=2): 
-                    name_field.click()
+                if name_field.exists(timeout=2): name_field.click()
                 else: 
                     edits = d(className="android.widget.EditText")
-                    if edits.exists and edits.count > 1:
-                        edits[-2].click()
-                        
+                    if edits.exists and edits.count > 1: edits[-2].click()
                 time.sleep(0.5)
                 d.send_keys(full_name)
                 time.sleep(1)
                 d.press("back")
                 time.sleep(1.5)
 
-                # ĐIỀN USERNAME
                 user_field = d(textMatches=r"(?i).*Tên người dùng.*")
-                if user_field.exists(timeout=2): 
-                    user_field.click()
+                if user_field.exists(timeout=2): user_field.click()
                 else: 
                     edits = d(className="android.widget.EditText")
-                    if edits.exists and edits.count > 0:
-                        edits[-1].click()
-                        
+                    if edits.exists and edits.count > 0: edits[-1].click()
                 time.sleep(0.5)
                 d.clear_text()
                 time.sleep(0.5)
@@ -781,19 +698,14 @@ class starts(threading.Thread):
                 time.sleep(1)
                 d.press("back")
                 
-                # CHỜ 3 GIÂY ĐỂ CHECK USERNAME
                 print(f"{Colors.color_text(f'[{serial}] Đợi 3s để hệ thống xác nhận username...', Colors.INFO)}")
                 time.sleep(3)
 
-                # LẤY MỐC THỜI GIAN UID CỦA HỘP THƯ
                 uid_moc = 0
                 if self.mode in ["multi_gmail", "dot_trick"] and imap_service:
                     uid_moc = imap_service.get_latest_uid()
 
-                # BẤM NÚT GỬI/ĐĂNG KÝ
                 print(f"{Colors.color_text(f'[{serial}] Bấm Gửi/Đăng ký...', Colors.INFO)}")
-                
-                # Cuộn xuống nhẹ
                 d.swipe(size[0]*0.5, size[1]*0.7, size[0]*0.5, size[1]*0.5, duration=0.5)
                 time.sleep(1)
 
@@ -805,7 +717,6 @@ class starts(threading.Thread):
                     print(f"{Colors.color_text(f'[{serial}] Không thấy nút, click tọa độ dự phòng...', Colors.WARNING)}")
                     d.click(size[0]*0.5, size[1]*0.85)
 
-                # CHỜ TRANG OTP XUẤT HIỆN
                 print(f"{Colors.color_text(f'[{serial}] Đợi 8s load trang xác nhận OTP...', Colors.INFO)}")
                 time.sleep(8) 
                 
@@ -816,10 +727,8 @@ class starts(threading.Thread):
 
                 print(f"{Colors.color_text(f'[{serial}] Đã vào trang OTP thành công. Bắt đầu tìm mã...', Colors.SUCCESS)}")
                 
-                if STOP_EVENT.is_set(): 
-                    return False
+                if STOP_EVENT.is_set(): return False
 
-                # TÌM MÃ OTP TỪ MAIL
                 otp_code = None
                 if self.mode in ["multi_gmail", "dot_trick"]:
                     otp_code = imap_service.get_otp_code(target_email=used_email, since_uid=uid_moc, timeout=120)
@@ -832,40 +741,30 @@ class starts(threading.Thread):
                 
                 print(f"{Colors.color_text(f'[{serial}] Đã bắt được mã OTP: {otp_code}!', Colors.SUCCESS)}")
                 
-                # NGÂM OTP 90 GIÂY
                 print(f"{Colors.color_text(f'[{serial}] Đang ngâm OTP 90s để bypass Bot...', Colors.WARNING)}")
                 for w in range(90, 0, -10):
-                    if STOP_EVENT.is_set(): 
-                        return False
+                    if STOP_EVENT.is_set(): return False
                     print(f"{Colors.color_text(f'[{serial}] Còn {w}s...', Colors.INFO)}")
                     time.sleep(10)
                 
-                if STOP_EVENT.is_set(): 
-                    return False
+                if STOP_EVENT.is_set(): return False
                     
-                # NHẬP OTP
                 print(f"{Colors.color_text(f'[{serial}] Đã ngâm xong, tiến hành nhập OTP...', Colors.SUCCESS)}")
                 if otp_input.exists(timeout=5):
                     otp_input.click()
                     time.sleep(0.5)
                     d.send_keys(otp_code)
                     time.sleep(1.5)
-                    
-                    # Ẩn bàn phím
                     d.click(size[0]*0.1, size[1]*0.3)
                     time.sleep(1.5)
                     
-                    # Bấm Tiếp tục
                     next_btn = d(className="android.widget.Button", textMatches=r"(?i).*Tiếp.*|.*Xác nhận.*")
-                    if next_btn.exists(timeout=3): 
-                        next_btn.click()
-                    else: 
-                        d.click(size[0]*0.5, size[1]*0.5)
+                    if next_btn.exists(timeout=3): next_btn.click()
+                    else: d.click(size[0]*0.5, size[1]*0.5)
                         
                     print(f"{Colors.color_text(f'[{serial}] Đang chờ đúng 30s để load vào nick...', Colors.WARNING)}")
                     time.sleep(30)
                 
-                # LẤY COOKIE TỪ CÀI ĐẶT
                 print(f"{Colors.color_text(f'[{serial}] Đang mở menu để lấy Cookie...', Colors.INFO)}")
                 cookie = ""
                 try:
@@ -883,12 +782,9 @@ class starts(threading.Thread):
                             if "csrftoken=" in content_text: 
                                 cookie = content_text
                                 break
-                                
                         d.click(size[0]*0.5, size[1]*0.1)
-                except Exception: 
-                    pass
+                except Exception: pass
 
-                # TỔNG KẾT TÀI KHOẢN HOÀN TẤT
                 print(f"\n{Colors.color_text('─'*70, Colors.LINE)}")
                 print(f"{Colors.color_text(f'[{serial}] DONE ACC {account_index}!', Colors.SUCCESS)}")
                 print(f"{Colors.KEY}Mail: {Colors.EMAIL}{used_email}{Colors.RESET}")
@@ -900,21 +796,17 @@ class starts(threading.Thread):
                 save_account(serial, used_email, secure_pass, username, full_name, self.mode, cookie)
                 return True
                 
-            except Exception as e: 
-                return False
+            except Exception as e: return False
         
-        # VÒNG LẶP CHÍNH CỦA LUỒNG MỖI THIẾT BỊ
         success_count = 0
         for i in range(1, self.account_count + 1):
             if STOP_EVENT.is_set():
                 print(f"{Colors.color_text(f'[{self.device}] Lệnh dừng được kích hoạt. Đang thoát luồng...', Colors.WARNING)}")
                 break
             
-            # Tạo nick
             if create_one_account(self.device, i):
                 success_count += 1
             
-            # Nếu chưa xong và không bị lệnh dừng thì thực hiện đổi IP
             if i < self.account_count and not STOP_EVENT.is_set():
                 if self.ip_change_freq > 0 and i % self.ip_change_freq == 0: 
                     toggle_airplane_mode(self.device)
@@ -928,16 +820,11 @@ if __name__ == "__main__":
     banner()
     print(f"{Colors.color_text('MẸO: Bạn có thể ấn tổ hợp phím Ctrl + C bất cứ lúc nào để DỪNG TOOL an toàn.', Colors.WARNING)}\n")
     
-    # Load cấu hình
     config_data = load_config()
-    
     mode = select_mode()
     
-    manual_emails = []
-    multi_gmail_list = []
-    manual_password = None
-    base_gmail = None
-    app_password = None
+    manual_emails, multi_gmail_list = [], []
+    manual_password, base_gmail, app_password = None, None, None
 
     if mode == "manual":
         print(f"{Colors.KEY}Nhập list email (cách nhau dấu phẩy) HOẶC đường dẫn file .txt: {Colors.RESET}")
@@ -946,13 +833,11 @@ if __name__ == "__main__":
         if os.path.isfile(email_input):
             with open(email_input, 'r', encoding='utf-8') as f: 
                 for line in f:
-                    if line.strip():
-                        manual_emails.append(line.strip())
+                    if line.strip(): manual_emails.append(line.strip())
         else: 
             raw_emails = email_input.split(",")
             for e in raw_emails:
-                if e.strip():
-                    manual_emails.append(e.strip())
+                if e.strip(): manual_emails.append(e.strip())
             
         is_mail_tm = False
         for e in manual_emails:
@@ -963,8 +848,7 @@ if __name__ == "__main__":
         if is_mail_tm: 
             print(f"{Colors.KEY}Nhập mật khẩu (mail.tm): {Colors.RESET}")
             manual_password = input(">> ").strip()
-            if not manual_password:
-                manual_password = "TempPass123!"
+            if not manual_password: manual_password = "TempPass123!"
 
     elif mode == "multi_gmail":
         print(f"\n{Colors.TITLE}--- CẤU HÌNH NHIỀU GMAIL IMAP ---{Colors.RESET}")
@@ -976,8 +860,7 @@ if __name__ == "__main__":
             print(f"1. Dùng file cũ")
             print(f"2. Nhập file mới")
             choice = input(f"{Colors.KEY}>> {Colors.RESET}").strip()
-            if choice == "1": 
-                file_path = saved_path
+            if choice == "1": file_path = saved_path
                 
         if not file_path:
             print(f"{Colors.KEY}Nhập đường dẫn file txt (Định dạng: email|app_password): {Colors.RESET}")
@@ -989,8 +872,7 @@ if __name__ == "__main__":
             with open(file_path, 'r', encoding='utf-8') as f:
                 for line in f:
                     parts = re.split(r'[|:]', line.strip())
-                    if len(parts) >= 2: 
-                        multi_gmail_list.append((parts[0].strip(), parts[1].strip()))
+                    if len(parts) >= 2: multi_gmail_list.append((parts[0].strip(), parts[1].strip()))
         else: 
             print(f"{Colors.color_text('Lỗi: Không tìm thấy file txt!', Colors.ERROR)}")
             sys.exit()
@@ -1012,7 +894,6 @@ if __name__ == "__main__":
         if not base_gmail:
             print(f"{Colors.KEY}Nhập Gmail gốc (VD: huyvu@gmail.com): {Colors.RESET}")
             base_gmail = input(">> ").strip()
-            
             print(f"{Colors.KEY}Nhập App Password (16 ký tự): {Colors.RESET}")
             app_password = input(">> ").strip()
             
@@ -1028,20 +909,17 @@ if __name__ == "__main__":
             account_count_str = input(">> ").strip()
             account_count = int(account_count_str)
             break
-        except Exception: 
-            pass
+        except Exception: pass
         
     ip_change_freq = 4
     while True:
         try:
             print(f"{Colors.KEY}Sau bao nhiêu acc thành công thì Đổi IP? (Nhập 0 để Tắt) \033[97m[Mặc định: 4]: {Colors.RESET}")
             freq_str = input(">> ").strip()
-            if not freq_str: 
-                break 
+            if not freq_str: break 
             ip_change_freq = int(freq_str)
             break
-        except Exception: 
-            pass
+        except Exception: pass
 
     devices = select_devices()
     
@@ -1052,20 +930,13 @@ if __name__ == "__main__":
                 t = starts(serial, mode, account_count, ip_change_freq, manual_emails, manual_password, multi_gmail_list, base_gmail, app_password)
                 threads.append(t)
                 
-            for t in threads: 
-                t.start()
-                
-            for t in threads: 
-                t.join()
-                
+            for t in threads: t.start()
+            for t in threads: t.join()
             print(f"\n{Colors.color_text('  AUTO HOÀN THÀNH TOÀN BỘ!  ', Colors.SUCCESS)}")
             
         except KeyboardInterrupt:
             print(f"\n\n{Colors.color_text('!!! PHÁT HIỆN LỆNH DỪNG (CTRL+C) - ĐANG HỦY TIẾN TRÌNH !!!', Colors.ERROR)}")
             STOP_EVENT.set() 
-            
-            for t in threads: 
-                t.join() 
-                
+            for t in threads: t.join() 
             print(f"{Colors.color_text('Tool đã dừng an toàn.', Colors.SUCCESS)}")
             sys.exit(0)
