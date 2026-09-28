@@ -70,7 +70,7 @@ def banner():
 {Colors.BANNER4}░▓█ ░██  ▓▓█  ░██░  ░ ▐██▓░    ▒██ █░░ ▓██  ▒██░
 {Colors.BANNER5}░▓█▒░██▓ ▒▒█████▓   ░ ██▒▓░     ▒▀█░   ▓▓█  ░██░
 {Colors.RESET}""")
-    print(f"{Colors.DEVICE_INFO}[</>] {Colors.KEY}ADMIN: {Colors.VALUE}HUY VŨ   {Colors.DEVICE_INFO}Phiên Bản: {Colors.VALUE}v9.2 (Fix Cuộn Đáy Trang OTP){Colors.RESET}")
+    print(f"{Colors.DEVICE_INFO}[</>] {Colors.KEY}ADMIN: {Colors.VALUE}HUY VŨ   {Colors.DEVICE_INFO}Phiên Bản: {Colors.VALUE}v9.4 (Chống Reload Trang OTP){Colors.RESET}")
     print(f"{Colors.LINE}{'─'*70}{Colors.RESET}\n")
 
 def load_config():
@@ -213,7 +213,7 @@ class GmailIMAPService:
             if not self.connect(): return None
                 
         start_time = time.time()
-        print(f"{Colors.color_text(f'[HỆ THỐNG MAIL] Đang chờ mail OTP mới...', Colors.DEBUG)}")
+        print(f"{Colors.color_text(f'[HỆ THỐNG MAIL] Đang chờ mail OTP mới...', Colors.INFO)}")
         
         while time.time() - start_time < timeout:
             if STOP_EVENT.is_set(): return None
@@ -270,7 +270,7 @@ def generate_dot_variants(gmail):
     random.shuffle(variants)
     return variants
 
-# ========== MODULES CŨ ==========
+# ========== MODULES KHÁC ==========
 class MailService:
     def __init__(self):
         self.base_url = "https://api.mail.tm"
@@ -669,14 +669,14 @@ class starts(threading.Thread):
                 time.sleep(8) 
                 
                 # =================================================================================
-                # FIX LOGIC: VUỐT NGƯỢC LÊN ĐỈNH TRANG (KỊCH TRẦN) THAY VÌ VUỐT XUỐNG ĐÁY
+                # FIX LOGIC: VUỐT NGƯỢC TỪ DƯỚI LÊN ĐỂ CHỐNG PULL-TO-REFRESH
                 # =================================================================================
-                print(f"{Colors.color_text(f'[{serial}] Căn chỉnh lại màn hình để tìm ô OTP...', Colors.INFO)}")
-                # Kéo từ trên (y=0.3) xuống dưới (y=0.8) để cuộn trang web lên kịch trần (Top)
-                d.swipe(size[0]*0.5, size[1]*0.3, size[0]*0.5, size[1]*0.8, duration=0.5)
+                print(f"{Colors.color_text(f'[{serial}] Căn chỉnh lại màn hình để tìm ô OTP (Chống Reload)...', Colors.INFO)}")
+                # Kéo từ GIỮA (y=0.6) lên TRÊN (y=0.3) -> Thao tác này cuộn trang xuống một tí để thấy ô OTP
+                # Tuyệt đối không vuốt từ trên xuống để tránh bị Reload lại trang web
+                d.swipe(size[0]*0.5, size[1]*0.6, size[0]*0.5, size[1]*0.3, duration=0.3)
                 time.sleep(1.5)
                 
-                # Sau khi ở đầu trang, tìm ô OTP, gia hạn thêm thời gian chờ
                 otp_input = d(className="android.widget.EditText")
                 if not otp_input.exists(timeout=8):
                     print(f"{Colors.color_text(f'[{serial}] LỖI: Không chuyển được sang trang OTP. Kẹt nút Gửi hoặc Username bị lỗi. Bỏ qua acc!', Colors.ERROR)}")
