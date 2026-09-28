@@ -17,10 +17,8 @@ import json
 STOP_EVENT = threading.Event()
 CONFIG_FILE = "config_gmail.json"
 
-# BIẾN TOÀN CỤC CHO THUẬT TOÁN TỊNH TIẾN NGÀY SINH
-BASE_YEAR = random.randint(1995, 2005) # Lấy mốc ngẫu nhiên ở giữa
-BASE_MONTH = random.randint(4, 9)
-BASE_DAY = random.randint(10, 20)
+# BIẾN TOÀN CỤC CHO THUẬT TOÁN TỊNH TIẾN NĂM SINH
+BASE_YEAR = random.randint(1995, 2005)
 
 # ========== CÀI ĐẶT MÀU RGB TOÀN CỤC ==========
 class Colors:
@@ -71,7 +69,7 @@ def banner():
 {Colors.BANNER4}░▓█ ░██  ▓▓█  ░██░  ░ ▐██▓░    ▒██ █░░ ▓██  ▒██░
 {Colors.BANNER5}░▓█▒░██▓ ▒▒█████▓   ░ ██▒▓░     ▒▀█░   ▓▓█  ░██░
 {Colors.RESET}""")
-    print(f"{Colors.DEVICE_INFO}[</>] {Colors.KEY}ADMIN: {Colors.VALUE}HUY VŨ   {Colors.DEVICE_INFO}Phiên Bản: {Colors.VALUE}v8.7 (Tịnh Tiến Sinh Học +-3){Colors.RESET}")
+    print(f"{Colors.DEVICE_INFO}[</>] {Colors.KEY}ADMIN: {Colors.VALUE}HUY VŨ   {Colors.DEVICE_INFO}Phiên Bản: {Colors.VALUE}v8.8 (Tối Ưu Thao Tác Vuốt Sinh Nhật){Colors.RESET}")
     print(f"{Colors.LINE}{'─'*70}{Colors.RESET}\n")
 
 def load_config():
@@ -445,10 +443,10 @@ class starts(threading.Thread):
         self.app_password = app_password
     
     def run(self):
-        global BASE_YEAR, BASE_MONTH, BASE_DAY
+        global BASE_YEAR
         
         def create_one_account(serial, account_index):
-            global BASE_YEAR, BASE_MONTH, BASE_DAY
+            global BASE_YEAR
             
             if STOP_EVENT.is_set(): 
                 return False
@@ -575,101 +573,68 @@ class starts(threading.Thread):
                 time.sleep(1.5)
 
                 # =================================================================================
-                # FIX LOGIC: THUẬT TOÁN TỊNH TIẾN SINH HỌC
+                # FIX LOGIC: NGÀY/THÁNG (2-7 KHÔNG VUỐT), NĂM TỊNH TIẾN (VUỐT 3 LẦN VỪA PHẢI)
                 # =================================================================================
-                # 1. Tính toán mốc ngẫu nhiên cho nick này (Sai số +- 3)
                 current_year = BASE_YEAR + random.randint(-3, 3)
-                current_month = BASE_MONTH + random.randint(-3, 3)
-                current_day = BASE_DAY + random.randint(-3, 3)
-                
-                # Ép biên độ hợp lệ (1-28 cho Ngày, 1-12 cho Tháng, 1990-2007 cho Năm)
-                if current_day < 1: current_day = 1
-                if current_day > 28: current_day = 28
-                
-                if current_month < 1: current_month = 1
-                if current_month > 12: current_month = 12
-                
                 if current_year < 1990: current_year = 1990
                 if current_year > 2007: current_year = 2007
                 
-                print(f"{Colors.color_text(f'[{serial}] Tịnh tiến Ngày sinh: {current_day}/{current_month}/{current_year}', Colors.INFO)}")
+                current_day = random.randint(2, 7)
+                current_month = random.randint(2, 7)
                 
-                # 2. Xử lý CHỌN NGÀY
+                print(f"{Colors.color_text(f'[{serial}] Chọn Ngày {current_day}, Tháng {current_month}, Năm ~{current_year}', Colors.INFO)}")
+                
+                # 2. Xử lý CHỌN NGÀY (Bấm ăn luôn, không vuốt)
                 day_btn = d(textMatches=r"(?i)^\s*Ngày\s*$|^\s*Day\s*$")
                 if day_btn.exists(timeout=2):
                     day_btn.click()
-                    time.sleep(1)
-                    
+                    time.sleep(1.5)
                     target_day = str(current_day)
-                    clicked_day = False
-                    # Vuốt nhẹ 2-3 nhịp từ dưới lên trên (y=0.7 lên y=0.3)
-                    for _ in range(3):
-                        if d(text=target_day).exists(): 
-                            d(text=target_day).click()
-                            clicked_day = True
-                            break
-                        d.swipe(size[0]*0.25, size[1]*0.7, size[0]*0.25, size[1]*0.3, duration=0.2)
-                        time.sleep(0.1)
-                        
-                    # Nếu không thấy sau 3 nhịp, bấm đại 1 ngày đang hiển thị để tránh kẹt
-                    if not clicked_day:
+                    if d(text=target_day).exists(timeout=2): 
+                        d(text=target_day).click()
+                    else: 
                         d.click(size[0]*0.25, size[1]*0.4) 
                     time.sleep(1)
 
-                # 3. Xử lý CHỌN THÁNG
+                # 3. Xử lý CHỌN THÁNG (Bấm ăn luôn, không vuốt)
                 month_btn = d(textMatches=r"(?i)^\s*Tháng\s*$|^\s*Month\s*$")
                 if month_btn.exists(timeout=2):
                     month_btn.click()
-                    time.sleep(1)
-                    
+                    time.sleep(1.5)
                     target_month = str(current_month)
                     target_month_text = f"Tháng {current_month}"
-                    clicked_month = False
                     
-                    # Vuốt nhẹ 2-3 nhịp
-                    for _ in range(3):
-                        if d(text=target_month_text).exists():
-                            d(text=target_month_text).click()
-                            clicked_month = True
-                            break
-                        elif d(text=target_month).exists():
-                            d(text=target_month).click()
-                            clicked_month = True
-                            break
-                        d.swipe(size[0]*0.50, size[1]*0.7, size[0]*0.50, size[1]*0.3, duration=0.2)
-                        time.sleep(0.1)
-                        
-                    if not clicked_month:
+                    if d(text=target_month_text).exists(timeout=2):
+                        d(text=target_month_text).click()
+                    elif d(text=target_month).exists(timeout=2):
+                        d(text=target_month).click()
+                    else:
                         d.click(size[0]*0.50, size[1]*0.4)
                     time.sleep(1)
 
-                # 4. Xử lý CHỌN NĂM (1990 - 2007)
+                # 4. Xử lý CHỌN NĂM (Vuốt 3 nhịp vừa phải từ dưới lên trên)
                 year_btn = d(textMatches=r"(?i)^\s*Năm\s*$|^\s*Year\s*$")
                 if year_btn.exists(timeout=2):
                     year_btn.click()
-                    time.sleep(1)
+                    time.sleep(1.5)
                     
-                    target_year_str = str(current_year)
-                    clicked_year = False
-                    
-                    # Vuốt nhẹ 3 nhịp kéo từ dưới lên trên để cuộn về năm cũ
-                    for _ in range(4):
-                        if d(text=target_year_str).exists():
-                            d(text=target_year_str).click()
-                            clicked_year = True
-                            break
-                        # Kéo từ tọa độ y=0.7 (dưới) lên y=0.3 (trên)
-                        d.swipe(size[0]*0.85, size[1]*0.7, size[0]*0.85, size[1]*0.3, duration=0.2)
-                        time.sleep(0.2)
+                    print(f"{Colors.color_text(f'[{serial}] Vuốt chậm 3 lần để lấy danh sách năm cũ...', Colors.INFO)}")
+                    for _ in range(3):
+                        # Kéo từ y=0.75 (dưới) lên y=0.25 (trên) với tốc độ vừa phải (duration=0.8)
+                        d.swipe(size[0]*0.85, size[1]*0.75, size[0]*0.85, size[1]*0.25, duration=0.8)
+                        time.sleep(0.4)
                         
-                    if not clicked_year:
+                    target_year_str = str(current_year)
+                    if d(text=target_year_str).exists(timeout=2):
+                        d(text=target_year_str).click()
+                    else:
                         d.click(size[0]*0.85, size[1]*0.5)
                     time.sleep(1)
                     
                 # CẬP NHẬT LẠI MỐC CHO NICK TIẾP THEO (Giảm dần đi 1 năm)
                 BASE_YEAR -= 1
                 if BASE_YEAR < 1990: 
-                    BASE_YEAR = random.randint(1995, 2005) # Reset nếu lùi quá sâu
+                    BASE_YEAR = random.randint(1995, 2005)
                 # =================================================================================
 
                 d.swipe(size[0]*0.5, size[1]*0.7, size[0]*0.5, size[1]*0.5, duration=0.6)
@@ -751,12 +716,8 @@ class starts(threading.Thread):
                     
                 print(f"{Colors.color_text(f'[{serial}] Đã ngâm xong, tiến hành nhập OTP...', Colors.SUCCESS)}")
                 if otp_input.exists(timeout=5):
-                    otp_input.click()
-                    time.sleep(0.5)
-                    d.send_keys(otp_code)
-                    time.sleep(1.5)
-                    d.click(size[0]*0.1, size[1]*0.3)
-                    time.sleep(1.5)
+                    otp_input.click(); time.sleep(0.5); d.send_keys(otp_code); time.sleep(1.5)
+                    d.click(size[0]*0.1, size[1]*0.3); time.sleep(1.5)
                     
                     next_btn = d(className="android.widget.Button", textMatches=r"(?i).*Tiếp.*|.*Xác nhận.*")
                     if next_btn.exists(timeout=3): next_btn.click()
@@ -768,8 +729,7 @@ class starts(threading.Thread):
                 print(f"{Colors.color_text(f'[{serial}] Đang mở menu để lấy Cookie...', Colors.INFO)}")
                 cookie = ""
                 try:
-                    d.click(size[0]*0.1, size[1]*0.08)
-                    time.sleep(2)
+                    d.click(size[0]*0.1, size[1]*0.08); time.sleep(2)
                     
                     cookie_btn = d(textMatches=r"(?i).*Xem cookie.*")
                     if cookie_btn.exists(timeout=3):
