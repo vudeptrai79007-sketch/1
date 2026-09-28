@@ -70,7 +70,7 @@ def banner():
 {Colors.BANNER4}░▓█ ░██  ▓▓█  ░██░  ░ ▐██▓░    ▒██ █░░ ▓██  ▒██░
 {Colors.BANNER5}░▓█▒░██▓ ▒▒█████▓   ░ ██▒▓░     ▒▀█░   ▓▓█  ░██░
 {Colors.RESET}""")
-    print(f"{Colors.DEVICE_INFO}[</>] {Colors.KEY}ADMIN: {Colors.VALUE}HUY VŨ   {Colors.DEVICE_INFO}Phiên Bản: {Colors.VALUE}v9.4 (Chống Reload Trang OTP){Colors.RESET}")
+    print(f"{Colors.DEVICE_INFO}[</>] {Colors.KEY}ADMIN: {Colors.VALUE}HUY VŨ   {Colors.DEVICE_INFO}Phiên Bản: {Colors.VALUE}v9.6 (Fix Thời Gian Ngâm OTP 15s-25s){Colors.RESET}")
     print(f"{Colors.LINE}{'─'*70}{Colors.RESET}\n")
 
 def load_config():
@@ -668,23 +668,27 @@ class starts(threading.Thread):
                 print(f"{Colors.color_text(f'[{serial}] Đợi 8s load trang xác nhận OTP...', Colors.INFO)}")
                 time.sleep(8) 
                 
-                # =================================================================================
-                # FIX LOGIC: VUỐT NGƯỢC TỪ DƯỚI LÊN ĐỂ CHỐNG PULL-TO-REFRESH
-                # =================================================================================
-                print(f"{Colors.color_text(f'[{serial}] Căn chỉnh lại màn hình để tìm ô OTP (Chống Reload)...', Colors.INFO)}")
-                # Kéo từ GIỮA (y=0.6) lên TRÊN (y=0.3) -> Thao tác này cuộn trang xuống một tí để thấy ô OTP
-                # Tuyệt đối không vuốt từ trên xuống để tránh bị Reload lại trang web
-                d.swipe(size[0]*0.5, size[1]*0.6, size[0]*0.5, size[1]*0.3, duration=0.3)
-                time.sleep(1.5)
+                otp_input = None
+                found_otp = False
                 
-                otp_input = d(className="android.widget.EditText")
-                if not otp_input.exists(timeout=8):
+                print(f"{Colors.color_text(f'[{serial}] Quét tìm ô nhập OTP...', Colors.INFO)}")
+                for search_attempt in range(4):
+                    otp_input = d(className="android.widget.EditText")
+                    if otp_input.exists(timeout=3):
+                        found_otp = True
+                        break
+                    
+                    print(f"{Colors.color_text(f'[{serial}] Chưa thấy ô OTP, đang vuốt cuộn màn hình lần {search_attempt + 1}...', Colors.WARNING)}")
+                    # Vuốt kéo trang web LÊN ĐỈNH an toàn (không giật)
+                    d.swipe(size[0]*0.5, size[1]*0.45, size[0]*0.5, size[1]*0.85, duration=0.4)
+                    time.sleep(1.5)
+                
+                if not found_otp:
                     print(f"{Colors.color_text(f'[{serial}] LỖI: Không chuyển được sang trang OTP. Kẹt nút Gửi hoặc Username bị lỗi. Bỏ qua acc!', Colors.ERROR)}")
                     return False
 
                 print(f"{Colors.color_text(f'[{serial}] Đã vào trang OTP thành công. Bắt đầu tìm mã...', Colors.SUCCESS)}")
                 if STOP_EVENT.is_set(): return False
-                # =================================================================================
 
                 otp_code = None
                 try:
@@ -701,11 +705,16 @@ class starts(threading.Thread):
                 
                 print(f"{Colors.color_text(f'[{serial}] Đã bắt được mã OTP: {otp_code}!', Colors.SUCCESS)}")
                 
-                print(f"{Colors.color_text(f'[{serial}] Đang ngâm OTP 90s để bypass Bot...', Colors.WARNING)}")
-                for w in range(90, 0, -10):
+                # =================================================================================
+                # FIX LOGIC: GIẢM THỜI GIAN NGÂM XUỐNG 15-25 GIÂY CHỐNG MÃ BỊ HẾT HẠN
+                # =================================================================================
+                soak_time = random.randint(15, 25)
+                print(f"{Colors.color_text(f'[{serial}] Đang ngâm OTP {soak_time}s (Mô phỏng người thật đọc mail)...', Colors.WARNING)}")
+                for w in range(soak_time, 0, -5):
                     if STOP_EVENT.is_set(): return False
                     print(f"{Colors.color_text(f'[{serial}] Còn {w}s...', Colors.INFO)}")
-                    time.sleep(10)
+                    time.sleep(5)
+                # =================================================================================
                 
                 if STOP_EVENT.is_set(): return False
                     
