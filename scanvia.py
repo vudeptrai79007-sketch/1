@@ -141,7 +141,7 @@ class MailManager:
             log(f"[!] Lỗi Graph API: {e}", Colors.ERROR)
         return None
 
-# ========== BỘ TẠO DATA & PHÂN TÍCH ĐỊNH DẠNG MAIL TẠP NHAM ==========
+# ========== BỘ TẠO DATA & ĐỌC FILE (ĐÃ FIX LỖI TỰ TẠO FILE TRỐNG) ==========
 def generate_random_info(email_address):
     password = f"Vip{random.randint(1000, 9999)}@!{random.choice(string.ascii_uppercase)}"
     ho = ["Nguyen", "Tran", "Le", "Pham", "Hoang", "Huynh", "Phan", "Vu", "Vo", "Dang"]
@@ -153,8 +153,8 @@ def generate_random_info(email_address):
 
 def load_emails(file_path):
     accounts = []
+    # ĐÃ FIX: Không tự động open(..., "w") nữa. Nếu file không tồn tại, trả về mảng rỗng để tool còi báo động.
     if not os.path.exists(file_path):
-        open(file_path, "w", encoding="utf-8").close() 
         return accounts
         
     with open(file_path, "r", encoding="utf-8") as f:
@@ -198,31 +198,6 @@ def start_isolated_chrome(account_username, proxy_string=None):
     driver = uc.Chrome(options=options)
     return driver
 
-def handle_birthday(driver, wait):
-    log("[*] Đang giải quyết form Ngày Sinh...", Colors.INFO)
-    try:
-        month_box = wait.until(EC.presence_of_element_located((By.XPATH, "//select[@title='Tháng' or @title='Month']")))
-        Select(month_box).select_by_value(str(random.randint(1, 12)))
-        time.sleep(1)
-        
-        day_box = driver.find_element(By.XPATH, "//select[@title='Ngày' or @title='Day']")
-        Select(day_box).select_by_value(str(random.randint(1, 28)))
-        time.sleep(1)
-        
-        year_box = driver.find_element(By.XPATH, "//select[@title='Năm' or @title='Year']")
-        Select(year_box).select_by_value(str(random.randint(1995, 2002)))
-        time.sleep(1.5)
-        
-        next_btn = driver.find_element(By.XPATH, "//button[contains(text(), 'Tiếp') or contains(text(), 'Next')]")
-        next_btn.click()
-        
-        log("[*] Đã qua ải Ngày Sinh! Chờ form OTP...", Colors.SUCCESS)
-        time.sleep(8) 
-        return True
-    except Exception as e:
-        log(f"[!] Lỗi form Ngày Sinh (Hoặc không yêu cầu): {e}", Colors.WARNING)
-        return False
-
 def handle_email_otp(driver, wait, mail_mode, acc_data):
     log(f"[*] Đang thực thi lấy mã OTP (Chế độ {mail_mode})...", Colors.INFO)
     try:
@@ -236,30 +211,23 @@ def handle_email_otp(driver, wait, mail_mode, acc_data):
         
         if mail_mode == '1': 
             otp_code = MailManager.get_mail_tm_otp(email_address, email_password if email_password else "TempPass123!@")
-            
         elif mail_mode == '2': 
-            if not email_password:
-                log("[!] Lỗi: Bạn chọn Gmail IMAP nhưng file không có Mật khẩu ứng dụng!", Colors.ERROR)
-            else:
-                otp_code = MailManager.get_imap_otp(email_address, email_password, "imap.gmail.com")
-                
+            if not email_password: log("[!] Lỗi: Bạn chọn Gmail IMAP nhưng file không có Mật khẩu ứng dụng!", Colors.ERROR)
+            else: otp_code = MailManager.get_imap_otp(email_address, email_password, "imap.gmail.com")
         elif mail_mode == '3': 
             if refresh_token and client_id:
                 log("[*] Phát hiện Token OAuth2. Kích hoạt Graph API...", Colors.INFO)
                 otp_code = MailManager.get_graph_api_otp(refresh_token, client_id)
             elif email_password:
                 otp_code = MailManager.get_imap_otp(email_address, email_password, "outlook.office365.com")
-            else:
-                log("[!] Lỗi: Acc Outlook không có Token cũng không có Pass!", Colors.ERROR)
-                
+            else: log("[!] Lỗi: Acc Outlook không có Token cũng không có Pass!", Colors.ERROR)
         elif mail_mode == '4': 
             print(f"\n{Colors.SUCCESS}{'='*50}")
             print(f">>> YÊU CẦU NHẬP MÃ THỦ CÔNG <<<")
             print(f"Mail đang đợi mã: {Colors.WARNING}{email_address}{Colors.SUCCESS}")
             print(f"{'='*50}{Colors.RESET}")
             user_input = input(f"{Colors.INFO}Nhập mã 6 số (Hoặc Enter để bỏ qua): {Colors.RESET}").strip()
-            if user_input and len(user_input) >= 6:
-                otp_code = user_input
+            if user_input and len(user_input) >= 6: otp_code = user_input
 
         if otp_code:
             log(f"[*] Đã húp được mã OTP: {otp_code}. Đang nạp đạn...", Colors.SUCCESS)
@@ -275,15 +243,15 @@ def handle_email_otp(driver, wait, mail_mode, acc_data):
         log(f"[!] Lỗi kẹt ở form nhập OTP: {e}", Colors.ERROR)
         return False
 
-# ========== LUỒNG ĐĂNG KÝ CHÍNH (JS + MANUAL FALLBACK) ==========
+# ========== LUỒNG ĐĂNG KÝ CHÍNH (JS + NGÀY SINH + MANUAL FALLBACK) ==========
 def register_instagram(driver, full_name, username, password, mail_mode, acc_data):
-    wait = WebDriverWait(driver, 10)
+    wait = WebDriverWait(driver, 15)
     try:
         log("[*] Đang đâm vào trang Đăng ký...", Colors.INFO)
         driver.get("https://www.instagram.com/accounts/emailsignup/")
         time.sleep(6) 
         
-        # 1. Dùng Javascript dọn dẹp các Popup rác che màn hình
+        # 1. Dùng Javascript dọn dẹp Popup Cookie
         try:
             driver.execute_script("""
                 var btns = document.querySelectorAll('button');
@@ -295,40 +263,57 @@ def register_instagram(driver, full_name, username, password, mail_mode, acc_dat
             """)
         except: pass
 
-        log("[*] Đang dùng JAVASCRIPT để ép nhập Form...", Colors.WARNING)
+        log("[*] Đang dùng JAVASCRIPT & WAIT để ép nhập Form...", Colors.WARNING)
         try:
-            # Dùng CSS Selector kết hợp JS Click để xuyên thủng lớp bảo vệ của IG
-            email_input = driver.find_element(By.CSS_SELECTOR, "input[name='emailOrPhone']")
-            driver.execute_script("arguments[0].focus();", email_input)
+            # --- ĐIỀN 4 THÔNG TIN CƠ BẢN ---
+            email_input = wait.until(EC.presence_of_element_located((By.NAME, "emailOrPhone")))
+            driver.execute_script("arguments[0].focus(); arguments[0].click();", email_input)
+            time.sleep(0.5)
             type_like_human(email_input, acc_data['email'])
-            time.sleep(1)
             
-            name_input = driver.find_element(By.CSS_SELECTOR, "input[name='fullName']")
-            driver.execute_script("arguments[0].focus();", name_input)
+            name_input = wait.until(EC.presence_of_element_located((By.NAME, "fullName")))
+            driver.execute_script("arguments[0].focus(); arguments[0].click();", name_input)
+            time.sleep(0.5)
             type_like_human(name_input, full_name)
-            time.sleep(1)
             
-            user_input = driver.find_element(By.CSS_SELECTOR, "input[name='username']")
-            driver.execute_script("arguments[0].focus();", user_input)
+            user_input = wait.until(EC.presence_of_element_located((By.NAME, "username")))
+            driver.execute_script("arguments[0].focus(); arguments[0].click();", user_input)
+            time.sleep(0.5)
             type_like_human(user_input, username)
-            time.sleep(3) 
+            time.sleep(2) 
             
-            pass_input = driver.find_element(By.CSS_SELECTOR, "input[name='password']")
-            driver.execute_script("arguments[0].focus();", pass_input)
+            pass_input = wait.until(EC.presence_of_element_located((By.NAME, "password")))
+            driver.execute_script("arguments[0].focus(); arguments[0].click();", pass_input)
+            time.sleep(0.5)
             type_like_human(pass_input, password)
             time.sleep(1.5)
 
-            log("[*] Đã điền xong! Đang dùng Javascript bắn nút Gửi...", Colors.INFO)
-            submit_btn = driver.find_element(By.XPATH, "//button[@type='submit']")
+            # --- TÍCH HỢP XỬ LÝ NGÀY SINH NGAY TẠI TRANG ---
+            log("[*] Đang xử lý form Ngày Sinh bằng JS...", Colors.INFO)
+            try:
+                month_box = wait.until(EC.presence_of_element_located((By.XPATH, "//select[@title='Tháng' or @title='Month']")))
+                Select(month_box).select_by_value(str(random.randint(1, 12)))
+                time.sleep(0.5)
+                
+                day_box = driver.find_element(By.XPATH, "//select[@title='Ngày' or @title='Day']")
+                Select(day_box).select_by_value(str(random.randint(1, 28)))
+                time.sleep(0.5)
+                
+                year_box = driver.find_element(By.XPATH, "//select[@title='Năm' or @title='Year']")
+                Select(year_box).select_by_value(str(random.randint(1995, 2002)))
+                time.sleep(1.5)
+            except Exception:
+                log("[!] Lỗi chọn Ngày Sinh (Có thể do mạng lag), cứ tiếp tục ép nút Gửi...", Colors.WARNING)
+
+            # --- DÙNG JS ÉP BẤM NÚT GỬI ---
+            log("[*] Đã điền xong tất cả! Đang dùng Javascript bắn nút Gửi...", Colors.INFO)
+            submit_btn = wait.until(EC.presence_of_element_located((By.XPATH, "//button[@type='submit']")))
             driver.execute_script("arguments[0].click();", submit_btn) 
             time.sleep(8) 
             
-            # Nếu tự động điền form qua được, thì tự động làm luôn ngày sinh
-            handle_birthday(driver, wait)
-            
         except Exception as e:
-            # 2. CHẾ ĐỘ MANUAL (AUTO BẰNG TAY) - Kích hoạt khi thuật toán JS vẫn bị IG chặn
-            log(f"[!] Tool không thể ép gõ form. KÍCH HOẠT CHẾ ĐỘ AUTO BẰNG TAY!", Colors.ERROR)
+            # 2. CHẾ ĐỘ MANUAL (AUTO BẰNG TAY) - Kích hoạt khi bị block
+            log(f"[!] Tool không thể tự gõ (Lỗi: {e}). KÍCH HOẠT CHẾ ĐỘ AUTO BẰNG TAY!", Colors.ERROR)
             print(f"\n{Colors.SUCCESS}{'='*50}")
             print(f">>> SẾP HÃY TỰ ĐIỀN FORM TRÊN TRÌNH DUYỆT <<<")
             print(f"1. Mail: {Colors.WARNING}{acc_data['email']}{Colors.SUCCESS}")
@@ -339,10 +324,9 @@ def register_instagram(driver, full_name, username, password, mail_mode, acc_dat
             print(f"6. {Colors.ERROR}DỪNG LẠI{Colors.SUCCESS} khi IG hiện ra bảng [Nhập mã xác nhận 6 số]")
             print(f"{'='*50}{Colors.RESET}")
             
-            # Còi báo động bắt sếp thao tác
             input(f"{Colors.WARNING}Sếp làm đến bước hỏi OTP chưa? Bấm ENTER ở đây để Tool cào mã nhét vào:{Colors.RESET} ")
         
-        # 3. Chốt chặn cuối cùng: Cào mã OTP (Cho dù tự động hay sếp đã điền tay ở trên)
+        # 3. CHỐT CHẶN CUỐI: Cào mã OTP 
         is_otp_success = handle_email_otp(driver, wait, mail_mode, acc_data)
         
         if is_otp_success:
@@ -352,17 +336,17 @@ def register_instagram(driver, full_name, username, password, mail_mode, acc_dat
         return False
         
     except Exception as e:
-        log(f"[!] Đăng ký thất bại (Dính Checkpoint/Block): {e}", Colors.ERROR)
+        log(f"[!] Đăng ký thất bại (Dính Checkpoint/Block IP): {e}", Colors.ERROR)
         return False
 
-# ========== MENU KHỞI CHẠY (TÍCH HỢP TRẠM CHỜ NẠP ĐẠN KÉO THẢ) ==========
+# ========== MENU KHỞI CHẠY CHÍNH ==========
 if __name__ == "__main__":
     os.system('cls' if os.name == 'nt' else 'clear')
     print(f"{Colors.SUCCESS}{'='*50}")
-    print("      TOOL AUTO REG INSTAGRAM (BẢN FINAL FULL AUTO + JS)")
+    print("      TOOL AUTO REG INSTAGRAM (BẢN FINAL V5 - HOÀN THIỆN)")
     print(f"{'='*50}{Colors.RESET}")
     print(f"{Colors.WARNING}Ghi chú định dạng file:")
-    print("- Outlook Token mua ngoài: Mail | Pass | Token | ClientID | Recovery")
+    print("- Outlook Token: Mail | Pass | Token | ClientID | Recovery")
     print(f"- Các loại Mail khác: Mail | Pass_App (Nếu cần){Colors.RESET}\n")
     
     print("1. Chế độ Mail.tm")
@@ -374,28 +358,22 @@ if __name__ == "__main__":
     while mail_mode not in ['1', '2', '3', '4']:
         mail_mode = input(f"\n{Colors.INFO}Sếp chọn chế độ nào (1/2/3/4): {Colors.RESET}").strip()
     
-    # --- VÒNG LẶP CHỜ NẠP DATA (KÉO THẢ FILE) ---
+    # --- VÒNG LẶP HỎI FILE LIÊN TỤC ĐẾN KHI CÓ DATA THÌ THÔI ---
     account_list = []
-    target_file = "EMAILS.txt"
     
     while not account_list:
+        target_file = input(f"\n{Colors.SUCCESS}Mời sếp kéo thả file TXT chứa list Mail vào đây rồi bấm ENTER: {Colors.RESET}").strip().strip('"').strip("'")
+        
+        # Nếu sếp lỡ tay bấm Enter luôn mà không điền gì thì báo lỗi bắt điền lại
+        if not target_file:
+            print(f"{Colors.ERROR}[!] Sếp chưa kéo file vào kìa! Vui lòng làm lại.{Colors.RESET}")
+            continue
+            
         account_list = load_emails(target_file)
         if not account_list:
-            print(f"\n{Colors.ERROR}[!] LỖI: File '{target_file}' đang trống hoặc chưa có mail!{Colors.RESET}")
-            print(f"{Colors.INFO}Sếp có 2 cách để tiếp tục:{Colors.RESET}")
-            print(f"  Cách 1: Mở file {Colors.WARNING}EMAILS.txt{Colors.RESET}, dán list mail vào, Save lại rồi ra đây {Colors.SUCCESS}Bấm ENTER{Colors.RESET}.")
-            print(f"  Cách 2: Cầm file TXT chứa mail của sếp {Colors.WARNING}Kéo thả thẳng vào cửa sổ CMD này{Colors.RESET} rồi Bấm ENTER.")
+            print(f"{Colors.ERROR}[!] LỖI: Đường dẫn không đúng hoặc file '{target_file}' đang trống. Sếp kiểm tra lại nhé!{Colors.RESET}")
             
-            user_input = input(f"\n{Colors.SUCCESS}Mời sếp thao tác (Bấm Enter hoặc Kéo thả file): {Colors.RESET}").strip().strip('"').strip("'")
-            
-            if user_input:
-                if os.path.exists(user_input):
-                    target_file = user_input
-                else:
-                    print(f"{Colors.ERROR}Đường dẫn file không tồn tại, sếp thử lại nhé!{Colors.RESET}")
-            else:
-                target_file = "EMAILS.txt"
-    # ---------------------------------------------
+    # -------------------------------------------------------------
         
     print(f"{Colors.SUCCESS}\nĐã nạp thành công {len(account_list)} data! Bắt đầu lên trại...{Colors.RESET}")
     
