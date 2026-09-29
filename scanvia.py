@@ -104,9 +104,7 @@ class MailManager:
 
     @staticmethod
     def get_graph_api_otp(refresh_token, client_id, timeout=60):
-        """Hàm siêu cấp lấy OTP trực tiếp qua máy chủ Graph API của Microsoft bằng Token"""
         try:
-            # 1. Đổi Refresh Token lấy Access Token
             token_url = "https://login.microsoftonline.com/common/oauth2/v2.0/token"
             data = {
                 "client_id": client_id,
@@ -115,7 +113,6 @@ class MailManager:
             }
             r = requests.post(token_url, data=data)
             
-            # Fallback nếu link 1 lỗi
             if r.status_code != 200:
                 token_url = "https://login.live.com/oauth20_token.srf"
                 r = requests.post(token_url, data=data)
@@ -125,7 +122,6 @@ class MailManager:
                 log("[!] Token hết hạn hoặc Client ID sai!", Colors.ERROR)
                 return None
 
-            # 2. Dùng Access Token chui thẳng vào hòm thư
             headers = {"Authorization": f"Bearer {access_token}"}
             msg_url = "https://graph.microsoft.com/v1.0/me/mailFolders/inbox/messages?$top=5&$select=subject,bodyPreview&$orderby=receivedDateTime desc"
 
@@ -157,10 +153,9 @@ def generate_random_info(email_address):
 
 def load_emails(file_path="EMAILS.txt"):
     accounts = []
+    # Khắc phục lỗi: Tạo file trống hoàn toàn nếu chưa có
     if not os.path.exists(file_path):
-        with open(file_path, "w", encoding="utf-8") as f:
-            f.write("test1@mail.tm\ntest2@gmail.com|pass_app_gmail\n")
-        log(f"[!] Không tìm thấy file {file_path}. Đã tự tạo file mẫu!", Colors.WARNING)
+        open(file_path, "w", encoding="utf-8").close() 
         return accounts
         
     with open(file_path, "r", encoding="utf-8") as f:
@@ -168,7 +163,6 @@ def load_emails(file_path="EMAILS.txt"):
             raw = line.strip()
             if raw and "@" in raw:
                 parts = raw.split("|")
-                # Bóc tách thông minh dựa trên độ dài của mảng
                 email_acc = parts[0].strip()
                 email_pass = parts[1].strip() if len(parts) > 1 else ""
                 refresh_token = parts[2].strip() if len(parts) > 2 else ""
@@ -241,16 +235,16 @@ def handle_email_otp(driver, wait, mail_mode, acc_data):
         refresh_token = acc_data['token']
         client_id = acc_data['client_id']
         
-        if mail_mode == '1': # Mail.tm
+        if mail_mode == '1': 
             otp_code = MailManager.get_mail_tm_otp(email_address, email_password if email_password else "TempPass123!@")
             
-        elif mail_mode == '2': # Gmail IMAP
+        elif mail_mode == '2': 
             if not email_password:
                 log("[!] Lỗi: Bạn chọn Gmail IMAP nhưng file không có Mật khẩu ứng dụng!", Colors.ERROR)
             else:
                 otp_code = MailManager.get_imap_otp(email_address, email_password, "imap.gmail.com")
                 
-        elif mail_mode == '3': # Hotmail / Outlook (OAuth2 / Graph API)
+        elif mail_mode == '3': 
             if refresh_token and client_id:
                 log("[*] Phát hiện Token OAuth2. Kích hoạt truy xuất Graph API tốc độ cao...", Colors.INFO)
                 otp_code = MailManager.get_graph_api_otp(refresh_token, client_id)
@@ -260,7 +254,7 @@ def handle_email_otp(driver, wait, mail_mode, acc_data):
             else:
                 log("[!] Lỗi: Acc Outlook không có Token cũng không có Pass!", Colors.ERROR)
                 
-        elif mail_mode == '4': # Manual / Nhập tay
+        elif mail_mode == '4': 
             print(f"\n{Colors.SUCCESS}{'='*50}")
             print(f">>> YÊU CẦU NHẬP MÃ THỦ CÔNG <<<")
             print(f"Mail đang đợi mã: {Colors.WARNING}{email_address}{Colors.SUCCESS}")
@@ -330,13 +324,13 @@ def register_instagram(driver, full_name, username, password, mail_mode, acc_dat
         log(f"[!] Đăng ký thất bại (Dính Checkpoint/Block): {e}", Colors.ERROR)
         return False
 
-# ========== MENU KHỞI CHẠY (CHUẨN V10.7 API TÍCH HỢP) ==========
+# ========== MENU KHỞI CHẠY (TÍCH HỢP TRẠM CHỜ NẠP ĐẠN) ==========
 if __name__ == "__main__":
     os.system('cls' if os.name == 'nt' else 'clear')
     print(f"{Colors.SUCCESS}{'='*50}")
-    print("      TOOL AUTO REG INSTAGRAM (HỖ TRỢ GRAPH API OUTLOOK)")
+    print("      TOOL AUTO REG INSTAGRAM (BẢN FINAL FULL AUTO)")
     print(f"{'='*50}{Colors.RESET}")
-    print(f"{Colors.WARNING}Ghi chú định dạng file EMAILS.txt:")
+    print(f"{Colors.WARNING}Ghi chú định dạng file:")
     print("- Outlook Token mua ngoài: Mail | Pass | Token | ClientID | Recovery")
     print(f"- Các loại Mail khác: Mail | Pass_App (Nếu cần){Colors.RESET}\n")
     
@@ -349,10 +343,28 @@ if __name__ == "__main__":
     while mail_mode not in ['1', '2', '3', '4']:
         mail_mode = input(f"\n{Colors.INFO}Sếp chọn chế độ nào (1/2/3/4): {Colors.RESET}").strip()
     
-    account_list = load_emails("EMAILS.txt")
-    if not account_list:
-        print(f"{Colors.ERROR}Lỗi: File EMAILS.txt đang trống!{Colors.RESET}")
-        exit()
+    # --- VÒNG LẶP CHỜ NẠP DATA (CHUẨN V10.7) ---
+    account_list = []
+    target_file = "EMAILS.txt"
+    
+    while not account_list:
+        account_list = load_emails(target_file)
+        if not account_list:
+            print(f"\n{Colors.ERROR}[!] LỖI: File '{target_file}' đang trống hoặc chưa có mail!{Colors.RESET}")
+            print(f"{Colors.INFO}Sếp có 2 cách để tiếp tục:{Colors.RESET}")
+            print(f"  Cách 1: Mở file {Colors.WARNING}EMAILS.txt{Colors.RESET}, dán list mail vào, Save lại rồi ra đây {Colors.SUCCESS}Bấm ENTER{Colors.RESET}.")
+            print(f"  Cách 2: Cầm file TXT chứa mail của sếp {Colors.WARNING}Kéo thả thẳng vào cửa sổ CMD này{Colors.RESET} rồi Bấm ENTER.")
+            
+            user_input = input(f"\n{Colors.SUCCESS}Mời sếp thao tác (Bấm Enter hoặc Kéo thả file): {Colors.RESET}").strip().strip('"').strip("'")
+            
+            if user_input:
+                if os.path.exists(user_input):
+                    target_file = user_input
+                else:
+                    print(f"{Colors.ERROR}Đường dẫn file không tồn tại, sếp thử lại nhé!{Colors.RESET}")
+            else:
+                target_file = "EMAILS.txt"
+    # ---------------------------------------------
         
     print(f"{Colors.SUCCESS}\nĐã nạp thành công {len(account_list)} data! Bắt đầu lên trại...{Colors.RESET}")
     
