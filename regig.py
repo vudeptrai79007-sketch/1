@@ -71,7 +71,7 @@ def banner():
 {Colors.BANNER4}░▓█ ░██  ▓▓█  ░██░  ░ ▐██▓░    ▒██ █░░ ▓██  ▒██░
 {Colors.BANNER5}░▓█▒░██▓ ▒▒█████▓   ░ ██▒▓░     ▒▀█░   ▓▓█  ░██░
 {Colors.RESET}""")
-    print(f"{Colors.DEVICE_INFO}[</>] {Colors.KEY}ADMIN: {Colors.VALUE}HUY VŨ   {Colors.DEVICE_INFO}Phiên Bản: {Colors.VALUE}v10.4 (Đại Phục Hồi Full 100% Tính Năng){Colors.RESET}")
+    print(f"{Colors.DEVICE_INFO}[</>] {Colors.KEY}ADMIN: {Colors.VALUE}HUY VŨ   {Colors.DEVICE_INFO}Phiên Bản: {Colors.VALUE}v10.5 (Fix Lỗi Trôi Tụt JS DatePicker){Colors.RESET}")
     print(f"{Colors.LINE}{'─'*70}{Colors.RESET}\n")
 
 def load_config():
@@ -142,20 +142,27 @@ def toggle_airplane_mode(serial):
     except Exception as e:
         print(f"{Colors.color_text(f'[{serial}] Lỗi đổi IP: {e}', Colors.ERROR)}")
 
-# ==================== HÀM INJECT JAVASCRIPT CHỌN NGÀY SINH ====================
+# ==================== HÀM INJECT JAVASCRIPT CHỌN NGÀY SINH (ĐÃ FIX LỖI TỤT TRANG) ====================
 def inject_birthday_js(d, size, day, month, year):
+    # Đã xoá toàn bộ lệnh scrollIntoView phía trong hàm s() để chống nhảy trang web.
+    # Chỉ giữ lại đúng 1 nhịp scrollIntoView khung combobox ban đầu.
     js_payload = (
         f"(async function(){{"
         f"async function s(b,t){{"
         f"if(!b)return false;"
-        f"b.scrollIntoView({{block:'center'}});b.click();"
+        f"b.click();"
         f"await new Promise(r=>setTimeout(r,400));"
         f"const l=Array.from(document.querySelectorAll('*')).filter(e=>e.children.length===0&&(e.innerText?.trim()===String(t)||e.innerText?.trim()==='Tháng '+t));"
-        f"if(l.length>0){{l[l.length-1].scrollIntoView({{block:'nearest'}});l[l.length-1].click();await new Promise(r=>setTimeout(r,400));return true;}}"
+        f"if(l.length>0){{"
+        f"l[l.length-1].click();await new Promise(r=>setTimeout(r,400));return true;"
+        f"}}"
         f"return false;"
         f"}}"
         f"const c=Array.from(document.querySelectorAll('[role=\"combobox\"]'));"
-        f"if(c.length>=3){{await s(c[0],{day});await s(c[1],{month});await s(c[2],{year});}}"
+        f"if(c.length>=3){{"
+        f"c[0].scrollIntoView({{block:'center'}});"
+        f"await s(c[0],{day});await s(c[1],{month});await s(c[2],{year});"
+        f"}}"
         f"}})();"
     )
 
@@ -175,7 +182,7 @@ def inject_birthday_js(d, size, day, month, year):
         return True
     return False
 
-# ==================== DỊCH VỤ MAIL.TM (ĐÃ PHỤC HỒI ĐẦY ĐỦ) ====================
+# ==================== DỊCH VỤ MAIL.TM ====================
 class MailService:
     def __init__(self):
         self.base_url = "https://api.mail.tm"
@@ -529,7 +536,7 @@ class starts(threading.Thread):
         self.account_count = account_count
         self.ip_change_freq = ip_change_freq
         self.data_source = data_source
-        self.manual_password = manual_password # Đã khôi phục phục vụ list mail.tm
+        self.manual_password = manual_password
         self.base_gmail = base_gmail
         self.app_password = app_password
     
@@ -553,7 +560,6 @@ class starts(threading.Thread):
             chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%"
             secure_pass = "".join(random.choice(chars) for _ in range(12))
 
-            # 1. Khởi tạo nguồn Email
             if self.mode == "1":
                 mail_service = MailService()
                 used_email = mail_service.create_account(username)
@@ -567,8 +573,6 @@ class starts(threading.Thread):
                     print(f"{Colors.color_text(f'[{serial}] Lỗi: Đã hết email trong danh sách!', Colors.ERROR)}")
                     return False
                 used_email = self.data_source.pop(0)
-                
-                # KHÔI PHỤC: Nhận diện tự động nếu list file có chứa mail.tm
                 if "mail.tm" in used_email.lower():
                     mail_service = MailService()
                     pass_to_use = self.manual_password
@@ -644,7 +648,6 @@ class starts(threading.Thread):
                 print(f"{Colors.color_text(f'[{serial}] Đang điền form đăng ký...', Colors.INFO)}")
                 time.sleep(3)
                 
-                # Điền Email
                 email_field = d(textMatches=r"(?i).*email.*")
                 if email_field.exists(timeout=2): email_field.click()
                 else: 
@@ -656,7 +659,6 @@ class starts(threading.Thread):
                 d.press("back")
                 time.sleep(1)
 
-                # Điền Password
                 pass_field = d(textMatches=r"(?i).*Mật khẩu.*|.*Password.*")
                 if pass_field.exists(timeout=2): pass_field.click()
                 else:
@@ -669,7 +671,7 @@ class starts(threading.Thread):
                 d.press("back")
                 time.sleep(1.5)
 
-                # ==================== KHÔI PHỤC: INJECT JS KÈM VUỐT DỰ PHÒNG ====================
+                # ==================== INJECT JS CÓ HỖ TRỢ VUỐT CHỐNG LỖI ====================
                 current_year = BASE_YEAR + random.randint(-3, 3)
                 if current_year < 1990: current_year = 1990
                 if current_year > 2007: current_year = 2007
@@ -679,7 +681,6 @@ class starts(threading.Thread):
                 print(f"{Colors.color_text(f'[{serial}] Inject JS chọn Ngày {current_day}, Tháng {current_month}, Năm {current_year}...', Colors.INFO)}")
                 js_success = inject_birthday_js(d, size, current_day, current_month, current_year)
                 
-                # Nếu JS xịt (Do máy rác hoặc lỗi app), Kích hoạt vuốt thủ công chống kẹt
                 if not js_success:
                     print(f"{Colors.color_text(f'[{serial}] JS Inject bị từ chối, kích hoạt Vuốt thủ công dự phòng...', Colors.WARNING)}")
                     
@@ -726,7 +727,6 @@ class starts(threading.Thread):
                 d.swipe(size[0]*0.5, size[1]*0.7, size[0]*0.5, size[1]*0.5, duration=0.6)
                 time.sleep(1.5)
 
-                # Điền Tên đầy đủ
                 name_field = d(textMatches=r"(?i).*Tên đầy đủ.*")
                 if name_field.exists(timeout=2): name_field.click()
                 else: 
@@ -738,7 +738,6 @@ class starts(threading.Thread):
                 d.press("back")
                 time.sleep(1.5)
 
-                # Điền Username
                 user_field = d(textMatches=r"(?i).*Tên người dùng.*")
                 if user_field.exists(timeout=2): user_field.click()
                 else: 
@@ -754,12 +753,10 @@ class starts(threading.Thread):
                 print(f"{Colors.color_text(f'[{serial}] Đợi 3s để hệ thống xác nhận username...', Colors.INFO)}")
                 time.sleep(3)
 
-                # Cắm mốc UID hòm thư nếu dùng IMAP
                 uid_moc = 0
                 if self.mode in ["3", "4"] and imap_service:
                     uid_moc = imap_service.get_latest_uid()
 
-                # Bấm Gửi form
                 print(f"{Colors.color_text(f'[{serial}] Bấm Gửi/Đăng ký...', Colors.INFO)}")
                 d.swipe(size[0]*0.5, size[1]*0.7, size[0]*0.5, size[1]*0.5, duration=0.5)
                 time.sleep(1)
@@ -775,7 +772,6 @@ class starts(threading.Thread):
                 print(f"{Colors.color_text(f'[{serial}] Đợi 8s load trang xác nhận OTP...', Colors.INFO)}")
                 time.sleep(8) 
                 
-                # Cuộn màn hình lộ ô OTP dứt khoát
                 print(f"{Colors.color_text(f'[{serial}] Đang cuộn màn hình để lộ ô nhập OTP...', Colors.INFO)}")
                 d.swipe(size[0]*0.5, size[1]*0.35, size[0]*0.5, size[1]*0.90, duration=0.25)
                 time.sleep(1.5)
@@ -790,12 +786,9 @@ class starts(threading.Thread):
                     print(f"{Colors.color_text(f'[{serial}] LỖI: Không chuyển được sang trang OTP. Kẹt nút Gửi hoặc Username bị lỗi. Bỏ qua acc!', Colors.ERROR)}")
                     return False
 
-                # ==================== KHÔI PHỤC: XỬ LÝ LẤY MÃ OTP THEO ĐÚNG LOGIC CŨ VÀ MỚI ====================
                 otp_code = None
                 
-                # NẾU LÀ CHẾ ĐỘ 2 (File List) MÀ KHÔNG PHẢI LÀ MAIL.TM -> CHỜ NHẬP TAY PC
                 if self.mode == "2" and not (mail_service and mail_service.token):
-                    # Thêm Lock để tránh 2 thiết bị tranh nhau bắt nhập OTP gây loạn CMD
                     with OTP_LOCK:
                         print(f"\n{Colors.color_text(f'[{serial}] >>> CHẾ ĐỘ 2: ĐÃ RA TRANG OTP! MỜI SẾP NHẬP MÃ TỪ PC <<<', Colors.SUCCESS)}")
                         user_otp = input(f"{Colors.KEY}Nhập mã OTP 6 số vừa gửi đến [{used_email}]: {Colors.RESET}").strip()
@@ -806,7 +799,6 @@ class starts(threading.Thread):
                         otp_code = user_otp
                     
                 else:
-                    # NẾU LÀ CHẾ ĐỘ 1, CHẾ ĐỘ 3, CHẾ ĐỘ 4, HOẶC CHẾ ĐỘ 2 MÀ CHỨA MAIL.TM -> TỰ ĐỘNG CHUI VÀO MAIL
                     print(f"{Colors.color_text(f'[{serial}] Đang tự động quét mã OTP từ hòm thư...', Colors.INFO)}")
                     if self.mode == "1" or (self.mode == "2" and mail_service and mail_service.token):
                         otp_code = mail_service.get_otp_code(timeout=120)
@@ -832,14 +824,12 @@ class starts(threading.Thread):
                 else: 
                     d.click(size[0]*0.5, size[1]*0.5)
                     
-                # Ngâm xác thực bypass bot
                 soak_time = 20 if self.mode == "2" and not (mail_service and mail_service.token) else random.randint(15, 25)
                 print(f"{Colors.color_text(f'[{serial}] Đang ngâm xác thực {soak_time}s...', Colors.WARNING)}")
                 time.sleep(soak_time)
                 
                 print(f"{Colors.color_text(f'[{serial}] Đang chờ thêm 10s để load vào giao diện chính...', Colors.INFO)}")
                 time.sleep(10)
-                # =================================================================================================
 
                 print(f"{Colors.color_text(f'[{serial}] Đang mở menu để lấy Cookie...', Colors.INFO)}")
                 cookie = ""
@@ -923,7 +913,6 @@ if __name__ == "__main__":
             for e in raw_emails:
                 if e.strip(): data_source.append(e.strip())
                 
-        # Khôi phục tính năng nhận diện đuôi Mail.tm
         is_mail_tm = False
         for e in data_source:
             if "mail.tm" in e.lower():
