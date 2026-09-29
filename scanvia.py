@@ -1,11 +1,19 @@
+import os
+import time
+import random
+import re
+import requests
+import string
+import imaplib
+import email
+from email.header import decode_header
 import undetected_chromedriver as uc
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
-import time
-import random
+from selenium.webdriver.support.ui import Select
 
-# Bảng màu cho CMD
+# ========== BẢNG MÀU GIAO DIỆN ==========
 class Colors:
     SUCCESS = "\033[92m"
     ERROR = "\033[91m"
@@ -13,75 +21,369 @@ class Colors:
     WARNING = "\033[93m"
     RESET = "\033[0m"
 
+def log(msg, color=Colors.INFO):
+    print(f"{color}{msg}{Colors.RESET}")
+
+# ========== MODULE XỬ LÝ MAIL (TÍCH HỢP GRAPH API OAUTH2) ==========
+class MailManager:
+    @staticmethod
+    def get_mail_tm_otp(email_address, password="TempPass123!@", timeout=60):
+        base_url = "https://api.mail.tm"
+        try:
+            r = requests.post(f"{base_url}/token", json={"address": email_address, "password": password}, timeout=10)
+            if r.status_code != 200: return None
+            token = r.json()['token']
+            headers = {"Authorization": f"Bearer {token}"}
+            start_time = time.time()
+            last_id = None
+            
+            while time.time() - start_time < timeout:
+                try:
+                    msg_req = requests.get(f"{base_url}/messages", headers=headers, timeout=10)
+                    if msg_req.status_code == 200:
+                        for msg in msg_req.json().get('hydra:member', []):
+                            if 'Instagram' in msg.get('subject', ''):
+                                if msg.get('id') != last_id:
+                                    last_id = msg['id']
+                                    detail = requests.get(f"{base_url}/messages/{last_id}", headers=headers, timeout=10).json()
+                                    text = detail.get('text', '') or re.sub('<[^<]+?>', '', str(detail.get('html', '')))
+                                    match = re.search(r'\b(\d{6})\b', text)
+                                    if match: return match.group(1)
+                except: pass
+                time.sleep(5)
+        except: pass
+        return None
+
+    @staticmethod
+    def get_imap_otp(email_address, email_password, imap_host, timeout=60):
+        try:
+            mail = imaplib.IMAP4_SSL(imap_host, 993)
+            mail.login(email_address, email_password)
+            mail.select("INBOX", readonly=True)
+            seen_uids = set()
+            start_time = time.time()
+            
+            while time.time() - start_time < timeout:
+                try:
+                    status, data = mail.uid("search", None, 'ALL')
+                    if status == "OK" and data[0]:
+                        uids = data[0].split()
+                        for uid_bytes in reversed(uids[-5:]):
+                            if uid_bytes in seen_uids: continue
+                            status, fetch_data = mail.uid("fetch", uid_bytes, "(RFC822)")
+                            if status == "OK" and fetch_data:
+                                raw = fetch_data[0][1]
+                                msg = email.message_from_bytes(raw)
+                                
+                                subject_parts = decode_header(msg.get("Subject", ""))
+                                subject = ""
+                                for text, enc in subject_parts:
+                                    if isinstance(text, bytes):
+                                        subject += text.decode(enc or "utf-8", errors="replace")
+                                    else:
+                                        subject += text
+                                        
+                                if "instagram" in subject.lower():
+                                    seen_uids.add(uid_bytes)
+                                    body = ""
+                                    if msg.is_multipart():
+                                        for part in msg.walk():
+                                            if part.get_content_type() == "text/plain":
+                                                body = part.get_payload(decode=True).decode(errors="replace")
+                                                break
+                                    else:
+                                        body = msg.get_payload(decode=True).decode(errors="replace")
+                                        
+                                    match = re.search(r'\b(\d{6})\b', body)
+                                    if match: return match.group(1)
+                except: pass
+                time.sleep(5)
+        except Exception as e:
+            log(f"[!] Lỗi kết nối IMAP ({imap_host}): {e}", Colors.ERROR)
+        return None
+
+    @staticmethod
+    def get_graph_api_otp(refresh_token, client_id, timeout=60):
+        """Hàm siêu cấp lấy OTP trực tiếp qua máy chủ Graph API của Microsoft bằng Token"""
+        try:
+            # 1. Đổi Refresh Token lấy Access Token
+            token_url = "https://login.microsoftonline.com/common/oauth2/v2.0/token"
+            data = {
+                "client_id": client_id,
+                "refresh_token": refresh_token,
+                "grant_type": "refresh_token"
+            }
+            r = requests.post(token_url, data=data)
+            
+            # Fallback nếu link 1 lỗi
+            if r.status_code != 200:
+                token_url = "https://login.live.com/oauth20_token.srf"
+                r = requests.post(token_url, data=data)
+                
+            access_token = r.json().get("access_token")
+            if not access_token:
+                log("[!] Token hết hạn hoặc Client ID sai!", Colors.ERROR)
+                return None
+
+            # 2. Dùng Access Token chui thẳng vào hòm thư
+            headers = {"Authorization": f"Bearer {access_token}"}
+            msg_url = "https://graph.microsoft.com/v1.0/me/mailFolders/inbox/messages?$top=5&$select=subject,bodyPreview&$orderby=receivedDateTime desc"
+
+            start_time = time.time()
+            while time.time() - start_time < timeout:
+                try:
+                    msgs = requests.get(msg_url, headers=headers).json()
+                    for msg in msgs.get("value", []):
+                        subject = msg.get("subject", "").lower()
+                        body = msg.get("bodyPreview", "")
+                        if "instagram" in subject:
+                            match = re.search(r'\b(\d{6})\b', body)
+                            if match: return match.group(1)
+                except: pass
+                time.sleep(5)
+        except Exception as e:
+            log(f"[!] Lỗi Graph API: {e}", Colors.ERROR)
+        return None
+
+# ========== BỘ TẠO DATA & PHÂN TÍCH ĐỊNH DẠNG MAIL TẠP NHAM ==========
+def generate_random_info(email_address):
+    password = f"Vip{random.randint(1000, 9999)}@!{random.choice(string.ascii_uppercase)}"
+    ho = ["Nguyen", "Tran", "Le", "Pham", "Hoang", "Huynh", "Phan", "Vu", "Vo", "Dang"]
+    ten = ["Anh", "Bao", "Khoa", "Dung", "Duc", "Hoa", "Hung", "Linh", "Minh", "Ngoc", "Quang", "Trang", "Tuan"]
+    full_name = f"{random.choice(ho)} {random.choice(ten)}"
+    email_prefix = email_address.split('@')[0]
+    username = f"{email_prefix[:8]}.{random.randint(10000, 999999)}"
+    return password, full_name, username
+
+def load_emails(file_path="EMAILS.txt"):
+    accounts = []
+    if not os.path.exists(file_path):
+        with open(file_path, "w", encoding="utf-8") as f:
+            f.write("test1@mail.tm\ntest2@gmail.com|pass_app_gmail\n")
+        log(f"[!] Không tìm thấy file {file_path}. Đã tự tạo file mẫu!", Colors.WARNING)
+        return accounts
+        
+    with open(file_path, "r", encoding="utf-8") as f:
+        for line in f:
+            raw = line.strip()
+            if raw and "@" in raw:
+                parts = raw.split("|")
+                # Bóc tách thông minh dựa trên độ dài của mảng
+                email_acc = parts[0].strip()
+                email_pass = parts[1].strip() if len(parts) > 1 else ""
+                refresh_token = parts[2].strip() if len(parts) > 2 else ""
+                client_id = parts[3].strip() if len(parts) > 3 else ""
+                
+                accounts.append({
+                    'email': email_acc, 
+                    'mail_pass': email_pass,
+                    'token': refresh_token,
+                    'client_id': client_id
+                })
+    return accounts
+
+# ========== XỬ LÝ CHROME & FORM REG ==========
 def type_like_human(element, text):
-    """Hàm gõ chữ chậm rãi như người thật để chống Bot"""
     for char in text:
         element.send_keys(char)
         time.sleep(random.uniform(0.05, 0.15))
 
-def start_reg_chrome():
-    print(f"{Colors.INFO}Đang khởi tạo Trình duyệt Chrome Ẩn danh (Anti-Detect)...{Colors.RESET}")
+def start_isolated_chrome(account_username, proxy_string=None):
+    log(f"\n[*] Đang khởi tạo Profile Chrome sạch cho acc: {account_username}...")
+    base_dir = os.path.abspath("Chrome_Profiles")
+    profile_path = os.path.join(base_dir, account_username)
+    if not os.path.exists(profile_path): os.makedirs(profile_path)
     
-    # Cấu hình Chrome để lách Bot
     options = uc.ChromeOptions()
+    options.add_argument(f"--user-data-dir={profile_path}")
+    if proxy_string: options.add_argument(f'--proxy-server={proxy_string}')
     options.add_argument("--disable-popup-blocking")
     options.add_argument("--window-size=1280,800")
-    # Nếu sếp có Proxy, thêm dòng này: options.add_argument('--proxy-server=http://ip:port')
+    options.add_argument('--disable-blink-features=AutomationControlled')
+    options.add_argument("--lang=vi-VN") 
     
-    try:
-        # Khởi động Chrome
-        driver = uc.Chrome(options=options)
-        wait = WebDriverWait(driver, 15) # Thời gian chờ tối đa 15s cho mỗi hành động
-        
-        print(f"{Colors.INFO}Truy cập trang đăng ký Instagram...{Colors.RESET}")
-        driver.get("https://www.instagram.com/accounts/emailsignup/")
-        time.sleep(5)
-        
-        # Tạo data ảo
-        email = f"test_ig_{random.randint(1000, 99999)}@gmail.com"
-        full_name = "Huy Vu"
-        username = f"huyvu.auto.{random.randint(1000, 99999)}"
-        password = "SuperPassword123!@"
+    driver = uc.Chrome(options=options)
+    return driver
 
-        print(f"{Colors.WARNING}Đang điền form đăng ký...{Colors.RESET}")
-        
-        # Đợi và điền ô Email
-        email_input = wait.until(EC.presence_of_element_located((By.NAME, "emailOrPhone")))
-        type_like_human(email_input, email)
+def handle_birthday(driver, wait):
+    log("[*] Đang giải quyết form Ngày Sinh...", Colors.INFO)
+    try:
+        month_box = wait.until(EC.presence_of_element_located((By.XPATH, "//select[@title='Tháng' or @title='Month']")))
+        Select(month_box).select_by_value(str(random.randint(1, 12)))
         time.sleep(1)
         
-        # Đợi và điền ô Full Name
+        day_box = driver.find_element(By.XPATH, "//select[@title='Ngày' or @title='Day']")
+        Select(day_box).select_by_value(str(random.randint(1, 28)))
+        time.sleep(1)
+        
+        year_box = driver.find_element(By.XPATH, "//select[@title='Năm' or @title='Year']")
+        Select(year_box).select_by_value(str(random.randint(1995, 2002)))
+        time.sleep(1.5)
+        
+        next_btn = driver.find_element(By.XPATH, "//button[contains(text(), 'Tiếp') or contains(text(), 'Next')]")
+        next_btn.click()
+        
+        log("[*] Đã qua ải Ngày Sinh! Chờ form OTP...", Colors.SUCCESS)
+        time.sleep(8) 
+        return True
+    except Exception as e:
+        log(f"[!] Lỗi form Ngày Sinh (Hoặc không yêu cầu): {e}", Colors.WARNING)
+        return False
+
+def handle_email_otp(driver, wait, mail_mode, acc_data):
+    log(f"[*] Đang thực thi lấy mã OTP (Chế độ {mail_mode})...", Colors.INFO)
+    try:
+        otp_input = wait.until(EC.presence_of_element_located((By.NAME, "email_confirmation_code")))
+        otp_code = None
+        
+        email_address = acc_data['email']
+        email_password = acc_data['mail_pass']
+        refresh_token = acc_data['token']
+        client_id = acc_data['client_id']
+        
+        if mail_mode == '1': # Mail.tm
+            otp_code = MailManager.get_mail_tm_otp(email_address, email_password if email_password else "TempPass123!@")
+            
+        elif mail_mode == '2': # Gmail IMAP
+            if not email_password:
+                log("[!] Lỗi: Bạn chọn Gmail IMAP nhưng file không có Mật khẩu ứng dụng!", Colors.ERROR)
+            else:
+                otp_code = MailManager.get_imap_otp(email_address, email_password, "imap.gmail.com")
+                
+        elif mail_mode == '3': # Hotmail / Outlook (OAuth2 / Graph API)
+            if refresh_token and client_id:
+                log("[*] Phát hiện Token OAuth2. Kích hoạt truy xuất Graph API tốc độ cao...", Colors.INFO)
+                otp_code = MailManager.get_graph_api_otp(refresh_token, client_id)
+            elif email_password:
+                log("[*] Không có Token, lùi về dùng IMAP (Có thể bị Microsoft block)...", Colors.WARNING)
+                otp_code = MailManager.get_imap_otp(email_address, email_password, "outlook.office365.com")
+            else:
+                log("[!] Lỗi: Acc Outlook không có Token cũng không có Pass!", Colors.ERROR)
+                
+        elif mail_mode == '4': # Manual / Nhập tay
+            print(f"\n{Colors.SUCCESS}{'='*50}")
+            print(f">>> YÊU CẦU NHẬP MÃ THỦ CÔNG <<<")
+            print(f"Mail đang đợi mã: {Colors.WARNING}{email_address}{Colors.SUCCESS}")
+            print(f"{'='*50}{Colors.RESET}")
+            user_input = input(f"{Colors.INFO}Nhập mã 6 số (Hoặc Enter để bỏ qua): {Colors.RESET}").strip()
+            if user_input and len(user_input) >= 6:
+                otp_code = user_input
+
+        if otp_code:
+            log(f"[*] Đã húp được mã OTP: {otp_code}. Đang nạp đạn...", Colors.SUCCESS)
+            type_like_human(otp_input, otp_code)
+            time.sleep(1.5)
+            next_btn = driver.find_element(By.XPATH, "//button[contains(text(), 'Tiếp') or contains(text(), 'Next')]")
+            next_btn.click()
+            return True
+            
+        log("[!] Thất bại: Không lấy được mã OTP!", Colors.ERROR)
+        return False
+    except Exception as e:
+        log(f"[!] Lỗi kẹt ở form nhập OTP: {e}", Colors.ERROR)
+        return False
+
+# ========== LUỒNG ĐĂNG KÝ CHÍNH ==========
+def register_instagram(driver, full_name, username, password, mail_mode, acc_data):
+    wait = WebDriverWait(driver, 15)
+    try:
+        log("[*] Đang đâm vào trang Đăng ký...", Colors.INFO)
+        driver.get("https://www.instagram.com/accounts/emailsignup/")
+        time.sleep(6) 
+        
+        email_input = wait.until(EC.presence_of_element_located((By.NAME, "emailOrPhone")))
+        email_input.click()
+        type_like_human(email_input, acc_data['email'])
+        time.sleep(1)
+        
         name_input = driver.find_element(By.NAME, "fullName")
+        name_input.click()
         type_like_human(name_input, full_name)
         time.sleep(1)
         
-        # Đợi và điền ô Username
         user_input = driver.find_element(By.NAME, "username")
+        user_input.click()
         type_like_human(user_input, username)
-        time.sleep(2) # Chờ IG check trùng username
+        time.sleep(3) 
         
-        # Đợi và điền ô Password
         pass_input = driver.find_element(By.NAME, "password")
+        pass_input.click()
         type_like_human(pass_input, password)
-        time.sleep(2)
+        time.sleep(1.5)
 
-        # Bấm nút Đăng ký (Sign up)
-        print(f"{Colors.INFO}Bấm nút Đăng ký...{Colors.RESET}")
+        log("[*] Xong form 1! Đang ấn Gửi...", Colors.INFO)
         submit_btn = driver.find_element(By.XPATH, "//button[@type='submit']")
         submit_btn.click()
+        time.sleep(8) 
         
-        print(f"{Colors.SUCCESS}Đã gửi form! (Đang chờ load sang trang Ngày Sinh / OTP){Colors.RESET}")
+        handle_birthday(driver, wait)
         
-        # Ngâm trình duyệt 30 giây để sếp xem kết quả trước khi tự đóng
-        time.sleep(30)
+        is_otp_success = handle_email_otp(driver, wait, mail_mode, acc_data)
+        
+        if is_otp_success:
+            log("[*] REG THÀNH CÔNG! Đang ngâm tài khoản trong Browser...", Colors.SUCCESS)
+            time.sleep(15) 
+            return True
+        return False
         
     except Exception as e:
-        print(f"{Colors.ERROR}Lỗi hoặc kẹt Checkpoint: {e}{Colors.RESET}")
-    finally:
-        try:
-            driver.quit()
-        except:
-            pass
+        log(f"[!] Đăng ký thất bại (Dính Checkpoint/Block): {e}", Colors.ERROR)
+        return False
 
+# ========== MENU KHỞI CHẠY (CHUẨN V10.7 API TÍCH HỢP) ==========
 if __name__ == "__main__":
-    start_reg_chrome()
+    os.system('cls' if os.name == 'nt' else 'clear')
+    print(f"{Colors.SUCCESS}{'='*50}")
+    print("      TOOL AUTO REG INSTAGRAM (HỖ TRỢ GRAPH API OUTLOOK)")
+    print(f"{'='*50}{Colors.RESET}")
+    print(f"{Colors.WARNING}Ghi chú định dạng file EMAILS.txt:")
+    print("- Outlook Token mua ngoài: Mail | Pass | Token | ClientID | Recovery")
+    print(f"- Các loại Mail khác: Mail | Pass_App (Nếu cần){Colors.RESET}\n")
+    
+    print("1. Chế độ Mail.tm")
+    print("2. Chế độ Gmail (IMAP)")
+    print(f"3. {Colors.INFO}Chế độ Outlook Trusted (Graph API Token / IMAP){Colors.RESET}")
+    print("4. Chế độ Nhập Tay thủ công")
+    
+    mail_mode = ""
+    while mail_mode not in ['1', '2', '3', '4']:
+        mail_mode = input(f"\n{Colors.INFO}Sếp chọn chế độ nào (1/2/3/4): {Colors.RESET}").strip()
+    
+    account_list = load_emails("EMAILS.txt")
+    if not account_list:
+        print(f"{Colors.ERROR}Lỗi: File EMAILS.txt đang trống!{Colors.RESET}")
+        exit()
+        
+    print(f"{Colors.SUCCESS}\nĐã nạp thành công {len(account_list)} data! Bắt đầu lên trại...{Colors.RESET}")
+    
+    proxy_hien_tai = None # Sếp điền Proxy vào đây nếu có
+    
+    for idx, acc_data in enumerate(account_list, 1):
+        email_reg = acc_data['email']
+        
+        password_reg, full_name_reg, username_reg = generate_random_info(email_reg)
+        
+        print(f"\n{Colors.WARNING}--- ĐANG REG ACC {idx}/{len(account_list)}: {email_reg} ---{Colors.RESET}")
+        print(f"[{Colors.INFO}INFO{Colors.RESET}] User: {username_reg} | Pass: {password_reg} | Name: {full_name_reg}")
+        
+        driver = None
+        try:
+            driver = start_isolated_chrome(account_username=username_reg, proxy_string=proxy_hien_tai)
+            
+            is_success = register_instagram(driver, full_name_reg, username_reg, password_reg, mail_mode, acc_data)
+            
+            if is_success:
+                with open("IG_PC_ACCOUNTS.txt", "a", encoding="utf-8") as f:
+                    f.write(f"{email_reg}|{password_reg}|{username_reg}|{full_name_reg}\n")
+                log(f"-> Đã xuất xưởng thành công Acc: {username_reg} vào file IG_PC_ACCOUNTS.txt!", Colors.SUCCESS)
+                
+        except Exception as e:
+            log(f"Lỗi kịch bản: {e}", Colors.ERROR)
+        finally:
+            if driver:
+                driver.quit()
+                
+        if idx < len(account_list):
+            delay = random.randint(15, 30)
+            log(f"Đang xả tab, đợi {delay}s để tránh khóa IP...", Colors.INFO)
+            time.sleep(delay)
