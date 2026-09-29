@@ -71,7 +71,7 @@ def banner():
 {Colors.BANNER4}░▓█ ░██  ▓▓█  ░██░  ░ ▐██▓░    ▒██ █░░ ▓██  ▒██░
 {Colors.BANNER5}░▓█▒░██▓ ▒▒█████▓   ░ ██▒▓░     ▒▀█░   ▓▓█  ░██░
 {Colors.RESET}""")
-    print(f"{Colors.DEVICE_INFO}[</>] {Colors.KEY}ADMIN: {Colors.VALUE}HUY VŨ   {Colors.DEVICE_INFO}Phiên Bản: {Colors.VALUE}v10.6 (Ngâm Form 2 Phút Chống Bot){Colors.RESET}")
+    print(f"{Colors.DEVICE_INFO}[</>] {Colors.KEY}ADMIN: {Colors.VALUE}HUY VŨ   {Colors.DEVICE_INFO}Phiên Bản: {Colors.VALUE}v10.7 (Tối ưu 50s chờ duyệt Acc lấy Cookie){Colors.RESET}")
     print(f"{Colors.LINE}{'─'*70}{Colors.RESET}\n")
 
 def load_config():
@@ -839,9 +839,16 @@ class starts(threading.Thread):
                 else: 
                     d.click(size[0]*0.5, size[1]*0.5)
                     
-                print(f"{Colors.color_text(f'[{serial}] Đang chờ thêm 10s để load vào giao diện chính...', Colors.INFO)}")
+                # ==================== ĐÃ FIX LỖI THỜI GIAN LẤY COOKIE Ở ĐÂY ====================
+                print(f"{Colors.color_text(f'[{serial}] Đã Gửi mã OTP! Đang chờ 40s để Instagram khởi tạo tài khoản...', Colors.WARNING)}")
+                for w in range(40, 0, -10):
+                    if STOP_EVENT.is_set(): return False
+                    print(f"{Colors.color_text(f'[{serial}] Đang chờ duyệt acc trên Server IG... còn {w}s', Colors.INFO)}")
+                    time.sleep(10)
+                    
+                print(f"{Colors.color_text(f'[{serial}] Đang ngâm thêm 10s để load mượt giao diện chính...', Colors.INFO)}")
                 time.sleep(10)
-                # =================================================================================================
+                # ==============================================================================
 
                 print(f"{Colors.color_text(f'[{serial}] Đang mở menu để lấy Cookie...', Colors.INFO)}")
                 cookie = ""
