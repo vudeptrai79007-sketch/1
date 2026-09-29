@@ -71,7 +71,7 @@ def banner():
 {Colors.BANNER4}░▓█ ░██  ▓▓█  ░██░  ░ ▐██▓░    ▒██ █░░ ▓██  ▒██░
 {Colors.BANNER5}░▓█▒░██▓ ▒▒█████▓   ░ ██▒▓░     ▒▀█░   ▓▓█  ░██░
 {Colors.RESET}""")
-    print(f"{Colors.DEVICE_INFO}[</>] {Colors.KEY}ADMIN: {Colors.VALUE}HUY VŨ   {Colors.DEVICE_INFO}Phiên Bản: {Colors.VALUE}v10.5 (Fix Lỗi Trôi Tụt JS DatePicker){Colors.RESET}")
+    print(f"{Colors.DEVICE_INFO}[</>] {Colors.KEY}ADMIN: {Colors.VALUE}HUY VŨ   {Colors.DEVICE_INFO}Phiên Bản: {Colors.VALUE}v10.5 (Fix Tụt Đáy Đen Màn Hình){Colors.RESET}")
     print(f"{Colors.LINE}{'─'*70}{Colors.RESET}\n")
 
 def load_config():
@@ -142,10 +142,9 @@ def toggle_airplane_mode(serial):
     except Exception as e:
         print(f"{Colors.color_text(f'[{serial}] Lỗi đổi IP: {e}', Colors.ERROR)}")
 
-# ==================== HÀM INJECT JAVASCRIPT CHỌN NGÀY SINH (ĐÃ FIX LỖI TỤT TRANG) ====================
+# ==================== HÀM INJECT JAVASCRIPT CHỌN NGÀY SINH ====================
 def inject_birthday_js(d, size, day, month, year):
-    # Đã xoá toàn bộ lệnh scrollIntoView phía trong hàm s() để chống nhảy trang web.
-    # Chỉ giữ lại đúng 1 nhịp scrollIntoView khung combobox ban đầu.
+    # Đã bổ sung mã kéo lại về đầu trang để tránh lỗi đen xì màn hình
     js_payload = (
         f"(async function(){{"
         f"async function s(b,t){{"
@@ -160,9 +159,9 @@ def inject_birthday_js(d, size, day, month, year):
         f"}}"
         f"const c=Array.from(document.querySelectorAll('[role=\"combobox\"]'));"
         f"if(c.length>=3){{"
-        f"c[0].scrollIntoView({{block:'center'}});"
         f"await s(c[0],{day});await s(c[1],{month});await s(c[2],{year});"
         f"}}"
+        f"window.scrollTo(0, 0);document.body.scrollTop=0;document.documentElement.scrollTop=0;"
         f"}})();"
     )
 
@@ -178,7 +177,7 @@ def inject_birthday_js(d, size, day, month, year):
         d.send_keys("javascript:" + js_payload)
         time.sleep(0.5)
         d.press("enter")
-        time.sleep(2)
+        time.sleep(2.5)  # Đợi JS thực thi hoàn toàn
         return True
     return False
 
@@ -536,7 +535,7 @@ class starts(threading.Thread):
         self.account_count = account_count
         self.ip_change_freq = ip_change_freq
         self.data_source = data_source
-        self.manual_password = manual_password
+        self.manual_password = manual_password 
         self.base_gmail = base_gmail
         self.app_password = app_password
     
@@ -560,6 +559,7 @@ class starts(threading.Thread):
             chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%"
             secure_pass = "".join(random.choice(chars) for _ in range(12))
 
+            # 1. Khởi tạo nguồn Email
             if self.mode == "1":
                 mail_service = MailService()
                 used_email = mail_service.create_account(username)
@@ -573,6 +573,8 @@ class starts(threading.Thread):
                     print(f"{Colors.color_text(f'[{serial}] Lỗi: Đã hết email trong danh sách!', Colors.ERROR)}")
                     return False
                 used_email = self.data_source.pop(0)
+                
+                # Nhận diện tự động nếu list file có chứa mail.tm
                 if "mail.tm" in used_email.lower():
                     mail_service = MailService()
                     pass_to_use = self.manual_password
@@ -648,6 +650,7 @@ class starts(threading.Thread):
                 print(f"{Colors.color_text(f'[{serial}] Đang điền form đăng ký...', Colors.INFO)}")
                 time.sleep(3)
                 
+                # Điền Email
                 email_field = d(textMatches=r"(?i).*email.*")
                 if email_field.exists(timeout=2): email_field.click()
                 else: 
@@ -659,6 +662,7 @@ class starts(threading.Thread):
                 d.press("back")
                 time.sleep(1)
 
+                # Điền Password
                 pass_field = d(textMatches=r"(?i).*Mật khẩu.*|.*Password.*")
                 if pass_field.exists(timeout=2): pass_field.click()
                 else:
@@ -724,9 +728,11 @@ class starts(threading.Thread):
                 if BASE_YEAR < 1990: BASE_YEAR = random.randint(1995, 2005)
                 # ==============================================================================
 
+                # Vuốt kéo lên một chút để thấy khung Tên đầy đủ
                 d.swipe(size[0]*0.5, size[1]*0.7, size[0]*0.5, size[1]*0.5, duration=0.6)
                 time.sleep(1.5)
 
+                # Điền Tên đầy đủ
                 name_field = d(textMatches=r"(?i).*Tên đầy đủ.*")
                 if name_field.exists(timeout=2): name_field.click()
                 else: 
@@ -738,6 +744,7 @@ class starts(threading.Thread):
                 d.press("back")
                 time.sleep(1.5)
 
+                # Điền Username
                 user_field = d(textMatches=r"(?i).*Tên người dùng.*")
                 if user_field.exists(timeout=2): user_field.click()
                 else: 
@@ -786,8 +793,10 @@ class starts(threading.Thread):
                     print(f"{Colors.color_text(f'[{serial}] LỖI: Không chuyển được sang trang OTP. Kẹt nút Gửi hoặc Username bị lỗi. Bỏ qua acc!', Colors.ERROR)}")
                     return False
 
+                # ==================== XỬ LÝ LẤY MÃ OTP THEO ĐÚNG LOGIC ====================
                 otp_code = None
                 
+                # NẾU LÀ CHẾ ĐỘ 2 (File List) MÀ KHÔNG PHẢI LÀ MAIL.TM -> CHỜ NHẬP TAY PC
                 if self.mode == "2" and not (mail_service and mail_service.token):
                     with OTP_LOCK:
                         print(f"\n{Colors.color_text(f'[{serial}] >>> CHẾ ĐỘ 2: ĐÃ RA TRANG OTP! MỜI SẾP NHẬP MÃ TỪ PC <<<', Colors.SUCCESS)}")
@@ -799,6 +808,7 @@ class starts(threading.Thread):
                         otp_code = user_otp
                     
                 else:
+                    # TỰ ĐỘNG CHUI VÀO MAIL LẤY MÃ
                     print(f"{Colors.color_text(f'[{serial}] Đang tự động quét mã OTP từ hòm thư...', Colors.INFO)}")
                     if self.mode == "1" or (self.mode == "2" and mail_service and mail_service.token):
                         otp_code = mail_service.get_otp_code(timeout=120)
@@ -824,12 +834,14 @@ class starts(threading.Thread):
                 else: 
                     d.click(size[0]*0.5, size[1]*0.5)
                     
+                # Ngâm xác thực bypass bot
                 soak_time = 20 if self.mode == "2" and not (mail_service and mail_service.token) else random.randint(15, 25)
                 print(f"{Colors.color_text(f'[{serial}] Đang ngâm xác thực {soak_time}s...', Colors.WARNING)}")
                 time.sleep(soak_time)
                 
                 print(f"{Colors.color_text(f'[{serial}] Đang chờ thêm 10s để load vào giao diện chính...', Colors.INFO)}")
                 time.sleep(10)
+                # =================================================================================================
 
                 print(f"{Colors.color_text(f'[{serial}] Đang mở menu để lấy Cookie...', Colors.INFO)}")
                 cookie = ""
