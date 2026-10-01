@@ -71,7 +71,7 @@ def banner():
 {Colors.BANNER4}░▓█ ░██  ▓▓█  ░██░  ░ ▐██▓░    ▒██ █░░ ▓██  ▒██░
 {Colors.BANNER5}░▓█▒░██▓ ▒▒█████▓   ░ ██▒▓░     ▒▀█░   ▓▓█  ░██░
 {Colors.RESET}""")
-    print(f"{Colors.DEVICE_INFO}[</>] {Colors.KEY}ADMIN: {Colors.VALUE}HUY VŨ   {Colors.DEVICE_INFO}Phiên Bản: {Colors.VALUE}v10.7 (Tối ưu 50s chờ duyệt Acc lấy Cookie){Colors.RESET}")
+    print(f"{Colors.DEVICE_INFO}[</>] {Colors.KEY}ADMIN: {Colors.VALUE}HUY VŨ   {Colors.DEVICE_INFO}Phiên Bản: {Colors.VALUE}v11.2 (Ngâm OTP 1 phút cho chế độ 3,4,5){Colors.RESET}")
     print(f"{Colors.LINE}{'─'*70}{Colors.RESET}\n")
 
 def load_config():
@@ -391,6 +391,58 @@ class GmailIMAPService:
             time.sleep(5) 
         return None
 
+# ==================== DỊCH VỤ HOTMAIL/OUTLOOK API ====================
+class HotmailAPIService:
+    def __init__(self, data_line, api_mode):
+        self.url = "https://smaills.com/get_messages"
+        self.data_line = data_line
+        self.api_mode = api_mode
+        self.email = data_line.split('|')[0] if '|' in data_line else data_line
+
+    def get_otp_code(self, timeout=120):
+        start_time = time.time()
+        print(f"{Colors.color_text(f'[API Smaills] Đang liên tục tải hộp thư cho {self.email}...', Colors.INFO)}")
+        
+        while time.time() - start_time < timeout:
+            if STOP_EVENT.is_set():
+                return None
+            try:
+                payload = {
+                    "mode": self.api_mode,
+                    "data": self.data_line
+                }
+                headers = {'Content-Type': 'application/json'}
+                response = requests.post(self.url, json=payload, headers=headers, timeout=15)
+                
+                if response.status_code == 200:
+                    res_json = response.json()
+                    data_array = res_json.get("data", [])
+                    
+                    if data_array and len(data_array) > 0:
+                        account_data = data_array[0]
+                        if account_data.get("error"):
+                            pass
+                        else:
+                            messages = account_data.get("messages", [])
+                            for msg in messages:
+                                subject = msg.get("subject", "").lower()
+                                from_sender = msg.get("from", "").lower()
+                                
+                                if "instagram" in subject or "instagram" in from_sender:
+                                    api_code = msg.get("code")
+                                    if api_code:
+                                        return api_code
+                                        
+                                    text = msg.get("message", "")
+                                    match = re.search(r'\b(\d{6})\b', text)
+                                    if match:
+                                        return match.group(1)
+            except Exception:
+                pass
+            
+            time.sleep(5)
+        return None
+
 def generate_dot_variants(gmail):
     local, sep, domain = gmail.rpartition("@")
     if not sep or domain.lower() != "gmail.com":
@@ -519,15 +571,16 @@ def select_mode():
     print(f"{Colors.NUMBER}2. {Colors.VALUE}NHẬP TAY/FILE EMAIL \033[97m[ Dùng list thường (Dừng lại nhập PC | Nếu có Mail.tm thì Tự động) ]{Colors.RESET}")
     print(f"{Colors.NUMBER}3. {Colors.VALUE}NHIỀU GMAIL (IMAP)  \033[97m[ Dùng file txt: email|pass (Tự động quét IMAP) ]{Colors.RESET}")
     print(f"{Colors.NUMBER}4. {Colors.VALUE}GMAIL DOT TRICK     \033[97m[ 1 Gmail gốc -> Biến thể (Tự động quét IMAP) ]{Colors.RESET}")
+    print(f"{Colors.NUMBER}5. {Colors.VALUE}HOTMAIL/OUTLOOK     \033[97m[ Dùng API Smaills.com (Tự động lấy OTP) ]{Colors.RESET}")
     
     while True:
-        choice = input(f"{Colors.KEY}Nhập lựa chọn [ 1, 2, 3 hoặc 4 ]: {Colors.RESET}").strip()
-        if choice in ["1", "2", "3", "4"]:
+        choice = input(f"{Colors.KEY}Nhập lựa chọn [ 1, 2, 3, 4 hoặc 5 ]: {Colors.RESET}").strip()
+        if choice in ["1", "2", "3", "4", "5"]:
             return choice
 
 # ==================== MAIN THREAD THI CÔNG TÀI KHOẢN ====================
 class starts(threading.Thread):
-    def __init__(self, device, mode, account_count, ip_change_freq, data_source, manual_password=None, base_gmail=None, app_password=None):
+    def __init__(self, device, mode, account_count, ip_change_freq, data_source, manual_password=None, base_gmail=None, app_password=None, api_mode=None):
         super().__init__()
         self.device = device
         self.mode = mode
@@ -537,6 +590,7 @@ class starts(threading.Thread):
         self.manual_password = manual_password 
         self.base_gmail = base_gmail
         self.app_password = app_password
+        self.api_mode = api_mode
     
     def run(self):
         global BASE_YEAR
@@ -553,6 +607,7 @@ class starts(threading.Thread):
             used_email = ""
             imap_service = None
             mail_service = None
+            hotmail_service = None
             full_name, username = VietnameseNameGenerator()
             
             chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%"
@@ -591,6 +646,14 @@ class starts(threading.Thread):
                     return False
                 used_email = self.data_source.pop(0)
                 imap_service = GmailIMAPService(self.base_gmail, self.app_password)
+
+            elif self.mode == "5":
+                if len(self.data_source) == 0:
+                    print(f"{Colors.color_text(f'[{serial}] Lỗi: Đã hết tài khoản Hotmail/Outlook trong danh sách!', Colors.ERROR)}")
+                    return False
+                data_line = self.data_source.pop(0)
+                used_email = data_line.split('|')[0]
+                hotmail_service = HotmailAPIService(data_line, self.api_mode)
 
             print(f"{Colors.color_text(f'[{serial}] Đang dùng Email: {used_email}', Colors.INFO)}")
 
@@ -752,8 +815,12 @@ class starts(threading.Thread):
                 time.sleep(1)
                 d.press("back")
                 
-                print(f"{Colors.color_text(f'[{serial}] Đợi 3s để hệ thống xác nhận username...', Colors.INFO)}")
-                time.sleep(3)
+                # NGÂM FORM 120S TRƯỚC KHI BẤM GỬI
+                print(f"{Colors.color_text(f'[{serial}] Đã điền xong Username! Bắt đầu ngâm form 2 phút (120s) TRƯỚC KHI bấm Gửi...', Colors.WARNING)}")
+                for w in range(120, 0, -10):
+                    if STOP_EVENT.is_set(): return False
+                    print(f"{Colors.color_text(f'[{serial}] Đang ngâm form, thời gian chờ bấm Gửi còn {w}s...', Colors.INFO)}")
+                    time.sleep(10)
 
                 uid_moc = 0
                 if self.mode in ["3", "4"] and imap_service:
@@ -803,26 +870,32 @@ class starts(threading.Thread):
                         otp_code = user_otp
                     
                 else:
-                    print(f"{Colors.color_text(f'[{serial}] Bắt đầu chu trình ngâm form 2 phút (120s) và quét OTP...', Colors.INFO)}")
+                    # ==================== ĐÃ CHỈNH SỬA: MODE 3,4,5 CHỈ ĐỢI 60 GIÂY ====================
+                    target_wait = 60 if self.mode in ["3", "4", "5"] else 120
+                    print(f"{Colors.color_text(f'[{serial}] Bắt đầu chu trình quét OTP và ngâm form {target_wait}s...', Colors.INFO)}")
+                    
+                    # API Timeout vẫn để 120 để nó kịp lấy OTP phòng mạng lag, nhưng hàm wait form bên dưới sẽ bị ép dừng ở số target_wait.
                     if self.mode == "1" or (self.mode == "2" and mail_service and mail_service.token):
                         otp_code = mail_service.get_otp_code(timeout=120)
                     elif self.mode in ["3", "4"]:
                         otp_code = imap_service.get_otp_code(target_email=used_email, since_uid=uid_moc, timeout=120)
+                    elif self.mode == "5":
+                        otp_code = hotmail_service.get_otp_code(timeout=120)
                 
                     if not otp_code:
                         print(f"{Colors.color_text(f'[{serial}] Lỗi: Quá 120s không lấy được mã OTP. Bỏ qua acc!', Colors.ERROR)}")
                         return False
 
-                    # CHẾ ĐỘ 3 & 4 (Và cả chế độ 1 auto): ÉP NGÂM TRANG OTP ĐÚNG 2 PHÚT TRƯỚC KHI NHẬP MÃ
+                    # ÉP NGÂM TRANG OTP THEO ĐÚNG THỜI GIAN TRƯỚC KHI NHẬP MÃ
                     elapsed = time.time() - start_otp_wait
-                    remaining = 120 - elapsed
+                    remaining = target_wait - elapsed
                     if remaining > 0:
-                        print(f"{Colors.color_text(f'[{serial}] Đã lấy được mã ({otp_code}) ở giây thứ {int(elapsed)}! Đang ngâm form đợi hết 2 phút...', Colors.WARNING)}")
+                        print(f"{Colors.color_text(f'[{serial}] Đã lấy được mã ({otp_code}) ở giây thứ {int(elapsed)}! Đang ngâm form đợi hết {target_wait}s...', Colors.WARNING)}")
                         for w in range(int(remaining), 0, -5):
                             if STOP_EVENT.is_set(): return False
                             print(f"{Colors.color_text(f'[{serial}] Thời gian ngâm OTP còn lại: {w}s...', Colors.INFO)}")
                             time.sleep(min(5, w))
-                        print(f"{Colors.color_text(f'[{serial}] Đã ngâm đủ 2 phút. Chuẩn bị điền mã OTP!', Colors.SUCCESS)}")
+                        print(f"{Colors.color_text(f'[{serial}] Đã ngâm đủ {target_wait}s. Chuẩn bị điền mã OTP!', Colors.SUCCESS)}")
 
                 print(f"{Colors.color_text(f'[{serial}] Đang tự động điền mã {otp_code} vào điện thoại...', Colors.SUCCESS)}")
                 otp_input.click()
@@ -839,7 +912,6 @@ class starts(threading.Thread):
                 else: 
                     d.click(size[0]*0.5, size[1]*0.5)
                     
-                # ==================== ĐÃ FIX LỖI THỜI GIAN LẤY COOKIE Ở ĐÂY ====================
                 print(f"{Colors.color_text(f'[{serial}] Đã Gửi mã OTP! Đang chờ 40s để Instagram khởi tạo tài khoản...', Colors.WARNING)}")
                 for w in range(40, 0, -10):
                     if STOP_EVENT.is_set(): return False
@@ -848,7 +920,6 @@ class starts(threading.Thread):
                     
                 print(f"{Colors.color_text(f'[{serial}] Đang ngâm thêm 10s để load mượt giao diện chính...', Colors.INFO)}")
                 time.sleep(10)
-                # ==============================================================================
 
                 print(f"{Colors.color_text(f'[{serial}] Đang mở menu để lấy Cookie...', Colors.INFO)}")
                 cookie = ""
@@ -915,6 +986,7 @@ if __name__ == "__main__":
     base_gmail = None
     app_password = None
     manual_password = None
+    api_mode = None
 
     if mode == "1":
         print(f"{Colors.color_text('Đã chọn chế độ Tự động Mail.tm!', Colors.SUCCESS)}")
@@ -1002,6 +1074,41 @@ if __name__ == "__main__":
         data_source = generate_dot_variants(base_gmail)
         print(f"{Colors.color_text(f'Đã tạo ra {len(data_source)} biến thể Dot Trick.', Colors.SUCCESS)}")
 
+    elif mode == "5":
+        print(f"\n{Colors.TITLE}--- CẤU HÌNH HOTMAIL/OUTLOOK API ---{Colors.RESET}")
+        print(f"Chọn phương thức kết nối hộp thư API:")
+        print(f"1. Roundcube (Định dạng: user@wmhotmail.com|password)")
+        print(f"2. OAuth/Graph (Định dạng: user@outlook.com|refresh_token|client_id|client_secret)")
+        
+        while True:
+            c = input(f"{Colors.KEY}>> {Colors.RESET}").strip()
+            if c == "1":
+                api_mode = "roundcube"
+                break
+            elif c == "2":
+                api_mode = "oauth"
+                break
+                
+        print(f"{Colors.KEY}Nhập list tài khoản (cách nhau dấu phẩy) HOẶC đường dẫn file .txt: {Colors.RESET}")
+        account_input = input(">> ").strip().strip('"').strip("'")
+        
+        if os.path.isfile(account_input):
+            with open(account_input, 'r', encoding='utf-8') as f:
+                for line in f:
+                    if line.strip(): 
+                        data_source.append(line.strip())
+        else:
+            raw_accounts = account_input.split(",")
+            for acc in raw_accounts:
+                if acc.strip(): 
+                    data_source.append(acc.strip())
+                    
+        if len(data_source) == 0:
+            print(f"{Colors.color_text('Không có tài khoản nào được tải!', Colors.ERROR)}")
+            sys.exit()
+            
+        print(f"{Colors.color_text(f'Đã tải thành công {len(data_source)} tài khoản Hotmail/Outlook!', Colors.SUCCESS)}")
+
     while True:
         try:
             print(f"\n{Colors.KEY}Nhập số lượng tài khoản cần tạo \033[97m[VD: 100]: {Colors.RESET}")
@@ -1028,7 +1135,7 @@ if __name__ == "__main__":
         try:
             threads = []
             for serial in devices:
-                t = starts(serial, mode, account_count, ip_change_freq, data_source.copy(), manual_password, base_gmail, app_password)
+                t = starts(serial, mode, account_count, ip_change_freq, data_source.copy(), manual_password, base_gmail, app_password, api_mode)
                 threads.append(t)
                 
             for t in threads:
