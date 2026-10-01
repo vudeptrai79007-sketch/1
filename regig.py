@@ -71,7 +71,7 @@ def banner():
 {Colors.BANNER4}░▓█ ░██  ▓▓█  ░██░  ░ ▐██▓░    ▒██ █░░ ▓██  ▒██░
 {Colors.BANNER5}░▓█▒░██▓ ▒▒█████▓   ░ ██▒▓░     ▒▀█░   ▓▓█  ░██░
 {Colors.RESET}""")
-    print(f"{Colors.DEVICE_INFO}[</>] {Colors.KEY}ADMIN: {Colors.VALUE}HUY VŨ   {Colors.DEVICE_INFO}Phiên Bản: {Colors.VALUE}v11.2 (Ngâm OTP 1 phút cho chế độ 3,4,5){Colors.RESET}")
+    print(f"{Colors.DEVICE_INFO}[</>] {Colors.KEY}ADMIN: {Colors.VALUE}HUY VŨ   {Colors.DEVICE_INFO}Phiên Bản: {Colors.VALUE}v11.4 (Sửa lỗi Mode Graph API & Thêm Log){Colors.RESET}")
     print(f"{Colors.LINE}{'─'*70}{Colors.RESET}\n")
 
 def load_config():
@@ -395,50 +395,85 @@ class GmailIMAPService:
 class HotmailAPIService:
     def __init__(self, data_line, api_mode):
         self.url = "https://smaills.com/get_messages"
-        self.data_line = data_line
-        self.api_mode = api_mode
-        self.email = data_line.split('|')[0] if '|' in data_line else data_line
+        self.data_line = data_line.strip()
+        self.api_mode = api_mode.strip()
+        self.email = self.data_line.split('|')[0] if '|' in self.data_line else self.data_line
 
     def get_otp_code(self, timeout=120):
         start_time = time.time()
-        print(f"{Colors.color_text(f'[API Smaills] Đang liên tục tải hộp thư cho {self.email}...', Colors.INFO)}")
+        print(f"{Colors.color_text(f'[API Smaills] Đang check hộp thư {self.email} (Mode: {self.api_mode})...', Colors.INFO)}")
         
+        payload = {
+            "mode": self.api_mode,
+            "data": self.data_line
+        }
+        headers = {
+            'Content-Type': 'application/json',
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+        }
+        
+        last_logged = ""
         while time.time() - start_time < timeout:
             if STOP_EVENT.is_set():
                 return None
             try:
-                payload = {
-                    "mode": self.api_mode,
-                    "data": self.data_line
-                }
-                headers = {'Content-Type': 'application/json'}
-                response = requests.post(self.url, json=payload, headers=headers, timeout=15)
-                
+                response = requests.post(self.url, json=payload, headers=headers, timeout=20)
                 if response.status_code == 200:
                     res_json = response.json()
                     data_array = res_json.get("data", [])
                     
                     if data_array and len(data_array) > 0:
                         account_data = data_array[0]
-                        if account_data.get("error"):
-                            pass
+                        err = account_data.get("error")
+                        
+                        if err:
+                            msg_err = f"Lỗi hộp thư: {err}"
+                            if msg_err != last_logged:
+                                print(f"{Colors.color_text(f'[API Smaills] {msg_err}', Colors.ERROR)}")
+                                last_logged = msg_err
                         else:
                             messages = account_data.get("messages", [])
-                            for msg in messages:
-                                subject = msg.get("subject", "").lower()
-                                from_sender = msg.get("from", "").lower()
+                            msg_info = f"Tìm thấy {len(messages)} thư."
+                            if msg_info != last_logged:
+                                print(f"{Colors.color_text(f'[API Smaills] {msg_info} Đang quét mã...', Colors.INFO)}")
+                                last_logged = msg_info
                                 
-                                if "instagram" in subject or "instagram" in from_sender:
-                                    api_code = msg.get("code")
-                                    if api_code:
-                                        return api_code
+                            for msg in messages:
+                                subject = str(msg.get("subject", "")).lower()
+                                from_sender = str(msg.get("from", "")).lower()
+                                raw_msg = str(msg.get("message", ""))
+                                code_field = str(msg.get("code", "")).strip()
+                                
+                                # Kiểm tra xem thư có liên quan đến Instagram không
+                                is_ig = ("instagram" in subject) or ("instagram" in from_sender) or ("instagram" in raw_msg.lower())
+                                
+                                if is_ig:
+                                    # Lấy trường code API đã bóc sẵn
+                                    if code_field and code_field.isdigit() and len(code_field) == 6:
+                                        print(f"{Colors.color_text(f'[API Smaills] Đã tìm thấy mã: {code_field}', Colors.SUCCESS)}")
+                                        return code_field
+                                    
+                                    # Lấy mã bằng regex trong tiêu đề hoặc nội dung
+                                    match_subj = re.search(r'\b(\d{6})\b', subject)
+                                    if match_subj:
+                                        print(f"{Colors.color_text(f'[API Smaills] Đã tìm thấy mã: {match_subj.group(1)}', Colors.SUCCESS)}")
+                                        return match_subj.group(1)
                                         
-                                    text = msg.get("message", "")
-                                    match = re.search(r'\b(\d{6})\b', text)
-                                    if match:
-                                        return match.group(1)
-            except Exception:
-                pass
+                                    clean_text = re.sub(r'<[^>]+>', ' ', raw_msg)
+                                    match_body = re.search(r'\b(\d{6})\b', clean_text)
+                                    if match_body:
+                                        print(f"{Colors.color_text(f'[API Smaills] Đã tìm thấy mã: {match_body.group(1)}', Colors.SUCCESS)}")
+                                        return match_body.group(1)
+                else:
+                    status_err = f"Lỗi HTTP {response.status_code}"
+                    if status_err != last_logged:
+                        print(f"{Colors.color_text(f'[API Smaills] {status_err}', Colors.WARNING)}")
+                        last_logged = status_err
+            except Exception as e:
+                err_str = f"Lỗi kết nối: {str(e)}"
+                if err_str != last_logged:
+                    print(f"{Colors.color_text(f'[API Smaills] {err_str}', Colors.WARNING)}")
+                    last_logged = err_str
             
             time.sleep(5)
         return None
@@ -870,11 +905,9 @@ class starts(threading.Thread):
                         otp_code = user_otp
                     
                 else:
-                    # ==================== ĐÃ CHỈNH SỬA: MODE 3,4,5 CHỈ ĐỢI 60 GIÂY ====================
                     target_wait = 60 if self.mode in ["3", "4", "5"] else 120
                     print(f"{Colors.color_text(f'[{serial}] Bắt đầu chu trình quét OTP và ngâm form {target_wait}s...', Colors.INFO)}")
                     
-                    # API Timeout vẫn để 120 để nó kịp lấy OTP phòng mạng lag, nhưng hàm wait form bên dưới sẽ bị ép dừng ở số target_wait.
                     if self.mode == "1" or (self.mode == "2" and mail_service and mail_service.token):
                         otp_code = mail_service.get_otp_code(timeout=120)
                     elif self.mode in ["3", "4"]:
@@ -1076,17 +1109,21 @@ if __name__ == "__main__":
 
     elif mode == "5":
         print(f"\n{Colors.TITLE}--- CẤU HÌNH HOTMAIL/OUTLOOK API ---{Colors.RESET}")
-        print(f"Chọn phương thức kết nối hộp thư API:")
-        print(f"1. Roundcube (Định dạng: user@wmhotmail.com|password)")
-        print(f"2. OAuth/Graph (Định dạng: user@outlook.com|refresh_token|client_id|client_secret)")
+        print(f"Chọn phương thức kết nối hộp thư (Vui lòng chọn đúng chế độ như trên Web Smaills):")
+        print(f"1. OAuth (Tương ứng tab 'OAuth2 - IMAP/POP3')")
+        print(f"2. Graph API (Tương ứng tab 'OAuth2 - Đồ thị')")
+        print(f"3. Roundcube")
         
         while True:
             c = input(f"{Colors.KEY}>> {Colors.RESET}").strip()
             if c == "1":
-                api_mode = "roundcube"
+                api_mode = "oauth"
                 break
             elif c == "2":
-                api_mode = "oauth"
+                api_mode = "graph"
+                break
+            elif c == "3":
+                api_mode = "roundcube"
                 break
                 
         print(f"{Colors.KEY}Nhập list tài khoản (cách nhau dấu phẩy) HOẶC đường dẫn file .txt: {Colors.RESET}")
