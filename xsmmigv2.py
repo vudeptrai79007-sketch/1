@@ -18,7 +18,6 @@ try:
     from selenium.webdriver.common.by import By
     from selenium.webdriver.support.ui import WebDriverWait
     from selenium.webdriver.support import expected_conditions as EC
-    from selenium.webdriver.support.ui import Select
     import requests
 except ImportError:
     print("Đang cài đặt thư viện thiếu...")
@@ -27,13 +26,12 @@ except ImportError:
     from selenium.webdriver.common.by import By
     from selenium.webdriver.support.ui import WebDriverWait
     from selenium.webdriver.support import expected_conditions as EC
-    from selenium.webdriver.support.ui import Select
     import requests
 
 # BIẾN TOÀN CỤC
 STOP_EVENT = threading.Event()
 OTP_LOCK = threading.Lock() 
-DATA_LOCK = threading.Lock() # Tránh các luồng giành trùng Email
+DATA_LOCK = threading.Lock()
 CONFIG_FILE = "config_gmail.json"
 BASE_YEAR = random.randint(1995, 2005)
 
@@ -69,7 +67,7 @@ def banner():
 ╚██████╔╝██║  ██║██║  ██║╚██████╔╝██║ ╚═╝ ██║███████╗
  ╚═════╝ ╚═╝  ╚═╝╚═╝  ╚═╝ ╚═════╝ ╚═╝     ╚═╝╚══════╝
 {Colors.RESET}""")
-    print(f"{Colors.INFO}Phiên Bản: v12.2 (CHROME PC - CHỐNG KẸT REACT DOM){Colors.RESET}")
+    print(f"{Colors.INFO}Phiên Bản: v12.3 (CHROME PC - FULL SCREEN & SCROLL FIX){Colors.RESET}")
     print(f"{Colors.LINE}{'─'*70}{Colors.RESET}\n")
 
 def load_config():
@@ -338,7 +336,7 @@ class starts(threading.Thread):
             print(f"\n{Colors.color_text('─'*70, Colors.LINE)}")
             print(f"{Colors.color_text(f'[{self.thread_id}] BẮT ĐẦU TẠO TÀI KHOẢN THỨ {account_index}', Colors.TITLE)}")
             
-            # 1. LẤY EMAIL & KHỞI TẠO SERVICE
+            # 1. LẤY EMAIL & TẠO INFO
             used_email = ""
             imap_service = None
             mail_service = None
@@ -390,19 +388,23 @@ class starts(threading.Thread):
                 options.add_argument('--incognito')
                 options.add_argument('--mute-audio')
                 options.add_argument('--disable-notifications')
-                options.add_argument('--start-maximized') # Ép mở to
+                options.add_argument('--window-size=1920,1080') # ÉP KÍCH THƯỚC ĐẦY ĐỦ
                 
                 driver = uc.Chrome(options=options)
+                try:
+                    driver.maximize_window() # FULL MÀN HÌNH CHỐNG CHE NÚT
+                except Exception:
+                    pass
+                    
                 wait = WebDriverWait(driver, 15)
                 
                 print(f"{Colors.color_text(f'[{self.thread_id}] Đang truy cập Instagram Web...', Colors.INFO)}")
                 driver.get("https://www.instagram.com/accounts/emailsignup/")
                 
-                # Bắt buộc chờ tải giao diện PC (10 giây)
-                print(f"{Colors.color_text(f'[{self.thread_id}] Đang chờ trang tải hoàn tất (10s)...', Colors.WARNING)}")
-                time.sleep(10)
+                print(f"{Colors.color_text(f'[{self.thread_id}] Đang chờ trang tải hoàn tất (8s)...', Colors.WARNING)}")
+                time.sleep(8)
                 
-                # Tắt bảng Cookie nếu xuất hiện
+                # Bấm tắt Cookie nếu có
                 try:
                     cookie_btns = driver.find_elements(By.XPATH, "//button[contains(text(), 'Allow') or contains(text(), 'Accept') or contains(text(), 'Cho phép') or contains(text(), 'Đồng ý')]")
                     if cookie_btns:
@@ -411,9 +413,7 @@ class starts(threading.Thread):
                 except Exception:
                     pass
 
-                # ========================================================
-                # HÀM ÉP NHẬP DỮ LIỆU ĐẶC TRỊ CHO REACT (INSTAGRAM MỚI)
-                # ========================================================
+                # Hàm ép điền Text
                 def react_type(index, value):
                     try:
                         inputs = driver.find_elements(By.TAG_NAME, "input")
@@ -430,47 +430,85 @@ class starts(threading.Thread):
                     except Exception as e:
                         print(f"{Colors.color_text(f'[{self.thread_id}] Lỗi nhập ô số {index}: {e}', Colors.ERROR)}")
 
-                print(f"{Colors.color_text(f'[{self.thread_id}] Nhận diện form 1 trang và ép điền dữ liệu...', Colors.INFO)}")
+                print(f"{Colors.color_text(f'[{self.thread_id}] Đang điền form đăng ký...', Colors.INFO)}")
                 
-                # Ô 0: Email
+                # 1. Ô Email
                 react_type(0, used_email)
-                time.sleep(1)
+                time.sleep(0.5)
                 
-                # Ô 1: Mật khẩu
+                # 2. Ô Mật khẩu
                 react_type(1, secure_pass)
-                time.sleep(1)
+                time.sleep(0.5)
 
-                # CHỌN NGÀY SINH (NẰM NGAY GIỮA TRANG DÙNG SELECT)
-                try:
-                    selects = driver.find_elements(By.TAG_NAME, "select")
-                    if len(selects) >= 3:
-                        current_year = str(BASE_YEAR + random.randint(-3, 3))
-                        if int(current_year) > 2005: current_year = "2005"
-                        current_day = str(random.randint(2, 28))
-                        current_month = str(random.randint(1, 12))
-                        
-                        Select(selects[0]).select_by_value(current_day)
-                        time.sleep(0.3)
-                        Select(selects[1]).select_by_value(current_month)
-                        time.sleep(0.3)
-                        Select(selects[2]).select_by_value(current_year)
-                        time.sleep(1)
-                except Exception as e:
-                    print(f"{Colors.color_text(f'[{self.thread_id}] Bỏ qua chọn ngày sinh: {e}', Colors.WARNING)}")
+                # ========================================================
+                # HÀM CHỌN NGÀY THÁNG NĂM SINH ĐẶC TRỊ META
+                # ========================================================
+                current_year = BASE_YEAR + random.randint(-3, 3)
+                if current_year > 2005: current_year = 2005
+                current_day = random.randint(2, 28)
+                current_month = random.randint(1, 12)
+                
+                print(f"{Colors.color_text(f'[{self.thread_id}] Đang chọn Ngày {current_day}, Tháng {current_month}, Năm {current_year}...', Colors.INFO)}")
+                
+                # JavaScript chọc trực tiếp vào Combobox / Option của React
+                driver.execute_script(f"""
+                    function selectMetaDropdown(targetText) {{
+                        let allEls = Array.from(document.querySelectorAll('*'));
+                        for (let el of allEls) {{
+                            if (el.children.length === 0 && (el.innerText.trim() === String(targetText) || el.innerText.trim() === 'Tháng ' + targetText)) {{
+                                el.click();
+                                return true;
+                            }}
+                        }}
+                        return false;
+                    }}
+
+                    async function handleDOB() {{
+                        // Tìm tất cả dropdown combobox hoặc nút ngày tháng
+                        let boxes = Array.from(document.querySelectorAll('[role="combobox"], select, [aria-haspopup="listbox"]'));
+                        if (boxes.length >= 3) {{
+                            // Ngày
+                            boxes[0].click();
+                            await new Promise(r => setTimeout(r, 400));
+                            selectMetaDropdown('{current_day}');
+                            await new Promise(r => setTimeout(r, 400));
+                            
+                            // Tháng
+                            boxes[1].click();
+                            await new Promise(r => setTimeout(r, 400));
+                            selectMetaDropdown('{current_month}');
+                            await new Promise(r => setTimeout(r, 400));
+                            
+                            // Năm
+                            boxes[2].click();
+                            await new Promise(r => setTimeout(r, 400));
+                            selectMetaDropdown('{current_year}');
+                        }}
+                    }}
+                    handleDOB();
+                """)
+                time.sleep(2)
                 
                 BASE_YEAR -= 1
                 if BASE_YEAR < 1990: BASE_YEAR = random.randint(1995, 2005)
 
-                # Ô 2: Tên đầy đủ
+                # 3. Ô Tên đầy đủ
                 react_type(2, full_name)
-                time.sleep(1)
+                time.sleep(0.5)
                 
-                # Ô 3: Username
+                # 4. Ô Username
                 react_type(3, username)
                 time.sleep(1)
 
-                # NGÂM FORM TRƯỚC KHI SUBMIT
-                print(f"{Colors.color_text(f'[{self.thread_id}] Đã điền form thành công. Ngâm form 30s...', Colors.WARNING)}")
+                # ========================================================
+                # CUỘN TRANG XUỐNG ĐÁY ĐỂ LỘ NÚT GỬI
+                # ========================================================
+                print(f"{Colors.color_text(f'[{self.thread_id}] Cuộn chuột xuống đáy trang...', Colors.INFO)}")
+                driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+                time.sleep(1)
+
+                # NGÂM FORM
+                print(f"{Colors.color_text(f'[{self.thread_id}] Đã điền xong. Ngâm form 30s trước khi bấm gửi...', Colors.WARNING)}")
                 for w in range(30, 0, -5):
                     if STOP_EVENT.is_set(): driver.quit(); return False
                     time.sleep(5)
@@ -479,28 +517,41 @@ class starts(threading.Thread):
                 if self.mode in ["3", "4"] and imap_service:
                     uid_moc = imap_service.get_latest_uid()
                 
-                # BẤM NÚT ĐĂNG KÝ BẰNG JAVASCRIPT
-                try:
-                    submit_btn = driver.find_element(By.XPATH, "//button[@type='submit']")
-                    driver.execute_script("arguments[0].click();", submit_btn)
-                except Exception:
-                    print(f"{Colors.color_text(f'[{self.thread_id}] Không tìm thấy nút đăng ký.', Colors.ERROR)}")
+                # ========================================================
+                # TÌM VÀ CLICK NÚT TIẾP/ĐĂNG KÝ BẰNG JAVASCRIPT
+                # ========================================================
+                print(f"{Colors.color_text(f'[{self.thread_id}] Đang bấm nút gửi form...', Colors.INFO)}")
+                driver.execute_script("""
+                    let buttons = Array.from(document.querySelectorAll('button'));
+                    let submitBtn = buttons.find(b => b.type === 'submit' || /tiếp|next|đăng ký|sign up/i.test(b.innerText));
+                    if (submitBtn) {
+                        submitBtn.scrollIntoView({behavior: 'smooth', block: 'center'});
+                        submitBtn.click();
+                    }
+                """)
                 
                 print(f"{Colors.color_text(f'[{self.thread_id}] Đã gửi form, chờ load OTP (15s)...', Colors.INFO)}")
                 time.sleep(15)
 
-                # Trang OTP
+                # ========================================================
+                # NHẬP MÃ OTP
+                # ========================================================
                 print(f"{Colors.color_text(f'[{self.thread_id}] Chờ giao diện nhập OTP...', Colors.INFO)}")
                 try:
                     otp_input = wait.until(EC.presence_of_element_located((By.NAME, "email_confirmation_code")))
                 except Exception:
-                    print(f"{Colors.color_text(f'[{self.thread_id}] Lỗi: Không chuyển sang được trang OTP (Có thể kẹt Form).', Colors.ERROR)}")
-                    driver.quit()
-                    return False
+                    # Cuộn lại kiểm tra xem có kẹt nút không
+                    driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+                    try:
+                        otp_input = wait.until(EC.presence_of_element_located((By.NAME, "email_confirmation_code")))
+                    except Exception:
+                        print(f"{Colors.color_text(f'[{self.thread_id}] Lỗi: Kẹt form hoặc Username bị trùng.', Colors.ERROR)}")
+                        driver.quit()
+                        return False
                 
                 # Lấy OTP
                 otp_code = None
-                print(f"{Colors.color_text(f'[{self.thread_id}] Đang chờ lấy mã OTP từ Email...', INFO)}")
+                print(f"{Colors.color_text(f'[{self.thread_id}] Đang chờ lấy mã OTP từ Email...', Colors.INFO)}")
                 
                 if self.mode == "2" and not (mail_service and mail_service.token):
                     with OTP_LOCK:
@@ -523,11 +574,12 @@ class starts(threading.Thread):
                 otp_input.send_keys(otp_code)
                 time.sleep(1)
                 
-                try:
-                    next_btn = driver.find_element(By.XPATH, "//button[contains(text(), 'Next') or contains(text(), 'Tiếp')]")
-                    driver.execute_script("arguments[0].click();", next_btn)
-                except Exception:
-                    pass
+                # Bấm xác nhận OTP
+                driver.execute_script("""
+                    let buttons = Array.from(document.querySelectorAll('button'));
+                    let nextBtn = buttons.find(b => /tiếp|next|xác nhận|confirm/i.test(b.innerText));
+                    if (nextBtn) nextBtn.click();
+                """)
                 
                 # Chờ load trang chủ
                 print(f"{Colors.color_text(f'[{self.thread_id}] Chờ Server IG xử lý và tạo tài khoản (20s)...', Colors.INFO)}")
@@ -550,7 +602,7 @@ class starts(threading.Thread):
                 return True
                 
             except Exception as e:
-                print(f"{Colors.color_text(f'[{self.thread_id}] Gặp Lỗi Hệ Thống Trình Duyệt: {e}', Colors.ERROR)}")
+                print(f"{Colors.color_text(f'[{self.thread_id}] Gặp Lỗi: {e}', Colors.ERROR)}")
                 if driver: driver.quit()
                 return False
         
