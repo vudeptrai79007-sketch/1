@@ -67,7 +67,7 @@ def banner():
 ╚██████╔╝██║  ██║██║  ██║╚██████╔╝██║ ╚═╝ ██║███████╗
  ╚═════╝ ╚═╝  ╚═╝╚═╝  ╚═╝ ╚═════╝ ╚═╝     ╚═╝╚══════╝
 {Colors.RESET}""")
-    print(f"{Colors.INFO}Phiên Bản: v12.3 (CHROME PC - FULL SCREEN & SCROLL FIX){Colors.RESET}")
+    print(f"{Colors.INFO}Phiên Bản: v12.4 (CHROME PC - AUTO SCROLL & JS INJECT){Colors.RESET}")
     print(f"{Colors.LINE}{'─'*70}{Colors.RESET}\n")
 
 def load_config():
@@ -388,11 +388,11 @@ class starts(threading.Thread):
                 options.add_argument('--incognito')
                 options.add_argument('--mute-audio')
                 options.add_argument('--disable-notifications')
-                options.add_argument('--window-size=1920,1080') # ÉP KÍCH THƯỚC ĐẦY ĐỦ
+                options.add_argument('--window-size=1920,1080') # Cố định màn hình lớn
                 
                 driver = uc.Chrome(options=options)
                 try:
-                    driver.maximize_window() # FULL MÀN HÌNH CHỐNG CHE NÚT
+                    driver.maximize_window()
                 except Exception:
                     pass
                     
@@ -401,8 +401,8 @@ class starts(threading.Thread):
                 print(f"{Colors.color_text(f'[{self.thread_id}] Đang truy cập Instagram Web...', Colors.INFO)}")
                 driver.get("https://www.instagram.com/accounts/emailsignup/")
                 
-                print(f"{Colors.color_text(f'[{self.thread_id}] Đang chờ trang tải hoàn tất (8s)...', Colors.WARNING)}")
-                time.sleep(8)
+                print(f"{Colors.color_text(f'[{self.thread_id}] Đang chờ trang tải hoàn tất (10s)...', Colors.WARNING)}")
+                time.sleep(10)
                 
                 # Bấm tắt Cookie nếu có
                 try:
@@ -413,102 +413,70 @@ class starts(threading.Thread):
                 except Exception:
                     pass
 
-                # Hàm ép điền Text
-                def react_type(index, value):
-                    try:
-                        inputs = driver.find_elements(By.TAG_NAME, "input")
-                        if len(inputs) > index:
-                            el = inputs[index]
-                            driver.execute_script("""
-                                let el = arguments[0];
-                                let val = arguments[1];
-                                let setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
-                                setter.call(el, val);
-                                el.dispatchEvent(new Event('input', { bubbles: true }));
-                                el.dispatchEvent(new Event('change', { bubbles: true }));
-                            """, el, value)
-                    except Exception as e:
-                        print(f"{Colors.color_text(f'[{self.thread_id}] Lỗi nhập ô số {index}: {e}', Colors.ERROR)}")
-
-                print(f"{Colors.color_text(f'[{self.thread_id}] Đang điền form đăng ký...', Colors.INFO)}")
-                
-                # 1. Ô Email
-                react_type(0, used_email)
-                time.sleep(0.5)
-                
-                # 2. Ô Mật khẩu
-                react_type(1, secure_pass)
-                time.sleep(0.5)
-
-                # ========================================================
-                # HÀM CHỌN NGÀY THÁNG NĂM SINH ĐẶC TRỊ META
-                # ========================================================
-                current_year = BASE_YEAR + random.randint(-3, 3)
-                if current_year > 2005: current_year = 2005
-                current_day = random.randint(2, 28)
-                current_month = random.randint(1, 12)
-                
-                print(f"{Colors.color_text(f'[{self.thread_id}] Đang chọn Ngày {current_day}, Tháng {current_month}, Năm {current_year}...', Colors.INFO)}")
-                
-                # JavaScript chọc trực tiếp vào Combobox / Option của React
-                driver.execute_script(f"""
-                    function selectMetaDropdown(targetText) {{
-                        let allEls = Array.from(document.querySelectorAll('*'));
-                        for (let el of allEls) {{
-                            if (el.children.length === 0 && (el.innerText.trim() === String(targetText) || el.innerText.trim() === 'Tháng ' + targetText)) {{
-                                el.click();
-                                return true;
-                            }}
-                        }}
-                        return false;
-                    }}
-
-                    async function handleDOB() {{
-                        // Tìm tất cả dropdown combobox hoặc nút ngày tháng
-                        let boxes = Array.from(document.querySelectorAll('[role="combobox"], select, [aria-haspopup="listbox"]'));
-                        if (boxes.length >= 3) {{
-                            // Ngày
-                            boxes[0].click();
-                            await new Promise(r => setTimeout(r, 400));
-                            selectMetaDropdown('{current_day}');
-                            await new Promise(r => setTimeout(r, 400));
-                            
-                            // Tháng
-                            boxes[1].click();
-                            await new Promise(r => setTimeout(r, 400));
-                            selectMetaDropdown('{current_month}');
-                            await new Promise(r => setTimeout(r, 400));
-                            
-                            // Năm
-                            boxes[2].click();
-                            await new Promise(r => setTimeout(r, 400));
-                            selectMetaDropdown('{current_year}');
-                        }}
-                    }}
-                    handleDOB();
-                """)
-                time.sleep(2)
+                # Khởi tạo ngày tháng năm
+                current_year = str(BASE_YEAR + random.randint(-3, 3))
+                if int(current_year) > 2005: current_year = "2005"
+                current_day = str(random.randint(2, 28))
+                current_month = str(random.randint(1, 12))
                 
                 BASE_YEAR -= 1
                 if BASE_YEAR < 1990: BASE_YEAR = random.randint(1995, 2005)
 
-                # 3. Ô Tên đầy đủ
-                react_type(2, full_name)
-                time.sleep(0.5)
+                print(f"{Colors.color_text(f'[{self.thread_id}] Đang tiêm JavaScript ép cuộn trang và điền dữ liệu...', Colors.INFO)}")
                 
-                # 4. Ô Username
-                react_type(3, username)
-                time.sleep(1)
+                # ========================================================
+                # KỊCH BẢN JAVASCRIPT: CUỘN & ĐIỀN TỪ A-Z CHỐNG KẸT
+                # ========================================================
+                js_master_script = f"""
+                // 1. Hàm cuộn và ép điền text cho React
+                function fillInput(name, value) {{
+                    let el = document.querySelector('input[name="' + name + '"]');
+                    if(el) {{
+                        el.scrollIntoView({{behavior: 'smooth', block: 'center'}});
+                        let setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+                        setter.call(el, value);
+                        el.dispatchEvent(new Event('input', {{ bubbles: true }}));
+                        el.dispatchEvent(new Event('change', {{ bubbles: true }}));
+                    }}
+                }}
 
-                # ========================================================
-                # CUỘN TRANG XUỐNG ĐÁY ĐỂ LỘ NÚT GỬI
-                # ========================================================
-                print(f"{Colors.color_text(f'[{self.thread_id}] Cuộn chuột xuống đáy trang...', Colors.INFO)}")
-                driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-                time.sleep(1)
+                // 2. Hàm cuộn và ép chọn Ngày Sinh cho React
+                function fillSelect(keywords, value) {{
+                    let selects = Array.from(document.querySelectorAll('select'));
+                    let el = selects.find(s => keywords.some(k => (s.title || '').includes(k)));
+                    if(el) {{
+                        el.scrollIntoView({{behavior: 'smooth', block: 'center'}});
+                        let setter = Object.getOwnPropertyDescriptor(window.HTMLSelectElement.prototype, 'value').set;
+                        setter.call(el, value);
+                        el.dispatchEvent(new Event('change', {{ bubbles: true }}));
+                    }}
+                }}
+
+                // Thực thi tuần tự từ trên xuống dưới
+                fillInput('emailOrPhone', '{used_email}');
+                fillInput('password', '{secure_pass}');
+                
+                // Cuộn xuống đoạn Ngày Sinh và điền
+                fillSelect(['Ngày', 'Day'], '{current_day}');
+                fillSelect(['Tháng', 'Month'], '{current_month}');
+                fillSelect(['Năm', 'Year'], '{current_year}');
+                
+                // Cuộn tiếp xuống đoạn Tên và điền
+                fillInput('fullName', '{full_name}');
+                fillInput('username', '{username}');
+                
+                // Cuối cùng cuộn xuống kịch đáy trang
+                window.scrollTo(0, document.body.scrollHeight);
+                """
+                
+                try:
+                    driver.execute_script(js_master_script)
+                    print(f"{Colors.color_text(f'[{self.thread_id}] Đã ép cuộn trang và điền xong toàn bộ thông tin!', Colors.SUCCESS)}")
+                except Exception as e:
+                    print(f"{Colors.color_text(f'[{self.thread_id}] Lỗi khi chạy JS: {e}', Colors.ERROR)}")
 
                 # NGÂM FORM
-                print(f"{Colors.color_text(f'[{self.thread_id}] Đã điền xong. Ngâm form 30s trước khi bấm gửi...', Colors.WARNING)}")
+                print(f"{Colors.color_text(f'[{self.thread_id}] Ngâm form 30s trước khi bấm nút Đăng Ký...', Colors.WARNING)}")
                 for w in range(30, 0, -5):
                     if STOP_EVENT.is_set(): driver.quit(); return False
                     time.sleep(5)
@@ -518,17 +486,24 @@ class starts(threading.Thread):
                     uid_moc = imap_service.get_latest_uid()
                 
                 # ========================================================
-                # TÌM VÀ CLICK NÚT TIẾP/ĐĂNG KÝ BẰNG JAVASCRIPT
+                # DÙNG JAVASCRIPT ĐỂ TÌM VÀ BẤM NÚT GỬI (BẤT KỂ BỊ CHE)
                 # ========================================================
                 print(f"{Colors.color_text(f'[{self.thread_id}] Đang bấm nút gửi form...', Colors.INFO)}")
-                driver.execute_script("""
+                js_submit = """
+                let submitBtn = document.querySelector('button[type="submit"]');
+                if (submitBtn) {
+                    submitBtn.scrollIntoView({behavior: 'smooth', block: 'center'});
+                    setTimeout(() => { submitBtn.click(); }, 500);
+                } else {
                     let buttons = Array.from(document.querySelectorAll('button'));
-                    let submitBtn = buttons.find(b => b.type === 'submit' || /tiếp|next|đăng ký|sign up/i.test(b.innerText));
-                    if (submitBtn) {
-                        submitBtn.scrollIntoView({behavior: 'smooth', block: 'center'});
-                        submitBtn.click();
+                    let nextBtn = buttons.find(b => /tiếp|next|đăng ký|sign up/i.test(b.innerText));
+                    if (nextBtn) {
+                        nextBtn.scrollIntoView({behavior: 'smooth', block: 'center'});
+                        setTimeout(() => { nextBtn.click(); }, 500);
                     }
-                """)
+                }
+                """
+                driver.execute_script(js_submit)
                 
                 print(f"{Colors.color_text(f'[{self.thread_id}] Đã gửi form, chờ load OTP (15s)...', Colors.INFO)}")
                 time.sleep(15)
@@ -540,7 +515,6 @@ class starts(threading.Thread):
                 try:
                     otp_input = wait.until(EC.presence_of_element_located((By.NAME, "email_confirmation_code")))
                 except Exception:
-                    # Cuộn lại kiểm tra xem có kẹt nút không
                     driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
                     try:
                         otp_input = wait.until(EC.presence_of_element_located((By.NAME, "email_confirmation_code")))
