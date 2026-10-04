@@ -69,7 +69,7 @@ def banner():
 ╚██████╔╝██║  ██║██║  ██║╚██████╔╝██║ ╚═╝ ██║███████╗
  ╚═════╝ ╚═╝  ╚═╝╚═╝  ╚═╝ ╚═════╝ ╚═╝     ╚═╝╚══════╝
 {Colors.RESET}""")
-    print(f"{Colors.INFO}Phiên Bản: v12.0 (CHROME PC - FULL HOÀN CHỈNH){Colors.RESET}")
+    print(f"{Colors.INFO}Phiên Bản: v12.1 (CHROME PC - ĐÃ FIX KẸT FORM){Colors.RESET}")
     print(f"{Colors.LINE}{'─'*70}{Colors.RESET}\n")
 
 def load_config():
@@ -390,28 +390,62 @@ class starts(threading.Thread):
                 options.add_argument('--incognito')
                 options.add_argument('--mute-audio')
                 options.add_argument('--disable-notifications')
-                # options.add_argument('--headless') # Bỏ comment nếu muốn chạy ẩn
+                options.add_argument('--start-maximized') # ÉP MỞ TO MÀN HÌNH ĐỂ TRÁNH CHE KHUẤT UI
                 
                 driver = uc.Chrome(options=options)
                 wait = WebDriverWait(driver, 15)
                 
+                print(f"{Colors.color_text(f'[{self.thread_id}] Đang truy cập Instagram Web...', Colors.INFO)}")
                 driver.get("https://www.instagram.com/accounts/emailsignup/")
                 
-                # Điền thông tin
-                email_input = wait.until(EC.presence_of_element_located((By.NAME, "emailOrPhone")))
-                email_input.send_keys(used_email)
-                time.sleep(1)
+                # Bắt buộc chờ tải giao diện PC (10 giây)
+                print(f"{Colors.color_text(f'[{self.thread_id}] Đang chờ trang tải hoàn tất (10s)...', Colors.WARNING)}")
+                time.sleep(10)
                 
-                driver.find_element(By.NAME, "fullName").send_keys(full_name)
+                # Tắt bảng Cookie nếu xuất hiện
+                try:
+                    cookie_btns = driver.find_elements(By.XPATH, "//button[contains(text(), 'Allow') or contains(text(), 'Accept') or contains(text(), 'Cho phép') or contains(text(), 'Đồng ý')]")
+                    if cookie_btns:
+                        cookie_btns[0].click()
+                        time.sleep(2)
+                except Exception:
+                    pass
+
+                # Hàm ép nhập liệu chống đơ
+                def force_input(field_name, value):
+                    try:
+                        # Cách 1: Thử nhập bình thường bằng Selenium
+                        el = wait.until(EC.presence_of_element_located((By.NAME, field_name)))
+                        el.click()
+                        el.clear()
+                        el.send_keys(value)
+                    except Exception:
+                        # Cách 2: Ép điền bằng JavaScript
+                        try:
+                            js_script = f"""
+                            var el = document.getElementsByName('{field_name}')[0];
+                            if(el) {{
+                                el.value = '{value}';
+                                el.dispatchEvent(new Event('input', {{ bubbles: true }}));
+                                el.dispatchEvent(new Event('change', {{ bubbles: true }}));
+                            }}
+                            """
+                            driver.execute_script(js_script)
+                        except Exception as e:
+                            print(f"{Colors.color_text(f'[{self.thread_id}] Lỗi không tìm thấy ô {field_name}: {e}', Colors.ERROR)}")
+                            raise Exception("Bị Instagram chặn form hoặc load lỗi.")
+
+                print(f"{Colors.color_text(f'[{self.thread_id}] Đang điền form đăng ký...', Colors.INFO)}")
+                force_input("emailOrPhone", used_email)
                 time.sleep(1)
-                
-                driver.find_element(By.NAME, "username").send_keys(username)
+                force_input("fullName", full_name)
                 time.sleep(1)
-                
-                driver.find_element(By.NAME, "password").send_keys(secure_pass)
+                force_input("username", username)
+                time.sleep(1)
+                force_input("password", secure_pass)
                 
                 # NGÂM FORM
-                print(f"{Colors.color_text(f'[{self.thread_id}] Ngâm form 30s...', Colors.WARNING)}")
+                print(f"{Colors.color_text(f'[{self.thread_id}] Đã điền xong. Ngâm form 30s trước khi bấm đăng ký...', Colors.WARNING)}")
                 for w in range(30, 0, -5):
                     if STOP_EVENT.is_set(): driver.quit(); return False
                     time.sleep(5)
@@ -424,6 +458,7 @@ class starts(threading.Thread):
                 driver.find_element(By.XPATH, "//button[@type='submit']").click()
                 
                 # Trang Sinh nhật
+                print(f"{Colors.color_text(f'[{self.thread_id}] Chờ giao diện chọn ngày sinh...', Colors.INFO)}")
                 wait.until(EC.presence_of_element_located((By.XPATH, "//select[@title='Month:']")))
                 
                 current_year = str(BASE_YEAR + random.randint(-3, 3))
@@ -442,11 +477,12 @@ class starts(threading.Thread):
                 driver.find_element(By.XPATH, "//button[contains(text(), 'Next') or contains(text(), 'Tiếp')]").click()
                 
                 # Trang OTP
+                print(f"{Colors.color_text(f'[{self.thread_id}] Chờ giao diện nhập OTP...', Colors.INFO)}")
                 otp_input = wait.until(EC.presence_of_element_located((By.NAME, "email_confirmation_code")))
                 
                 # Lấy OTP
                 otp_code = None
-                print(f"{Colors.color_text(f'[{self.thread_id}] Đang chờ mã OTP (120s max)...', Colors.INFO)}")
+                print(f"{Colors.color_text(f'[{self.thread_id}] Đang chờ lấy mã OTP từ Email...', Colors.INFO)}")
                 
                 if self.mode == "2" and not (mail_service and mail_service.token):
                     with OTP_LOCK:
@@ -461,17 +497,17 @@ class starts(threading.Thread):
                         otp_code = hotmail_service.get_otp_code(timeout=120)
                 
                 if not otp_code:
-                    print(f"{Colors.color_text(f'[{self.thread_id}] Không lấy được OTP. Bỏ qua!', Colors.ERROR)}")
+                    print(f"{Colors.color_text(f'[{self.thread_id}] Lỗi không lấy được OTP. Bỏ qua tài khoản này!', Colors.ERROR)}")
                     driver.quit()
                     return False
                 
-                print(f"{Colors.color_text(f'[{self.thread_id}] Điền OTP: {otp_code}', Colors.SUCCESS)}")
+                print(f"{Colors.color_text(f'[{self.thread_id}] Bắt đầu điền OTP: {otp_code}', Colors.SUCCESS)}")
                 otp_input.send_keys(otp_code)
                 time.sleep(1)
                 driver.find_element(By.XPATH, "//button[contains(text(), 'Next') or contains(text(), 'Tiếp')]").click()
                 
                 # Chờ load trang chủ
-                print(f"{Colors.color_text(f'[{self.thread_id}] Chờ Server IG xử lý (20s)...', Colors.INFO)}")
+                print(f"{Colors.color_text(f'[{self.thread_id}] Chờ Server IG xử lý và tạo tài khoản (20s)...', Colors.INFO)}")
                 time.sleep(20)
                 
                 # Lấy Cookie
@@ -491,7 +527,7 @@ class starts(threading.Thread):
                 return True
                 
             except Exception as e:
-                print(f"{Colors.color_text(f'[{self.thread_id}] Lỗi Chrome: {e}', Colors.ERROR)}")
+                print(f"{Colors.color_text(f'[{self.thread_id}] Gặp Lỗi Hệ Thống Trình Duyệt: {e}', Colors.ERROR)}")
                 if driver: driver.quit()
                 return False
         
