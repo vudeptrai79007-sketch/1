@@ -1,929 +1,581 @@
 import os
-import sys
 import time
-import json
+import threading
+import sys
+import random
 import re
 from datetime import datetime
-import random
-from urllib.parse import unquote
-from curl_cffi import requests as c_requests
-import requests
+import uuid
+import imaplib
+import email
+from email.header import decode_header
+import json
+import traceback
 
-# ================= BẢNG MÀU ANSI =================
-xuong = "\n"
-do = "\033[1;91m"
-maufulldo = "\033[1;47;31m"
-maunenhong = "\033[1;41;33m"
-red = "\033[1;31m"
-pink = "\033[1;35m"
-green = "\033[1;32m"
-yellow = "\033[1;33m"
-white = "\033[0;37m"
-cyan = "\033[1;36m"
-blue = "\033[1;34m"
-cam = "\033[38;5;208m"
-reset = "\033[0m"
+# ===== THƯ VIỆN CHROME CHO PC =====
+try:
+    import undetected_chromedriver as uc
+    from selenium.webdriver.common.by import By
+    from selenium.webdriver.support.ui import WebDriverWait
+    from selenium.webdriver.support import expected_conditions as EC
+    from selenium.webdriver.support.ui import Select
+    import requests
+except ImportError:
+    print("Đang cài đặt thư viện thiếu...")
+    os.system("pip install undetected-chromedriver selenium requests")
+    import undetected_chromedriver as uc
+    from selenium.webdriver.common.by import By
+    from selenium.webdriver.support.ui import WebDriverWait
+    from selenium.webdriver.support import expected_conditions as EC
+    from selenium.webdriver.support.ui import Select
+    import requests
 
-# ================= BANNER TA TOOL =================
-def banner():
-    os.system('cls' if os.name == 'nt' else 'clear')
-    print(f"""{cyan}
- ████████╗ █████╗     ████████╗ ██████╗  ██████╗ ██╗     
- ╚══██╔══╝██╔══██╗    ╚══██╔══╝██╔═══██╗██╔═══██╗██║     
-    ██║   ███████║       ██║   ██║   ██║██║   ██║██║     
-    ██║   ██╔══██║       ██║   ██║   ██║██║   ██║██║     
-    ██║   ██║  ██║       ██║   ╚██████╔╝╚██████╔╝███████╗
-    ╚═╝   ╚═╝  ╚═╝       ╚═╝    ╚═════╝  ╚═════╝ ╚══════╝{reset}
-{yellow} ┌────────────────────────────────────────────────────────┐
-{yellow} │ {green}🚀 TOOL INSTAGRAM AUTO JOBS {white}- {cam}XSMM API MULTI-THREAD V2{yellow}│
-{yellow} │ {pink}📌 Bản quyền: {white}TA Tool                                  {yellow}│
-{yellow} │ {cyan}☕ Donate MoMo: {green}0373607456                             {yellow}│
-{yellow} └────────────────────────────────────────────────────────┘{reset}
-""")
+# BIẾN TOÀN CỤC
+STOP_EVENT = threading.Event()
+OTP_LOCK = threading.Lock() 
+DATA_LOCK = threading.Lock() # Tránh các luồng giành trùng Email
+CONFIG_FILE = "config_gmail.json"
+BASE_YEAR = random.randint(1995, 2005)
 
-# ================= CLASS API XSMM V2 =================
-class XSMMTool:
-    def __init__(self, token):
-        self.base_url = "https://xsmm.net/api/taskapi"
-        self.headers = {
-            "Authorization": f"Bearer {token}",
-            "Content-Type": "application/json"
-        }
-
-    def get_user_info(self):
-        url = f"{self.base_url}/user"
-        try:
-            response = requests.get(url, headers=self.headers, timeout=20)
-            return response.json()
-        except Exception as e:
-            return {"error": str(e)}
-
-    def get_accounts(self, account_type=None, search=None):
-        url = f"{self.base_url}/accounts2"
-        params = {}
-        if account_type:
-            params['account_type'] = account_type
-        if search:
-            params['search'] = search
-        try:
-            response = requests.get(url, headers=self.headers, params=params, timeout=20)
-            return response.json()
-        except Exception as e:
-            return {"error": str(e)}
-
-    def add_account(self, account_type, link_account):
-        url = f"{self.base_url}/accounts2"
-        payload = {
-            "type": account_type,
-            "link_account": link_account
-        }
-        try:
-            response = requests.post(url, headers=self.headers, json=payload, timeout=20)
-            return response.json()
-        except Exception as e:
-            return {"error": str(e)}
-
-    def get_tasks(self, job_type, uid, typejob="normal,better,best"):
-        url = f"{self.base_url}/tasks2"
-        params = {
-            "type": job_type,
-            "uid": str(uid),
-            "typejob": typejob
-        }
-        try:
-            response = requests.get(url, headers=self.headers, params=params, timeout=20)
-            return response.json()
-        except Exception as e:
-            return {"error": str(e)}
-
-    def complete_tasks(self, job_type, task_ids, uid, cookie_check="", max_retries=3):
-        url = f"{self.base_url}/tasks2/complete"
-        payload = {
-            "type": job_type,
-            "task_id": task_ids if isinstance(task_ids, list) else [task_ids],
-            "uid": str(uid)
-        }
-        if cookie_check:
-            payload["cookie_check"] = cookie_check
-        
-        attempt = 0
-        while attempt < max_retries:
-            try:
-                response = requests.post(url, headers=self.headers, json=payload, timeout=35)
-                res_data = response.json()
-                
-                # Tự động gửi lại nếu hệ thống yêu cầu retry: True
-                if isinstance(res_data, dict) and res_data.get("retry") is True:
-                    retry_wait = random.randint(10, 15)
-                    print(f"\n{yellow} ⏩ [Retry=True] Đợi {retry_wait}s trước khi gửi lại yêu cầu duyệt xu (lần {attempt + 1})...{white}")
-                    time.sleep(retry_wait)
-                    attempt += 1
-                    continue
-                    
-                return res_data
-            except requests.exceptions.Timeout:
-                return {
-                    "is_timeout": True, 
-                    "message": f"Server phản hồi chậm nhưng đã gửi duyệt {len(payload['task_id'])} job thành công"
-                }
-            except Exception as e:
-                return {"error": str(e)}
-                
-        return {"error": "Đã thử lại nhiều lần nhưng không thành công"}
-
-# ================= CẤU HÌNH HEADERS & USER-AGENT =================
-useragent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-sec_ch_ua_120 = '"Not_A Brand";v="8", "Chromium";v="120", "Google Chrome";v="120"'
-
-def format_proxy(proxy_str):
-    if not proxy_str:
-        return None
-    proxy_str = proxy_str.strip()
-    if not proxy_str:
-        return None
-        
-    scheme = "http"
-    if "://" in proxy_str:
-        scheme, proxy_str = proxy_str.split("://", 1)
-        
-    parts = proxy_str.split(":")
-    if len(parts) == 4:
-        ip, port, user, pwd = parts
-        formatted = f"{scheme}://{user}:{pwd}@{ip}:{port}"
-    elif "@" in proxy_str:
-        formatted = f"{scheme}://{proxy_str}"
-    elif len(parts) == 2:
-        formatted = f"{scheme}://{proxy_str}"
-    else:
-        formatted = f"{scheme}://{proxy_str}"
-        
-    return {"http": formatted, "https": formatted}
-
-def get_ig_headers(cookie, csrftoken, referer="https://www.instagram.com/"):
-    return {
-        'accept': '*/*',
-        'accept-language': 'vi-VN,vi;q=0.9,fr-FR;q=0.8,fr;q=0.7,en-US;q=0.6,en;q=0.5',
-        'content-type': 'application/x-www-form-urlencoded',
-        'cookie': cookie,
-        'origin': 'https://www.instagram.com',
-        'priority': 'u=1, i',
-        'referer': referer,
-        'sec-ch-ua': sec_ch_ua_120,
-        'sec-ch-ua-mobile': '?0',
-        'sec-ch-ua-platform': '"Windows"',
-        'sec-fetch-dest': 'empty',
-        'sec-fetch-mode': 'cors',
-        'sec-fetch-site': 'same-origin',
-        'user-agent': useragent,
-        'x-asbd-id': '129477',
-        'x-csrftoken': csrftoken,
-        'x-ig-app-id': '936619743392459',
-        'x-ig-www-claim': '0',
-        'x-requested-with': 'XMLHttpRequest'
-    }
-
-def loadtime(time_delay):
-    try:
-        delay_int = int(time_delay)
-    except:
-        delay_int = 10
-    for x in range(delay_int, 0, -1):
-        for color_code, dash_color in [
-            ("\033[1;32m", "\033[1;33m"),
-            ("\033[1;36m", "\033[1;34m"),
-            ("\033[1;34m", "\033[1;31m"),
-            ("\033[1;33m", "\033[1;32m"),
-            ("\033[1;31m", "\033[1;36m")
-        ]:
-            sys.stdout.write(f"\r                                                      \r")
-            sys.stdout.write(f"{color_code}🇻🇳 TA Tool \033[1;37m- \033[1;32mDelay Tránh Block: \033[1;37m{x} {dash_color}Giây")
-            sys.stdout.flush()
-            time.sleep(0.2)
-    sys.stdout.write(f"\r                                                      \r")
-    sys.stdout.flush()
-
-# ============ CÁC HÀM TƯƠNG TÁC INSTAGRAM ============
-def check_cookie_ig(cookie, proxy=None):
-    url = 'https://www.instagram.com/api/v1/accounts/edit/web_form_data/'
-    headers = {
-        'x-ig-app-id': '936619743392459',
-        'x-requested-with': 'XMLHttpRequest',
-        'referer': 'https://www.instagram.com/accounts/edit/',
-        'cookie': cookie,
-        'user-agent': useragent,
-        'sec-ch-ua': sec_ch_ua_120
-    }
-    proxies = format_proxy(proxy)
-    try:
-        return c_requests.get(url, headers=headers, proxies=proxies, impersonate="chrome120", timeout=30).text
-    except:
-        return "{}"
-
-def follow(target_id, cookie, csrftoken, profile_url="", proxy=None):
-    if not target_id:
-        return '{"status": "error", "message": "Lỗi Target ID"}'
-    cookie = unquote(cookie)
-    session = c_requests.Session()
-    proxies = format_proxy(proxy)
-    if proxies:
-        session.proxies = proxies
-    for item in cookie.split(';'):
-        if '=' in item:
-            try:
-                key, val = item.strip().split('=', 1)
-                session.cookies.set(key, val, domain='.instagram.com')
-            except:
-                pass
-    fb_dtsg, lsd, jazoest = "", "Jfq8VQNmkkkJufHSbEE9bf", "26328"
-    try:
-        res_home = session.get(profile_url if profile_url else "https://www.instagram.com/", impersonate="chrome120", timeout=10).text
-        lsd_match = re.search(r'"LSD",\[\],{"token":"([^"]+)"}', res_home)
-        if lsd_match:
-            lsd = lsd_match.group(1)
-        dtsg_match = re.search(r'"dtsg":\{"token":"([^"]+)"', res_home)
-        if not dtsg_match:
-            dtsg_match = re.search(r'name="fb_dtsg" value="([^"]+)"', res_home)
-        if dtsg_match:
-            fb_dtsg = dtsg_match.group(1)
-        jazoest_match = re.search(r'name="jazoest" value="(\d+)"', res_home)
-        if jazoest_match:
-            jazoest = jazoest_match.group(1)
-    except:
-        pass
-    dynamic_csrftoken = session.cookies.get('csrftoken')
-    if not dynamic_csrftoken:
-        csf_match = re.search(r'csrftoken=([^;]+)', cookie)
-        dynamic_csrftoken = csf_match.group(1) if csf_match else "missing"
-    session.headers.update(get_ig_headers(cookie, dynamic_csrftoken, profile_url if profile_url else "https://www.instagram.com/"))
-    actor_id_match = re.search(r'ds_user_id=(\d+)', cookie)
-    actor_id = actor_id_match.group(1) if actor_id_match else "0"
-    variables = {
-        "target_user_id": str(target_id),
-        "container_module": "profile",
-        "nav_chain": "PolarisFeedRoot:feedPage:5:topnav-link,PolarisProfileRoot:profilePage:6:unexpected"
-    }
-    data = {
-        "av": actor_id, "__d": "www", "__user": "0", "__a": "1", "__req": "s",
-        "__hs": "20702.HYP:instagram_web_pkg.2.1...0", "dpr": "1", "__ccg": "EXCELLENT",
-        "__rev": "1046917461", "__comet_req": "7", "fb_dtsg": fb_dtsg, "jazoest": jazoest,
-        "lsd": lsd, "fb_api_caller_class": "RelayModern", "fb_api_req_friendly_name": "usePolarisFollowMutation",
-        "server_timestamps": "true", "doc_id": "26508036048874888", "variables": json.dumps(variables)
-    }
-    try:
-        res_gql = session.post('https://www.instagram.com/api/graphql', data=data, impersonate="chrome120", timeout=15)
-        return res_gql.text.strip()
-    except Exception as e:
-        return json.dumps({"status": "error", "message": str(e)})
-
-def tym(mediaid, cookie, csrftoken, link_job="", proxy=None):
-    if not mediaid:
-        return '{"status": "error", "message": "Lỗi Media ID"}'
-    cookie = unquote(cookie)
-    session = c_requests.Session()
-    proxies = format_proxy(proxy)
-    if proxies:
-        session.proxies = proxies
-    for item in cookie.split(';'):
-        if '=' in item:
-            try:
-                key, val = item.strip().split('=', 1)
-                session.cookies.set(key, val, domain='.instagram.com')
-            except:
-                pass
-    fb_dtsg, lsd, jazoest = "", "GyeZl-huflHZ0K5L3-pzBi", "26492"
-    try:
-        res_home = session.get("https://www.instagram.com/", impersonate="chrome120", timeout=10).text
-        lsd_match = re.search(r'"LSD",\[\],{"token":"([^"]+)"}', res_home)
-        if lsd_match:
-            lsd = lsd_match.group(1)
-        dtsg_match = re.search(r'"dtsg":\{"token":"([^"]+)"', res_home)
-        if not dtsg_match:
-            dtsg_match = re.search(r'name="fb_dtsg" value="([^"]+)"', res_home)
-        if dtsg_match:
-            fb_dtsg = dtsg_match.group(1)
-        jazoest_match = re.search(r'name="jazoest" value="(\d+)"', res_home)
-        if jazoest_match:
-            jazoest = jazoest_match.group(1)
-    except:
-        pass
-    dynamic_csrftoken = session.cookies.get('csrftoken')
-    if not dynamic_csrftoken:
-        csf_match = re.search(r'csrftoken=([^;]+)', cookie)
-        dynamic_csrftoken = csf_match.group(1) if csf_match else "missing"
-    session.headers.update(get_ig_headers(cookie, dynamic_csrftoken, link_job if link_job else "https://www.instagram.com/"))
-    actor_id_match = re.search(r'ds_user_id=(\d+)', cookie)
-    actor_id = actor_id_match.group(1) if actor_id_match else "0"
-    tracking_token = ""
-    try:
-        if link_job:
-            res_get = session.get(link_job, impersonate="chrome120", timeout=10).text
-            tt_match = re.search(r'"tracking_token":"([^"]+)"', res_get)
-            if tt_match:
-                tracking_token = tt_match.group(1)
-    except:
-        pass
-    variables = {
-        "input": {
-            "actor_id": actor_id, "client_mutation_id": str(random.randint(1000000, 9999999)),
-            "container_module": "single_post", "media_id": str(mediaid)
-        }
-    }
-    if tracking_token:
-        variables["input"]["tracking_token"] = tracking_token
-    data = {
-        "av": actor_id, "__d": "www", "__user": "0", "__a": "1", "__req": "h",
-        "__hs": "20702.HYP:instagram_web_pkg.2.1...0", "dpr": "1", "__ccg": "EXCELLENT",
-        "__rev": "1046913831", "__comet_req": "7", "fb_dtsg": fb_dtsg, "jazoest": jazoest,
-        "lsd": lsd, "fb_api_caller_class": "RelayModern", "fb_api_req_friendly_name": "usePolarisLikeMediaXIGLikeMutation",
-        "server_timestamps": "true", "doc_id": "27182485238052618", "variables": json.dumps(variables)
-    }
-    try:
-        res_gql = session.post('https://www.instagram.com/api/graphql', data=data, impersonate="chrome120", timeout=15)
-        return res_gql.text.strip()
-    except Exception as e:
-        return json.dumps({"status": "error", "message": str(e)})
-
-def cmt(mediaid, text, cookie, csrftoken, link_job="", proxy=None):
-    if not mediaid:
-        return '{"status": "error", "message": "Lỗi Media ID"}'
-    cookie = unquote(cookie)
-    session = c_requests.Session()
-    proxies = format_proxy(proxy)
-    if proxies:
-        session.proxies = proxies
-    for item in cookie.split(';'):
-        if '=' in item:
-            try:
-                key, val = item.strip().split('=', 1)
-                session.cookies.set(key, val, domain='.instagram.com')
-            except:
-                pass
-    fb_dtsg, lsd, jazoest = "", "9zei3OjvTBQ-9YG6E0OMzm", "26312"
-    try:
-        res_home = session.get(link_job if link_job else "https://www.instagram.com/", impersonate="chrome120", timeout=10).text
-        lsd_match = re.search(r'"LSD",\[\],{"token":"([^"]+)"}', res_home)
-        if lsd_match:
-            lsd = lsd_match.group(1)
-        dtsg_match = re.search(r'"dtsg":\{"token":"([^"]+)"', res_home)
-        if not dtsg_match:
-            dtsg_match = re.search(r'name="fb_dtsg" value="([^"]+)"', res_home)
-        if dtsg_match:
-            fb_dtsg = dtsg_match.group(1)
-        jazoest_match = re.search(r'name="jazoest" value="(\d+)"', res_home)
-        if jazoest_match:
-            jazoest = jazoest_match.group(1)
-    except:
-        pass
-    dynamic_csrftoken = session.cookies.get('csrftoken')
-    if not dynamic_csrftoken:
-        csf_match = re.search(r'csrftoken=([^;]+)', cookie)
-        dynamic_csrftoken = csf_match.group(1) if csf_match else "missing"
-    session.headers.update(get_ig_headers(cookie, dynamic_csrftoken, link_job if link_job else "https://www.instagram.com/"))
-    actor_id_match = re.search(r'ds_user_id=(\d+)', cookie)
-    actor_id = actor_id_match.group(1) if actor_id_match else "0"
-    variables = {
-        "connections": [f"client:root:__PolarisPostComments__xdt_api__v1__media__media_id__comments__connection_connection(data:{{}},media_id:\"{mediaid}\",sort_order:\"popular\")"],
-        "data": {"comment_text": text, "media_id": str(mediaid)}
-    }
-    data = {
-        "av": actor_id, "__d": "www", "__user": "0", "__a": "1", "__req": "10",
-        "__hs": "20702.HYP:instagram_web_pkg.2.1...0", "dpr": "1", "__ccg": "EXCELLENT",
-        "__rev": "1046917461", "__comet_req": "7", "fb_dtsg": fb_dtsg, "jazoest": jazoest,
-        "lsd": lsd, "fb_api_caller_class": "RelayModern", "fb_api_req_friendly_name": "PolarisPostCommentInputRevampedMutation",
-        "server_timestamps": "true", "doc_id": "27261905640092552", "variables": json.dumps(variables)
-    }
-    try:
-        res_gql = session.post('https://www.instagram.com/api/graphql', data=data, impersonate="chrome120", timeout=15)
-        return res_gql.text.strip()
-    except Exception as e:
-        return json.dumps({"status": "error", "message": str(e)})
-
-def gui_nhan_xu(job_type, task_list, uid, cookie_check, xsmm_instance):
-    """Hàm gửi nhận thưởng và in kết quả chi tiết kèm cookie_check"""
-    if not task_list:
-        return
-    sys.stdout.write("\r                                              \r")
-    print(f"{yellow} ⏩ Gom đủ {len(task_list)} task -> Đang gửi duyệt nhận xu...{white}")
-    ck = xsmm_instance.complete_tasks(job_type, task_list, uid=uid, cookie_check=cookie_check)
-    now = datetime.now().strftime("%H:%M:%S")
+# ========== BẢNG MÀU ==========
+class Colors:
+    PRIMARY = "\033[38;2;255;100;150m"
+    SUCCESS = "\033[38;2;0;255;127m"
+    ERROR = "\033[38;2;255;50;50m"
+    WARNING = "\033[38;2;255;200;50m"
+    INFO = "\033[38;2;100;255;200m"
+    KEY = "\033[38;2;200;160;255m"
+    VALUE = "\033[38;2;120;255;220m"
+    LINE = "\033[38;2;190;235;210m"
+    TITLE = "\033[38;2;255;215;0m"
+    NUMBER = "\033[38;2;255;165;0m"
+    EMAIL = "\033[38;2;100;200;255m"
+    USERNAME = "\033[38;2;0;255;255m"
+    PASSWORD = "\033[38;2;255;105;180m"
+    RESET = "\033[0m"
     
-    if isinstance(ck, dict):
-        if 'message' in ck:
-            pts = ck.get('points', 0)
-            succ = ck.get('success_count', len(task_list))
-            print(f"[{now}] {green} ⏩ {ck['message']} (+{pts} xu | Hoàn thành: {succ} task){white}")
-        elif ck.get("is_timeout"):
-            print(f"[{now}] {cam} ⏩ {ck['message']}{white}")
-        elif 'error' in ck:
-            print(f"[{now}] {red} ⏩ LỖI XSMM: {ck['error']}{white}")
-        
-        if ck.get('countdown', 0) > 0:
-            print(f"{yellow} ⏩ Hệ thống yêu cầu nghỉ {ck['countdown']}s...{white}")
-            time.sleep(ck['countdown'])
+    @staticmethod
+    def color_text(text, color):
+        return f"{color}{text}{Colors.RESET}"
 
-# ================= MAIN RUN =================
-banner()
+# ========== HÀM CƠ BẢN ==========
+def banner():
+    os.system('clear' if os.name == 'posix' else 'cls')
+    print(f"""{Colors.PRIMARY}
+ ██████╗ ██╗  ██╗██████╗  ██████╗ ███╗   ███╗███████╗
+██╔════╝ ██║  ██║██╔══██╗██╔═══██╗████╗ ████║██╔════╝
+██║  ███╗███████║██████╔╝██║   ██║██╔████╔██║█████╗  
+██║   ██║██╔══██║██╔══██╗██║   ██║██║╚██╔╝██║██╔══╝  
+╚██████╔╝██║  ██║██║  ██║╚██████╔╝██║ ╚═╝ ██║███████╗
+ ╚═════╝ ╚═╝  ╚═╝╚═╝  ╚═╝ ╚═════╝ ╚═╝     ╚═╝╚══════╝
+{Colors.RESET}""")
+    print(f"{Colors.INFO}Phiên Bản: v12.0 (CHROME PC - FULL HOÀN CHỈNH){Colors.RESET}")
+    print(f"{Colors.LINE}{'─'*70}{Colors.RESET}\n")
 
-xsmm_token = ""
-xu = 0
-username = "Unknown"
-
-if os.path.exists("logXSMM.txt"):
-    while True:
-        print(f"{white} Nhập{cam} Enter{white} để dùng token XSMM đã lưu! {xuong} Nhập{red} No{white} để nhập lại Token : ", end="")
-        nhap = input().strip().lower()
-        if nhap in ['', 'no']:
-            break
-        print(f"{red}Sai Định Dạng\n")
-        
-    if nhap == 'no':
-        xsmm_token = input(f"{white} ⏩ {green}Access Token XSMM: ").strip()
-        with open("logXSMM.txt", "w") as f:
-            json.dump({"token": xsmm_token}, f)
-    else:
-        with open("logXSMM.txt", "r") as f:
-            acc = json.load(f)
-            xsmm_token = acc.get("token", "")
-else:
-    xsmm_token = input(f"{white} ⏩ {green}Access Token XSMM: ").strip()
-    with open("logXSMM.txt", "w") as f:
-        json.dump({"token": xsmm_token}, f)
-
-xsmm = XSMMTool(token=xsmm_token)
-user_info = xsmm.get_user_info()
-
-if isinstance(user_info, dict) and "user" in user_info:
-    xu = user_info["user"].get("points", 0)
-    username = user_info["user"].get("username", "Unknown")
-    print(f"\n{white} ✅ {green}Đăng nhập XSMM thành công: {yellow}{username}{white}\n")
-else:
-    print(f"\n{red} ❌ Token sai hoặc đã hết hạn\n")
-    if os.path.exists("logXSMM.txt"):
-        os.remove("logXSMM.txt")
-    sys.exit()
-
-nhaplaicc = False
-mangcookie = []
-
-if os.path.exists("ListccXSMM.json"):
-    while True:
-        print(f"{white} Nhập{cam} Enter{white} để dùng list cookies đã lưu! {xuong} Nhập{red} 1{white} để nhập lại list cookie : ", end="")
-        nhapcc = input().strip()
-        if nhapcc in ['', '1']:
-            break
-        print(f"{red}Sai lựa chọn\n")
-        
-    if nhapcc == '':
+def load_config():
+    if os.path.exists(CONFIG_FILE):
         try:
-            with open("ListccXSMM.json", "r", encoding="utf-8") as f:
-                listccdaluu = json.load(f)
-            for acc_item in listccdaluu:
-                cc = acc_item.get("cookie", "")
-                px = acc_item.get("proxy", "")
-                if not cc:
-                    continue
-                access = check_cookie_ig(cc, px)
-                try:
-                    configdata = json.loads(access)
-                    if configdata and 'form_data' in configdata and configdata['form_data'].get('username'):
-                        mangcookie.append({"cookie": cc, "proxy": px})
-                except:
-                    pass
-            luong = len(mangcookie)
-        except:
-            nhaplaicc = True
-    else:
-        nhaplaicc = True
-elif os.path.exists("ListccXSMM.txt"):
+            with open(CONFIG_FILE, 'r', encoding='utf-8') as f: return json.load(f)
+        except Exception: pass
+    return {}
+
+def save_config(data):
     try:
-        with open("ListccXSMM.txt", "r") as f:
-            listccdaluu = f.read().splitlines()
-        for cc in listccdaluu:
-            if not cc:
-                continue
-            access = check_cookie_ig(cc)
-            try:
-                configdata = json.loads(access)
-                if configdata and 'form_data' in configdata and configdata['form_data'].get('username'):
-                    mangcookie.append({"cookie": cc, "proxy": ""})
-            except:
-                pass
-        luong = len(mangcookie)
-        with open("ListccXSMM.json", "w", encoding="utf-8") as f:
-            json.dump(mangcookie, f)
-        os.remove("ListccXSMM.txt")
-    except:
-        nhaplaicc = True
-else:
-    nhaplaicc = True
+        with open(CONFIG_FILE, 'w', encoding='utf-8') as f: json.dump(data, f, indent=4)
+    except Exception: pass
 
-if nhaplaicc:
-    if os.path.exists("ListccXSMM.json"):
-        os.remove("ListccXSMM.json")
-    if os.path.exists("ListccXSMM.txt"):
-        os.remove("ListccXSMM.txt")
-        
-    while True:
-        print(f"{white} ✏ {blue}Nhập số nick INSTA muốn chạy: ", end="")
-        try:
-            luong = int(input().strip())
-            if 1 <= luong <= 2000:
-                break
-            print(f"{red}Ít nhất là 1 và nhiều nhất là 2000!\n")
-        except:
-            print(f"{red}Nhập số hợp lệ!")
-
-    thu = 1
-    c = 1
-    while c <= luong:
-        print(f"{white} + {green}Nhập Cookie Thứ {thu}:{white} ", end="")
-        cookie_str = input().strip()
-        print(f"{white}   {cyan}Nhập Proxy cho Nick {thu} {pink}(Enter để bỏ qua){white}: ", end="")
-        proxy_str = input().strip()
-        
-        access = check_cookie_ig(cookie_str, proxy_str)
-        try:
-            configdata = json.loads(access)
-            if configdata and 'form_data' in configdata and configdata['form_data'].get('username'):
-                mangcookie.append({"cookie": cookie_str, "proxy": proxy_str})
-                with open("ListccXSMM.json", "w", encoding="utf-8") as f:
-                    json.dump(mangcookie, f)
-                c += 1
-                thu += 1
-            else:
-                print(f"{white} ⛔ {red}Cookie hoặc Proxy lỗi, thử lại đi \n")
-        except:
-            print(f"{white} ⛔ {red}Cookie hoặc Proxy lỗi, thử lại đi \n")
-
-dl = 0
-doi = 99999
-if len(mangcookie) == 1:
-    print(f"{white} ⏩ {blue}Hết nhiệm vụ hoặc lỗi thì dừng bao lâu? : {white}", end="")
+def save_account(thread_id, email_str, password, username, full_name, mode="auto", cookie=""):
+    folder_name = "Instagram_reg_PC"
+    if not os.path.exists(folder_name): os.makedirs(folder_name)
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    filename = f"{folder_name}/account_{thread_id}_{timestamp}.txt"
+    
+    content = f"""========================================
+THÔNG TIN TÀI KHOẢN INSTAGRAM (PC CHROME)
+========================================
+Ngày tạo: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
+Luồng:    {thread_id}
+Chế độ:   {mode}
+----------------------------------------
+Email:    {email_str}
+Password: {password}
+Username: {username}
+Họ tên:   {full_name}
+Cookie:   {cookie}
+----------------------------------------
+Định dạng nhanh: {email_str}|{password}|{username}|{cookie}
+========================================
+"""
     try:
-        dl = int(input().strip())
-    except:
-        dl = 150
-else:
-    while True:
-        dl = 150
-        print(f"{white} ⏩ {blue}Sau bao nhiêu nhiệm vụ thì đổi nick : {white}", end="")
-        try:
-            doi = int(input().strip())
-            if doi >= 1:
-                break
-            print(f"{red}Lựa chọn không hợp lệ !\n")
-        except:
-            print(f"{red}Nhập số hợp lệ!")
+        with open(filename, 'w', encoding='utf-8') as f: f.write(content)
+        with open(f"{folder_name}/ALL_ACCOUNTS.txt", 'a', encoding='utf-8') as f: 
+            f.write(f"{email_str}|{password}|{username}|{full_name}|{cookie}\n")
+    except Exception: pass
 
-listnv = []
-timedelaytym = 10
-timedelaysub = 15
-timedelaycmt = 20
+def VietnameseNameGenerator():
+    first = random.choice(["Nguyễn", "Trần", "Lê", "Phạm", "Hoàng", "Huỳnh", "Vũ", "Đặng", "Bùi", "Đỗ"])
+    middle = random.choice(["Văn", "Thị", "Minh", "Hoàng", "Anh", "Bảo", "Gia", "Khánh", "Ngọc", "Phương"])
+    last = random.choice(["An", "Bình", "Cường", "Dũng", "Anh", "Bích", "Chi", "Diệp", "Dung", "Hải", "Hùng"])
+    full_name = f"{first} {middle} {last}"
+    cleaned = re.sub(r'[^a-zA-Z\s]', '', full_name.lower()).replace(' ', '')
+    return full_name, f"{cleaned}_{random.randint(100, 99999)}"
 
-while True:
-    print(f"{yellow} ⏩ {blue}Chế độ Tym trên XSMM{pink} (on/off): {white}", end="")
-    chon_tym = input().strip().lower()
-    if chon_tym == 'on':
-        listnv.append('instagram_like')
-        while True:
-            print(f"{yellow} ⏩ {blue}Delay Nhiệm Vụ Tym (lớn hơn 10): {white}", end="")
-            try:
-                timedelaytym = int(input().strip())
-                if timedelaytym >= 10:
-                    break
-                print(f"{red}Delay tối thiểu 10 !\n")
-            except:
-                pass
-
-    print(f"{yellow} ⏩ {blue}Chế độ Follow trên XSMM{pink} (on/off): {white}", end="")
-    chon_sub = input().strip().lower()
-    if chon_sub == 'on':
-        listnv.append('instagram_follow')
-        while True:
-            print(f"{yellow} ⏩ {blue}Delay Nhiệm Vụ Follow (lớn hơn 10): {white}", end="")
-            try:
-                timedelaysub = int(input().strip())
-                if timedelaysub >= 10:
-                    break
-                print(f"{red}Delay tối thiểu 10 !\n")
-            except:
-                pass
-
-    print(f"{yellow} ⏩ {blue}Chế độ Comment trên XSMM{pink} (on/off): {white}", end="")
-    chon_cmt = input().strip().lower()
-    if chon_cmt == 'on':
-        listnv.append('instagram_comment')
-        while True:
-            print(f"{yellow} ⏩ {blue}Delay Nhiệm Vụ Cmt (lớn hơn 10): {white}", end="")
-            try:
-                timedelaycmt = int(input().strip())
-                if timedelaycmt >= 10:
-                    break
-                print(f"{red}Delay tối thiểu 10 !\n")
-            except:
-                pass
-
-    if len(listnv) == 0:
-        print(f"{red}Chọn tối thiểu 1 loại Job !\n")
-    else:
-        break
-
-banner()
-print(f"{cyan} ✅ {cam}XSMM User    : {white}{username}")
-print(f"{cyan} ✅ {cam}Số Nick Chạy : {white}{len(mangcookie)}")
-print(f"{cyan} ✅ {cam}Số Dư Ban Đầu: {green}{xu} xu")
-print(f"{yellow} ────────────────────────────────────────────────────────{reset}\n")
-
-while True:
-    for l in range(len(mangcookie)-1, -1, -1):
-        acc_data = mangcookie[l]
-        cookie = acc_data["cookie"]
-        proxy = acc_data.get("proxy", "")
+# ==================== CÁC CLASS XỬ LÝ EMAIL ====================
+class MailService:
+    def __init__(self):
+        self.base_url = "https://api.mail.tm"
+        self.token = None
+        self.domain = None
+        self.email_address = None
         
-        # 1. KIỂM TRA ĐỘ SỐNG CỦA COOKIE INSTAGRAM
-        access = check_cookie_ig(cookie, proxy)
-        is_live = False
-        tenfb = ""
-        idfb = ""
-        
+    def get_domain(self):
         try:
-            configdata = json.loads(access)
-            if configdata and 'form_data' in configdata and configdata['form_data'].get('username'):
-                is_live = True
-                tenfb = configdata['form_data']['username']
-                
-                # Trích xuất UID từ Cookie
-                idfb_match = re.search(r'ds_user_id=(\d+)', cookie)
-                idfb = idfb_match.group(1) if idfb_match else str(configdata['form_data'].get('id', ''))
-        except Exception:
-            is_live = False
-
-        if not is_live or not idfb:
-            print(f"{white} ⛔ {red}Cookie Die hoặc Proxy lỗi - ĐANG ĐỔI NICK\n")
-            mangcookie.pop(l)
-            with open("ListccXSMM.json", "w", encoding="utf-8") as f:
-                json.dump(mangcookie, f)
-            continue
-
-        px_display = f" | Proxy: {proxy}" if proxy else " | Không Proxy"
-        print(f"{green} ● NICK LIVE [{tenfb} | UID: {idfb}{px_display}] ● {white}")
-
-        # 2. ĐỒNG BỘ NICK LÊN XSMM (AN TOÀN)
-        try:
-            acc_list = xsmm.get_accounts(account_type="instagram", search=idfb)
-            exists = False
+            r = requests.get(f"{self.base_url}/domains", timeout=10)
+            if r.status_code == 200: 
+                self.domain = r.json()['hydra:member'][0]['domain']
+                return self.domain
+        except Exception: return None
             
-            if isinstance(acc_list, dict) and acc_list.get("accounts"):
-                for acc in acc_list["accounts"]:
-                    if acc and (str(acc.get("account_id")) == str(idfb) or str(acc.get("name", "")).lower() == str(tenfb).lower()):
-                        exists = True
-                        break
-                        
-            if not exists:
-                link_ig = f"https://www.instagram.com/{tenfb}"
-                add_res = xsmm.add_account("instagram", link_ig)
-                if isinstance(add_res, dict) and "id" in add_res:
-                    print(f"{green} ➕ Đã thêm tài khoản [{tenfb}] vào XSMM thành công!{white}")
-        except Exception as e:
-            print(f"{yellow} ⚠️ Không thể đồng bộ tài khoản: {e}{white}")
-
-        # 3. BẮT ĐẦU NHẬN TASK
-        print(f"{white} Bắt đầu nhận việc cho UID: {cam}{idfb} ({tenfb})")
-        max_job = 0
-        rand_job = random.choice(listnv)
-        
-        # ================= XỬ LÝ NHIỆM VỤ TYM =================
-        if rand_job == 'instagram_like':
-            list_nv = xsmm.get_tasks(rand_job, uid=idfb)
-            if isinstance(list_nv, dict) and "error" in list_nv:
-                print(f"{white} ❌ {red}Lỗi từ XSMM: {list_nv['error']}")
-                if len(mangcookie) == 1:
-                    for j in range(dl, 0, -1):
-                        sys.stdout.write(f"\r{green}Đang Chờ Delay Tránh Block {yellow}{j} Giây\r")
-                        sys.stdout.flush()
-                        time.sleep(1)
-            elif isinstance(list_nv, list) and len(list_nv) == 0:
-                print(f"{white} ❌ {yellow}Hết nhiệm vụ Tym hoặc chưa tới lượt!")
-                if len(mangcookie) == 1:
-                    for j in range(dl, 0, -1):
-                        sys.stdout.write(f"\r{green}Đang Chờ Delay Tránh Block {yellow}{j} Giây\r")
-                        sys.stdout.flush()
-                        time.sleep(1)
-            elif isinstance(list_nv, list):
-                soloitym = 0
-                for nv in list_nv:
-                    task_id = nv.get('id')
-                    idm = nv.get('target_id', '')
-                    link_job = nv.get('target_url', '')
-                    csf_match = re.search(r'csrftoken=([^;]+)', cookie)
-                    csf = csf_match.group(1) if csf_match else ""
-                    
-                    print(f"{yellow} ⏩ {blue}Job Tym: {white}{link_job} | MediaID: {idm}")
-                    chayfl = tym(idm, cookie, csf, link_job, proxy=proxy)
-                    max_job += 1
-                    
-                    try:
-                        g = json.loads(chayfl)
-                        if 'data' not in g and g.get('status') != 'ok':
-                            raise Exception(g.get('message', 'Bị IG chặn thao tác'))
-                            
-                        print(f"{green} ● TYM THÀNH CÔNG -> Đang gửi nhận xu... ● {white}")
-                        gui_nhan_xu("instagram_like", [task_id], idfb, cookie, xsmm)
-                        soloitym = 0
-                    except Exception as e:
-                        print(f"{red} ● TYM LỖI: {str(e)} ● {white}")
-                        soloitym += 1
-                        
-                    loadtime(int(timedelaytym))
-                    
-                    if soloitym > 4:
-                        print(f"{blue} ⏩ Gặp lỗi quá nhiều -> Đổi Nick! ● {white}")
-                        break
-                            
-                    if max_job >= doi:
-                        max_job = 0
-                        break
-
-        # ================= XỬ LÝ NHIỆM VỤ FOLLOW =================
-        elif rand_job == 'instagram_follow':
-            list_nv = xsmm.get_tasks(rand_job, uid=idfb)
-            if isinstance(list_nv, dict) and "error" in list_nv:
-                print(f"{white} ❌ {red}Lỗi từ XSMM: {list_nv['error']}")
-                if len(mangcookie) == 1:
-                    for j in range(dl, 0, -1):
-                        sys.stdout.write(f"\r{green}Đang Chờ Delay Tránh Block {yellow}{j} Giây\r")
-                        sys.stdout.flush()
-                        time.sleep(1)
-            elif isinstance(list_nv, list) and len(list_nv) == 0:
-                print(f"{white} ❌ {yellow}Hết nhiệm vụ Follow hoặc chưa tới lượt!")
-                if len(mangcookie) == 1:
-                    for j in range(dl, 0, -1):
-                        sys.stdout.write(f"\r{green}Đang Chờ Delay Tránh Block {yellow}{j} Giây\r")
-                        sys.stdout.flush()
-                        time.sleep(1)
-            elif isinstance(list_nv, list):
-                soloisub = 0
-                cache_batch_nv = []
-                temp_sess = c_requests.Session()
-                proxies = format_proxy(proxy)
-                if proxies:
-                    temp_sess.proxies = proxies
-                temp_sess.headers.update({"User-Agent": useragent})
-                
-                for nv in list_nv:
-                    task_id = nv.get('id')
-                    target_id = nv.get('target_id', '')
-                    link_job = nv.get('target_url', '')
-                    
-                    if not target_id or not str(target_id).isdigit():
-                        try:
-                            res_html = temp_sess.get(link_job, impersonate="chrome120", timeout=10).text
-                            m = re.search(r'"profile_id":"(\d+)"', res_html)
-                            if not m:
-                                m = re.search(r'"user_id":"(\d+)"', res_html)
-                            if not m:
-                                m = re.search(r'profilePage_(\d+)', res_html)
-                            if m:
-                                target_id = m.group(1)
-                        except:
-                            pass
-
-                    print(f"{yellow} ⏩ {blue}Follow Target ID: {white}{target_id} ({link_job})")
-
-                    if not target_id or not str(target_id).isdigit():
-                        print(f"{red} ❌ Không trích xuất được ID số, bỏ qua!")
-                        continue
-
-                    csf_match = re.search(r'csrftoken=([^;]+)', cookie)
-                    csf = csf_match.group(1) if csf_match else ""
-
-                    chay_sub = follow(target_id, cookie, csf, link_job, proxy=proxy)
-                    max_job += 1
-
-                    try:
-                        g = json.loads(chay_sub)
-                        if 'data' not in g and g.get('status') != 'ok' and g.get('status') != 'success':
-                            print(f"{red} ❌ Follow ID {target_id} thất bại: {g.get('message', 'Block')}")
-                            soloisub += 1
-                        else:
-                            print(f"{green} ✅ Follow ID {target_id} thành công!{white}")
-                            cache_batch_nv.append(task_id)
-                            soloisub = 0
-                            
-                            # Gom đủ 10 nhiệm vụ: Gửi nhận xu và break ngay để refresh lấy nhóm task mới
-                            if len(cache_batch_nv) >= 10:
-                                gui_nhan_xu("instagram_follow", cache_batch_nv, idfb, cookie, xsmm)
-                                cache_batch_nv = []
-                                print(f"{cyan} 🔄 Đã hoàn tất đợt 10 task -> Refresh lấy danh sách task mới...{white}")
-                                break
-                    except Exception as e:
-                        print(f"{red} ❌ Follow ID {target_id} lỗi JSON: {e}")
-                        soloisub += 1
-
-                    # Delay chạy trực tiếp ngay sau mỗi lần follow
-                    loadtime(int(timedelaysub))
-
-                    if soloisub > 4:
-                        print(f"{blue} ⏩ Lỗi liên tiếp -> Đổi Nick! ● {white}")
-                        break
-                            
-                    if max_job >= doi:
-                        max_job = 0
-                        break
-
-                # Gửi nhận số task còn dư lại (nếu danh sách ban đầu ít hơn 10 task)
-                if len(cache_batch_nv) > 0:
-                    gui_nhan_xu("instagram_follow", cache_batch_nv, idfb, cookie, xsmm)
-                    cache_batch_nv = []
-
-        # ================= XỬ LÝ NHIỆM VỤ COMMENT =================
-        elif rand_job == 'instagram_comment':
-            list_nv = xsmm.get_tasks(rand_job, uid=idfb)
-            if isinstance(list_nv, dict) and "error" in list_nv:
-                print(f"{white} ❌ {red}Lỗi từ XSMM: {list_nv['error']}")
-                if len(mangcookie) == 1:
-                    for j in range(dl, 0, -1):
-                        sys.stdout.write(f"\r{green}Đang Chờ Delay Tránh Block {yellow}{j} Giây\r")
-                        sys.stdout.flush()
-                        time.sleep(1)
-            elif isinstance(list_nv, list) and len(list_nv) == 0:
-                print(f"{white} ❌ {yellow}Hết nhiệm vụ Comment hoặc chưa tới lượt!")
-                if len(mangcookie) == 1:
-                    for j in range(dl, 0, -1):
-                        sys.stdout.write(f"\r{green}Đang Chờ Delay Tránh Block {yellow}{j} Giây\r")
-                        sys.stdout.flush()
-                        time.sleep(1)
-            elif isinstance(list_nv, list):
-                soloicmt = 0
-                temp_sess = c_requests.Session()
-                proxies = format_proxy(proxy)
-                if proxies:
-                    temp_sess.proxies = proxies
-                temp_sess.headers.update({"User-Agent": useragent})
-                
-                for nv in list_nv:
-                    task_id = nv.get('id')
-                    idm = nv.get('target_id', '')
-                    noidung = nv.get('comment', '❤️❤️❤️')
-                    link_job = nv.get('target_url', '')
-                        
-                    if not idm:
-                        try:
-                            res_html = temp_sess.get(link_job, impersonate="chrome120", timeout=10).text
-                            m = re.search(r'instagram://media\?id=(\d+)', res_html)
-                            if not m:
-                                m = re.search(r'"media_id":"(\d+)"', res_html)
-                            if not m:
-                                m = re.search(r'media\?id=(\d+)', res_html)
-                            if m:
-                                idm = m.group(1)
-                        except:
-                            pass
-
-                    print(f"{yellow} ⏩ {blue}Job CMT: {white}{link_job} | ND: {noidung}")
-                    
-                    if not idm:
-                        print(f"{red} ● CMT LỖI: Không tìm thấy Media ID ● {white}")
-                        soloicmt += 1
-                        continue
-
-                    csf_match = re.search(r'csrftoken=([^;]+)', cookie)
-                    csf = csf_match.group(1) if csf_match else ""
-
-                    chay_cmt = cmt(idm, noidung, cookie, csf, link_job, proxy=proxy)
-                    max_job += 1
-                    
-                    try:
-                        g = json.loads(chay_cmt)
-                        if g.get('status') != 'ok' and 'data' not in g:
-                            raise Exception(g.get('message', 'Bị IG chặn cmt'))
-                            
-                        print(f"{green} ● COMMENT THÀNH CÔNG -> Đang gửi nhận xu... ● {white}")
-                        gui_nhan_xu("instagram_comment", [task_id], idfb, cookie, xsmm)
-                        soloicmt = 0
-                    except Exception as e:
-                        print(f"{red} ● CMT LỖI: {str(e)} ● {white}")
-                        soloicmt += 1
-                        
-                    loadtime(int(timedelaycmt))
-                    
-                    if soloicmt > 4:
-                        print(f"{blue} ⏩ Lỗi liên tiếp -> Đổi Nick! ● {white}")
-                        break
-                            
-                    if max_job >= doi:
-                        max_job = 0
-                        break
-
-    if len(mangcookie) == 1 and dl == 0:
-        print(f"{pink} ⏩ {blue}Dừng Thời Gian: ", end="")
+    def create_account(self, address=None):
+        if not self.domain and not self.get_domain(): return None
+        name = address if address else f"user_{uuid.uuid4().hex[:8]}"
         try:
-            dl = int(input().strip())
-        except:
-            dl = 150
+            r = requests.post(f"{self.base_url}/accounts", json={"address": f"{name}@{self.domain}", "password": "TempPass123!"}, timeout=10)
+            if r.status_code == 201: 
+                self.email_address = r.json()['address']
+                return self.email_address
+        except Exception: return None
+            
+    def authenticate(self, email=None, password="TempPass123!"):
+        if email: self.email_address = email
+        try:
+            r = requests.post(f"{self.base_url}/token", json={"address": self.email_address, "password": password}, timeout=10)
+            if r.status_code == 200: 
+                self.token = r.json()['token']
+                return True
+        except Exception: return False
+            
+    def get_otp_code(self, timeout=120):
+        if not self.token: return None
+        headers = {"Authorization": f"Bearer {self.token}"}
+        start_time = time.time()
+        last_id = None
+        while time.time() - start_time < timeout:
+            if STOP_EVENT.is_set(): return None
+            try:
+                r = requests.get(f"{self.base_url}/messages", headers=headers, timeout=10)
+                if r.status_code == 200:
+                    for msg in r.json().get('hydra:member', []):
+                        if 'Instagram' in msg.get('subject', ''):
+                            if msg.get('id') != last_id:
+                                last_id = msg['id']
+                                detail = requests.get(f"{self.base_url}/messages/{last_id}", headers=headers, timeout=10).json()
+                                text = detail.get('text', '') or re.sub('<[^<]+?>', '', str(detail.get('html', '')))
+                                match = re.search(r'\b(\d{6})\b', text)
+                                if match: return match.group(1)
+            except Exception: pass
+            time.sleep(5)
+        return None
 
-    if len(mangcookie) == 0:
-        if os.path.exists("ListccXSMM.json"):
-            os.remove("ListccXSMM.json")
-        print(f"\n{pink} ⛔ {red}Tất Cả Cookie Đều Die Hoặc Proxy Lỗi\n")
-        break
+class GmailIMAPService:
+    def __init__(self, base_email, app_password):
+        self.base_email = base_email
+        self.app_password = app_password.replace(" ", "")
+        self.mail = None
+        self.seen_uids = set()
+
+    def connect(self):
+        try:
+            self.mail = imaplib.IMAP4_SSL("imap.gmail.com", 993)
+            self.mail.login(self.base_email, self.app_password)
+            return True
+        except Exception as e:
+            print(f"{Colors.color_text(f'Lỗi đăng nhập IMAP cho {self.base_email}: {e}', Colors.ERROR)}")
+            return False
+
+    def get_latest_uid(self):
+        if not self.mail and not self.connect(): return 0
+        try:
+            self.mail.select("INBOX", readonly=True)
+            status, data = self.mail.uid("search", None, 'ALL')
+            if status == "OK" and data[0]:
+                uids = data[0].split()
+                if uids: return int(uids[-1]) 
+        except Exception: pass
+        return 0
+
+    def get_text(self, msg):
+        plain, html = [], []
+        if msg.is_multipart():
+            for part in msg.walk():
+                if part.get_content_disposition() == "attachment": continue
+                ctype = part.get_content_type()
+                payload = part.get_payload(decode=True)
+                if not payload: continue
+                charset = part.get_content_charset() or "utf-8"
+                text = payload.decode(charset, errors="replace")
+                if ctype == "text/plain": plain.append(text)
+                elif ctype == "text/html": html.append(text)
+        else:
+            payload = msg.get_payload(decode=True)
+            if payload:
+                charset = msg.get_content_charset() or "utf-8"
+                text = payload.decode(charset, errors="replace")
+                if msg.get_content_type() == "text/plain": plain.append(text)
+                else: html.append(text)
+        if plain: return "\n".join(plain).strip()
+        if html: return re.sub(r'<[^>]+>', ' ', "\n".join(html)).strip()
+        return ""
+
+    def get_otp_code(self, target_email, since_uid=0, timeout=120):
+        if not self.mail:
+            if not self.connect(): return None
+        start_time = time.time()
+        while time.time() - start_time < timeout:
+            if STOP_EVENT.is_set(): return None
+            try:
+                self.mail.select("INBOX", readonly=True)
+                status, data = self.mail.uid("search", None, 'ALL')
+                if status == "OK" and data[0]:
+                    uids = data[0].split()
+                    for uid_bytes in reversed(uids[-10:]):
+                        try: uid_int = int(uid_bytes)
+                        except ValueError: continue
+                        if uid_int <= since_uid or uid_bytes in self.seen_uids: continue
+                        status, fetch_data = self.mail.uid("fetch", uid_bytes, "(RFC822)")
+                        if status == "OK" and fetch_data:
+                            raw = None
+                            for item in fetch_data:
+                                if isinstance(item, tuple): raw = item[1]; break
+                            if raw:
+                                msg = email.message_from_bytes(raw)
+                                to_addr = str(msg.get("To", "")).lower()
+                                subject = str(msg.get("Subject", "")).lower()
+                                from_addr = str(msg.get("From", "")).lower()
+                                if target_email.lower() not in to_addr: continue
+                                if "instagram" in subject or "instagram" in from_addr:
+                                    self.seen_uids.add(uid_bytes) 
+                                    body = self.get_text(msg)
+                                    match = re.search(r'\b(\d{6})\b', body)
+                                    if match: return match.group(1)
+            except Exception: pass
+            time.sleep(5) 
+        return None
+
+class HotmailAPIService:
+    def __init__(self, data_line, api_mode):
+        self.url = "https://smail1s.com/get_messages"
+        self.data_line = data_line.strip()
+        self.api_mode = api_mode.strip()
+        self.email = self.data_line.split('|')[0] if '|' in self.data_line else self.data_line
+
+    def get_otp_code(self, timeout=120):
+        start_time = time.time()
+        payload = {"mode": self.api_mode, "data": self.data_line}
+        headers = {'Content-Type': 'application/json', 'User-Agent': 'Mozilla/5.0'}
+        while time.time() - start_time < timeout:
+            if STOP_EVENT.is_set(): return None
+            try:
+                response = requests.post(self.url, json=payload, headers=headers, timeout=20)
+                if response.status_code == 200:
+                    data_array = response.json().get("data", [])
+                    if data_array and len(data_array) > 0:
+                        account_data = data_array[0]
+                        if not account_data.get("error"):
+                            messages = account_data.get("messages", [])
+                            for msg in messages:
+                                subject = str(msg.get("subject", "")).lower()
+                                from_sender = str(msg.get("from", "")).lower()
+                                raw_msg = str(msg.get("message", ""))
+                                code_field = str(msg.get("code", "")).strip()
+                                is_ig = ("instagram" in subject) or ("instagram" in from_sender) or ("instagram" in raw_msg.lower())
+                                if is_ig:
+                                    if code_field and code_field.isdigit() and len(code_field) == 6: return code_field
+                                    match_subj = re.search(r'\b(\d{6})\b', subject)
+                                    if match_subj: return match_subj.group(1)
+                                    clean_text = re.sub(r'<[^>]+>', ' ', raw_msg)
+                                    match_body = re.search(r'\b(\d{6})\b', clean_text)
+                                    if match_body: return match_body.group(1)
+            except Exception: pass
+            time.sleep(5)
+        return None
+
+def generate_dot_variants(gmail):
+    local, sep, domain = gmail.rpartition("@")
+    if not sep or domain.lower() != "gmail.com": return [gmail]
+    if "." in local: local = local.replace(".", "")
+    variants = []
+    if local:
+        for mask in range(1 << max(0, len(local) - 1)):
+            value = local[0]
+            for i in range(1, len(local)):
+                if mask & (1 << (i - 1)): value += "."
+                value += local[i]
+            variants.append(value + "@" + domain)
+    random.shuffle(variants)
+    return variants
+
+# ==================== MAIN THREAD ====================
+class starts(threading.Thread):
+    def __init__(self, thread_id, mode, account_count, data_source, manual_password=None, base_gmail=None, app_password=None, api_mode=None):
+        super().__init__()
+        self.thread_id = f"Tab-{thread_id}"
+        self.mode = mode
+        self.account_count = account_count
+        self.data_source = data_source
+        self.manual_password = manual_password 
+        self.base_gmail = base_gmail
+        self.app_password = app_password
+        self.api_mode = api_mode
+    
+    def run(self):
+        global BASE_YEAR
+        
+        def create_one_account(account_index):
+            global BASE_YEAR
+            if STOP_EVENT.is_set(): return False
+                
+            print(f"\n{Colors.color_text('─'*70, Colors.LINE)}")
+            print(f"{Colors.color_text(f'[{self.thread_id}] BẮT ĐẦU TẠO TÀI KHOẢN THỨ {account_index}', Colors.TITLE)}")
+            
+            # 1. LẤY EMAIL & KHỞI TẠO SERVICE
+            used_email = ""
+            imap_service = None
+            mail_service = None
+            hotmail_service = None
+            full_name, username = VietnameseNameGenerator()
+            chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%"
+            secure_pass = "".join(random.choice(chars) for _ in range(12))
+
+            if self.mode == "1":
+                mail_service = MailService()
+                used_email = mail_service.create_account(username)
+                if not used_email: return False
+                mail_service.authenticate()
+                
+            elif self.mode == "2":
+                with DATA_LOCK:
+                    if len(self.data_source) == 0: return False
+                    used_email = self.data_source.pop(0)
+                if "mail.tm" in used_email.lower():
+                    mail_service = MailService()
+                    pass_to_use = self.manual_password if self.manual_password else "TempPass123!"
+                    mail_service.authenticate(used_email, pass_to_use)
+                
+            elif self.mode == "3":
+                with DATA_LOCK:
+                    if len(self.data_source) == 0: return False
+                    used_email, app_pass = self.data_source.pop(0)
+                imap_service = GmailIMAPService(used_email, app_pass)
+                
+            elif self.mode == "4":
+                with DATA_LOCK:
+                    if len(self.data_source) == 0: return False
+                    used_email = self.data_source.pop(0)
+                imap_service = GmailIMAPService(self.base_gmail, self.app_password)
+
+            elif self.mode == "5":
+                with DATA_LOCK:
+                    if len(self.data_source) == 0: return False
+                    data_line = self.data_source.pop(0)
+                used_email = data_line.split('|')[0]
+                hotmail_service = HotmailAPIService(data_line, self.api_mode)
+
+            print(f"{Colors.color_text(f'[{self.thread_id}] Đang dùng Email: {used_email}', Colors.INFO)}")
+
+            # 2. KHỞI TẠO CHROME
+            driver = None
+            try:
+                options = uc.ChromeOptions()
+                options.add_argument('--incognito')
+                options.add_argument('--mute-audio')
+                options.add_argument('--disable-notifications')
+                # options.add_argument('--headless') # Bỏ comment nếu muốn chạy ẩn
+                
+                driver = uc.Chrome(options=options)
+                wait = WebDriverWait(driver, 15)
+                
+                driver.get("https://www.instagram.com/accounts/emailsignup/")
+                
+                # Điền thông tin
+                email_input = wait.until(EC.presence_of_element_located((By.NAME, "emailOrPhone")))
+                email_input.send_keys(used_email)
+                time.sleep(1)
+                
+                driver.find_element(By.NAME, "fullName").send_keys(full_name)
+                time.sleep(1)
+                
+                driver.find_element(By.NAME, "username").send_keys(username)
+                time.sleep(1)
+                
+                driver.find_element(By.NAME, "password").send_keys(secure_pass)
+                
+                # NGÂM FORM
+                print(f"{Colors.color_text(f'[{self.thread_id}] Ngâm form 30s...', Colors.WARNING)}")
+                for w in range(30, 0, -5):
+                    if STOP_EVENT.is_set(): driver.quit(); return False
+                    time.sleep(5)
+
+                uid_moc = 0
+                if self.mode in ["3", "4"] and imap_service:
+                    uid_moc = imap_service.get_latest_uid()
+                
+                # Bấm Đăng ký
+                driver.find_element(By.XPATH, "//button[@type='submit']").click()
+                
+                # Trang Sinh nhật
+                wait.until(EC.presence_of_element_located((By.XPATH, "//select[@title='Month:']")))
+                
+                current_year = str(BASE_YEAR + random.randint(-3, 3))
+                if int(current_year) > 2005: current_year = "2005"
+                current_day = str(random.randint(2, 28))
+                current_month = str(random.randint(1, 12))
+                
+                Select(driver.find_element(By.XPATH, "//select[@title='Month:']")).select_by_value(current_month)
+                Select(driver.find_element(By.XPATH, "//select[@title='Day:']")).select_by_value(current_day)
+                Select(driver.find_element(By.XPATH, "//select[@title='Year:']")).select_by_value(current_year)
+                time.sleep(1)
+                
+                BASE_YEAR -= 1
+                if BASE_YEAR < 1990: BASE_YEAR = random.randint(1995, 2005)
+
+                driver.find_element(By.XPATH, "//button[contains(text(), 'Next') or contains(text(), 'Tiếp')]").click()
+                
+                # Trang OTP
+                otp_input = wait.until(EC.presence_of_element_located((By.NAME, "email_confirmation_code")))
+                
+                # Lấy OTP
+                otp_code = None
+                print(f"{Colors.color_text(f'[{self.thread_id}] Đang chờ mã OTP (120s max)...', Colors.INFO)}")
+                
+                if self.mode == "2" and not (mail_service and mail_service.token):
+                    with OTP_LOCK:
+                        print(f"\n{Colors.color_text(f'[{self.thread_id}] MỜI SẾP NHẬP OTP CHO [{used_email}] TỪ BÀN PHÍM:', Colors.SUCCESS)}")
+                        otp_code = input(">> ").strip()
+                else:
+                    if self.mode == "1" or (self.mode == "2" and mail_service and mail_service.token):
+                        otp_code = mail_service.get_otp_code(timeout=120)
+                    elif self.mode in ["3", "4"]:
+                        otp_code = imap_service.get_otp_code(target_email=used_email, since_uid=uid_moc, timeout=120)
+                    elif self.mode == "5":
+                        otp_code = hotmail_service.get_otp_code(timeout=120)
+                
+                if not otp_code:
+                    print(f"{Colors.color_text(f'[{self.thread_id}] Không lấy được OTP. Bỏ qua!', Colors.ERROR)}")
+                    driver.quit()
+                    return False
+                
+                print(f"{Colors.color_text(f'[{self.thread_id}] Điền OTP: {otp_code}', Colors.SUCCESS)}")
+                otp_input.send_keys(otp_code)
+                time.sleep(1)
+                driver.find_element(By.XPATH, "//button[contains(text(), 'Next') or contains(text(), 'Tiếp')]").click()
+                
+                # Chờ load trang chủ
+                print(f"{Colors.color_text(f'[{self.thread_id}] Chờ Server IG xử lý (20s)...', Colors.INFO)}")
+                time.sleep(20)
+                
+                # Lấy Cookie
+                cookies_list = driver.get_cookies()
+                cookie_str = "; ".join([f"{c['name']}={c['value']}" for c in cookies_list])
+                
+                print(f"\n{Colors.color_text('─'*70, Colors.LINE)}")
+                print(f"{Colors.color_text(f'[{self.thread_id}] THÀNH CÔNG ACC {account_index}!', Colors.SUCCESS)}")
+                print(f"{Colors.KEY}Mail: {Colors.EMAIL}{used_email}{Colors.RESET}")
+                print(f"{Colors.KEY}Pass: {Colors.PASSWORD}{secure_pass}{Colors.RESET}")
+                print(f"{Colors.KEY}User: {Colors.USERNAME}{username}{Colors.RESET}")
+                print(f"{Colors.KEY}Cookie: {Colors.VALUE}{cookie_str if cookie_str else 'Trống'}{Colors.RESET}")
+                print(f"{Colors.color_text('─'*70, Colors.LINE)}\n")
+                
+                save_account(self.thread_id, used_email, secure_pass, username, full_name, f"mode_{self.mode}", cookie_str)
+                driver.quit()
+                return True
+                
+            except Exception as e:
+                print(f"{Colors.color_text(f'[{self.thread_id}] Lỗi Chrome: {e}', Colors.ERROR)}")
+                if driver: driver.quit()
+                return False
+        
+        success_count = 0
+        for i in range(1, self.account_count + 1):
+            if STOP_EVENT.is_set(): break
+            if create_one_account(i): success_count += 1
+            time.sleep(random.uniform(5, 10))
+        
+        print(f"\n{Colors.color_text(f'[{self.thread_id}] TỔNG KẾT TAB: {success_count}/{self.account_count} THÀNH CÔNG', Colors.TITLE)}")
+
+# ==================== MENU CHÍNH ====================
+def select_mode():
+    print(f"{Colors.NUMBER}1. {Colors.VALUE}TỰ ĐỘNG HOÀN TOÀN   \033[97m[ Dùng email Mail.tm ]{Colors.RESET}")
+    print(f"{Colors.NUMBER}2. {Colors.VALUE}NHẬP TAY/FILE EMAIL \033[97m[ Dùng list thường (Có Mail.tm thì Tự động) ]{Colors.RESET}")
+    print(f"{Colors.NUMBER}3. {Colors.VALUE}NHIỀU GMAIL (IMAP)  \033[97m[ Dùng file txt: email|pass ]{Colors.RESET}")
+    print(f"{Colors.NUMBER}4. {Colors.VALUE}GMAIL DOT TRICK     \033[97m[ 1 Gmail gốc -> Biến thể ]{Colors.RESET}")
+    print(f"{Colors.NUMBER}5. {Colors.VALUE}HOTMAIL/OUTLOOK     \033[97m[ Dùng API Smail1s.com ]{Colors.RESET}")
+    while True:
+        choice = input(f"{Colors.KEY}Nhập lựa chọn [1-5]: {Colors.RESET}").strip()
+        if choice in ["1", "2", "3", "4", "5"]: return choice
+
+if __name__ == "__main__":
+    banner()
+    config_data = load_config()
+    mode = select_mode()
+    
+    data_source = []
+    base_gmail = None
+    app_password = None
+    manual_password = None
+    api_mode = None
+
+    if mode == "1":
+        pass 
+        
+    elif mode == "2":
+        email_input = input(f"{Colors.KEY}Nhập list email (cách nhau dấu phẩy) HOẶC đường dẫn file .txt: {Colors.RESET}").strip().strip('"')
+        if os.path.isfile(email_input):
+            with open(email_input, 'r', encoding='utf-8') as f: data_source = [line.strip() for line in f if line.strip()]
+        else: data_source = [e.strip() for e in email_input.split(",") if e.strip()]
+        if any("mail.tm" in e.lower() for e in data_source):
+            manual_password = input(f"{Colors.KEY}Nhập mật khẩu chung cho Mail.tm (Để trống dùng TempPass123!): {Colors.RESET}").strip()
+            
+    elif mode == "3":
+        file_path = input(f"{Colors.KEY}Nhập đường dẫn file txt (Định dạng: email|app_password): {Colors.RESET}").strip().strip('"')
+        if os.path.isfile(file_path):
+            with open(file_path, 'r', encoding='utf-8') as f:
+                for line in f:
+                    parts = re.split(r'[|:]', line.strip())
+                    if len(parts) >= 2: data_source.append((parts[0].strip(), parts[1].strip()))
+        else: sys.exit()
+
+    elif mode == "4":
+        base_gmail = input(f"{Colors.KEY}Nhập Gmail gốc (VD: test@gmail.com): {Colors.RESET}").strip()
+        app_password = input(f"{Colors.KEY}Nhập App Password: {Colors.RESET}").strip()
+        data_source = generate_dot_variants(base_gmail)
+
+    elif mode == "5":
+        print("1. OAuth | 2. Graph API | 3. Roundcube")
+        c = input(">> ").strip()
+        api_mode = "oauth" if c=="1" else "graph" if c=="2" else "roundcube"
+        account_input = input(f"{Colors.KEY}Nhập file/list Hotmail: {Colors.RESET}").strip().strip('"')
+        if os.path.isfile(account_input):
+            with open(account_input, 'r', encoding='utf-8') as f: data_source = [line.strip() for line in f if line.strip()]
+        else: data_source = [e.strip() for e in account_input.split(",") if e.strip()]
+
+    print(f"\n{Colors.KEY}Nhập số luồng (số tab Chrome chạy cùng lúc): {Colors.RESET}")
+    threads_count = int(input(">> ").strip())
+    
+    print(f"{Colors.KEY}Nhập số tài khoản cần tạo MỖI LUỒNG: {Colors.RESET}")
+    accs_per_thread = int(input(">> ").strip())
+    
+    threads = []
+    for i in range(threads_count):
+        t = starts(i+1, mode, accs_per_thread, data_source, manual_password, base_gmail, app_password, api_mode)
+        threads.append(t)
+        
+    for t in threads: t.start()
+    
+    try:
+        for t in threads: t.join()
+        print(f"\n{Colors.color_text('AUTO HOÀN THÀNH TOÀN BỘ!', Colors.SUCCESS)}")
+    except KeyboardInterrupt:
+        STOP_EVENT.set() 
+        print(f"\n{Colors.color_text('Đang đóng các luồng an toàn...', Colors.WARNING)}")
+        sys.exit(0)
