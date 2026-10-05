@@ -71,7 +71,7 @@ def banner():
 ╚██████╔╝██║  ██║██║  ██║╚██████╔╝██║ ╚═╝ ██║███████╗
  ╚═════╝ ╚═╝  ╚═╝╚═╝  ╚═╝ ╚═════╝ ╚═╝    ╚═╝╚══════╝
 {Colors.RESET}""")
-    print(f"{Colors.INFO}Phiên Bản: v12.18 (FIX LỖI NOT INTERACTABLE TRANG OTP){Colors.RESET}")
+    print(f"{Colors.INFO}Phiên Bản: v12.19 (CHẶN LẤY MÃ CŨ & FIX NÚT TIẾP TỤC){Colors.RESET}")
     print(f"{Colors.LINE}{'─'*70}{Colors.RESET}\n")
 
 def load_config():
@@ -288,6 +288,28 @@ class HotmailAPIService:
         self.data_line = data_line.strip()
         self.api_mode = api_mode.strip()
         self.email = self.data_line.split('|')[0] if '|' in self.data_line else self.data_line
+        self.seen_codes = set() # LƯU TRỮ CÁC MÃ CŨ ĐỂ KHÔNG BỊ LẤY NHẦM
+
+    def init_baseline(self):
+        """Quét và ghi nhớ các mã cũ trong hộp thư trước khi bấm Submit form đăng ký"""
+        try:
+            payload = {"mode": self.api_mode, "data": self.data_line}
+            headers = {'Content-Type': 'application/json', 'User-Agent': 'Mozilla/5.0'}
+            response = requests.post(self.url, json=payload, headers=headers, timeout=15)
+            if response.status_code == 200:
+                data_array = response.json().get("data", [])
+                if data_array and len(data_array) > 0:
+                    messages = data_array[0].get("messages", [])
+                    for msg in messages:
+                        code_field = str(msg.get("code", "")).strip()
+                        if code_field and code_field.isdigit() and len(code_field) == 6:
+                            self.seen_codes.add(code_field)
+                        else:
+                            subject = str(msg.get("subject", "")).lower()
+                            match_subj = re.search(r'\b(\d{6})\b', subject)
+                            if match_subj: 
+                                self.seen_codes.add(match_subj.group(1))
+        except Exception: pass
 
     def get_otp_code(self, timeout=120):
         start_time = time.time()
@@ -325,7 +347,7 @@ class HotmailAPIService:
                             messages = account_data.get("messages", [])
                             msg_info = f"Tìm thấy {len(messages)} thư."
                             if msg_info != last_logged:
-                                print(f"{Colors.color_text(f'[API Smail1s] {msg_info} Đang quét mã...', Colors.INFO)}")
+                                print(f"{Colors.color_text(f'[API Smail1s] {msg_info} Đang quét mã mới...', Colors.INFO)}")
                                 last_logged = msg_info
                                 
                             for msg in messages:
@@ -334,26 +356,28 @@ class HotmailAPIService:
                                 raw_msg = str(msg.get("message", ""))
                                 code_field = str(msg.get("code", "")).strip()
                                 
-                                # Kiểm tra xem thư có liên quan đến Instagram không
                                 is_ig = ("instagram" in subject) or ("instagram" in from_sender) or ("instagram" in raw_msg.lower())
                                 
                                 if is_ig:
-                                    # Lấy trường code API đã bóc sẵn
                                     if code_field and code_field.isdigit() and len(code_field) == 6:
-                                        print(f"{Colors.color_text(f'[API Smail1s] Đã tìm thấy mã: {code_field}', Colors.SUCCESS)}")
-                                        return code_field
+                                        if code_field not in self.seen_codes:
+                                            print(f"{Colors.color_text(f'[API Smail1s] Đã tìm thấy mã MỚI: {code_field}', Colors.SUCCESS)}")
+                                            return code_field
                                     
-                                    # Lấy mã bằng regex trong tiêu đề hoặc nội dung
                                     match_subj = re.search(r'\b(\d{6})\b', subject)
                                     if match_subj:
-                                        print(f"{Colors.color_text(f'[API Smail1s] Đã tìm thấy mã: {match_subj.group(1)}', Colors.SUCCESS)}")
-                                        return match_subj.group(1)
-                                        
+                                        code = match_subj.group(1)
+                                        if code not in self.seen_codes:
+                                            print(f"{Colors.color_text(f'[API Smail1s] Đã tìm thấy mã MỚI: {code}', Colors.SUCCESS)}")
+                                            return code
+                                            
                                     clean_text = re.sub(r'<[^>]+>', ' ', raw_msg)
                                     match_body = re.search(r'\b(\d{6})\b', clean_text)
                                     if match_body:
-                                        print(f"{Colors.color_text(f'[API Smail1s] Đã tìm thấy mã: {match_body.group(1)}', Colors.SUCCESS)}")
-                                        return match_body.group(1)
+                                        code = match_body.group(1)
+                                        if code not in self.seen_codes:
+                                            print(f"{Colors.color_text(f'[API Smail1s] Đã tìm thấy mã MỚI: {code}', Colors.SUCCESS)}")
+                                            return code
                 else:
                     status_err = f"Lỗi HTTP {response.status_code}"
                     if status_err != last_logged:
@@ -386,7 +410,7 @@ def generate_dot_variants(gmail):
 # ==================== HÀM HỎI TRƯỚC KHI ĐÓNG ====================
 def ask_before_close(driver, thread_id):
     if driver:
-        with OTP_LOCK:  # Khoá màn hình console để nhập không bị đè lên nhau
+        with OTP_LOCK:
             print(f"\n{Colors.color_text(f'[{thread_id}] Bạn có muốn đóng trình duyệt không? (y/n): ', Colors.WARNING)}", end="")
             choice = input().strip().lower()
             if choice == 'y':
@@ -617,9 +641,13 @@ class starts(threading.Thread):
                     print(f"{Colors.color_text(f'[{self.thread_id}] Đã điền xong. Ngâm form 10s trước khi bấm nút Đăng Ký...', Colors.WARNING)}")
                     time.sleep(10)
 
+                    # GHI NHỚ MÃ CŨ ĐỂ KHÔNG BỊ TRÙNG
                     uid_moc = 0
                     if self.mode in ["3", "4"] and imap_service:
                         uid_moc = imap_service.get_latest_uid()
+                    elif self.mode == "5" and hotmail_service:
+                        print(f"{Colors.color_text(f'[{self.thread_id}] Đang quét hộp thư để loại trừ mã cũ...', Colors.INFO)}")
+                        hotmail_service.init_baseline()
 
                     print(f"{Colors.color_text(f'[{self.thread_id}] Cuộn trang xuống cuối để tìm nút Gửi...', Colors.INFO)}")
                     driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
@@ -754,7 +782,6 @@ class starts(threading.Thread):
                 print(f"{Colors.color_text(f'[{self.thread_id}] Bắt đầu điền mã OTP: {otp_code} vào trang Web...', Colors.SUCCESS)}")
                 
                 try:
-                    # Truy quét lại ô nhập mã sau 60s ngâm (Phòng ReactJS làm mới DOM)
                     fresh_input = None
                     for loc in locators:
                         try:
@@ -769,10 +796,8 @@ class starts(threading.Thread):
                     target_input = fresh_input if fresh_input else otp_input
                     
                     try:
-                        # Thử gõ mã bình thường bằng Selenium
                         human_type(target_input, otp_code)
                     except Exception:
-                        # Bắt lỗi ElementNotInteractableException -> Ép điền bằng JavaScript
                         print(f"{Colors.color_text(f'[{self.thread_id}] Selenium bị chặn, đang ép điền mã bằng JavaScript...', Colors.WARNING)}")
                         driver.execute_script(f"""
                             let input = arguments[0];
@@ -781,7 +806,6 @@ class starts(threading.Thread):
                             input.dispatchEvent(new Event('change', {{ bubbles: true }}));
                         """, target_input)
                 except Exception as ex:
-                    # Phương án dự phòng cuối cùng nếu DOM lỗi hoàn toàn
                     print(f"{Colors.color_text(f'[{self.thread_id}] Lỗi nghiêm trọng lúc điền ({ex}), dùng JS quét toàn cục...', Colors.WARNING)}")
                     driver.execute_script(f"""
                         let input = document.querySelector('input[type="text"], input[name*="code"]');
@@ -793,18 +817,44 @@ class starts(threading.Thread):
                     
                 time.sleep(1.5)
                 
+                # ==================== CLICK NÚT TIẾP TỤC (MẠNH MẼ) ====================
+                print(f"{Colors.color_text(f'[{self.thread_id}] Đang tìm và nhấn nút Tiếp tục/Xác nhận...', Colors.INFO)}")
                 try:
-                    driver.execute_script("""
-                        let buttons = Array.from(document.querySelectorAll('button, div[role="button"]'));
-                        let nextBtn = buttons.find(b => /tiếp|next|xác nhận|confirm|gửi/i.test(b.innerText));
-                        if (nextBtn) {
-                            nextBtn.removeAttribute('disabled');
-                            nextBtn.style.pointerEvents = 'auto';
-                            nextBtn.click();
+                    click_result = driver.execute_script("""
+                        const submitBtn = Array.from(document.querySelectorAll('button, div[role="button"]')).find(b => {
+                            const text = (b.innerText || b.textContent || "").trim().toLowerCase();
+                            return text === "tiếp tục" || text === "tiếp" || text === "next" || text === "xác nhận" || text === "confirm" || text === "gửi";
+                        });
+
+                        if (submitBtn) {
+                            submitBtn.disabled = false;
+                            submitBtn.removeAttribute('disabled');
+                            submitBtn.style.pointerEvents = 'auto';
+                            submitBtn.click(); 
+
+                            var event = new MouseEvent('click', {
+                                view: window,
+                                bubbles: true,
+                                cancelable: true
+                            });
+                            submitBtn.dispatchEvent(event);
+                            
+                            return "CLICKED";
                         }
+                        return "NOT_FOUND";
                     """)
-                except: pass
-                
+                    
+                    if click_result == "CLICKED":
+                        print(f"{Colors.color_text(f'[{self.thread_id}] ĐÃ BẤM NÚT TIẾP TỤC THÀNH CÔNG (Bằng Script)!', Colors.SUCCESS)}")
+                    else:
+                        print(f"{Colors.color_text(f'[{self.thread_id}] JS không tìm thấy nút Tiếp tục, thử dùng phím ENTER...', Colors.WARNING)}")
+                        try:
+                            target_input.send_keys(Keys.ENTER)
+                            print(f"{Colors.color_text(f'[{self.thread_id}] Đã bấm ENTER thành công!', Colors.SUCCESS)}")
+                        except: pass
+                except Exception as ex:
+                    print(f"{Colors.color_text(f'[{self.thread_id}] Lỗi khi chạy Script click nút Tiếp tục: {ex}', Colors.WARNING)}")
+
                 print(f"{Colors.color_text(f'[{self.thread_id}] Chờ Server IG xử lý và tạo tài khoản (20s)...', Colors.INFO)}")
                 time.sleep(20)
                 
