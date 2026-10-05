@@ -20,7 +20,7 @@ try:
     from selenium.webdriver.support import expected_conditions as EC
     from selenium.webdriver.support.ui import Select
     from selenium.webdriver.common.action_chains import ActionChains
-    from selenium.webdriver.common.keys import Keys  # Bổ sung thư viện nút bấm
+    from selenium.webdriver.common.keys import Keys
     import requests
 except ImportError:
     print("Đang cài đặt thư viện thiếu...")
@@ -73,7 +73,7 @@ def banner():
 ╚██████╔╝██║  ██║██║  ██║╚██████╔╝██║ ╚═╝ ██║███████╗
  ╚═════╝ ╚═╝  ╚═╝╚═╝  ╚═╝ ╚═════╝ ╚═╝    ╚═╝╚══════╝
 {Colors.RESET}""")
-    print(f"{Colors.INFO}Phiên Bản: v12.8 (FIX CỨNG NGÀY SINH & XÓA USERNAME){Colors.RESET}")
+    print(f"{Colors.INFO}Phiên Bản: v12.9 (FIX TRIỆT ĐỂ LỖI USERNAME & NGÀY SINH JS){Colors.RESET}")
     print(f"{Colors.LINE}{'─'*70}{Colors.RESET}\n")
 
 def load_config():
@@ -121,8 +121,8 @@ def VietnameseNameGenerator():
     middle = random.choice(["Văn", "Thị", "Minh", "Hoàng", "Anh", "Bảo", "Gia", "Khánh", "Ngọc", "Phương"])
     last = random.choice(["An", "Bình", "Cường", "Dũng", "Anh", "Bích", "Chi", "Diệp", "Dung", "Hải", "Hùng"])
     full_name = f"{first} {middle} {last}"
-    cleaned = re.sub(r'[^a-zA-Z\s]', '', full_name.lower()).replace(' ', '')
-    return full_name, f"{cleaned}_{random.randint(100, 99999)}"
+    cleaned = re.sub(r'[^a-zA-Z0-9]', '', full_name.lower())
+    return full_name, f"{cleaned}{random.randint(100, 99999)}"
 
 # ==================== CÁC CLASS XỬ LÝ EMAIL ====================
 class MailService:
@@ -342,7 +342,6 @@ class starts(threading.Thread):
             print(f"\n{Colors.color_text('─'*70, Colors.LINE)}")
             print(f"{Colors.color_text(f'[{self.thread_id}] BẮT ĐẦU TẠO TÀI KHOẢN THỨ {account_index}', Colors.TITLE)}")
             
-            # 1. LẤY EMAIL & TẠO INFO
             used_email = ""
             imap_service = None
             mail_service = None
@@ -387,7 +386,6 @@ class starts(threading.Thread):
 
             print(f"{Colors.color_text(f'[{self.thread_id}] Đang dùng Email: {used_email}', Colors.INFO)}")
 
-            # 2. KHỞI TẠO CHROME
             driver = None
             try:
                 options = uc.ChromeOptions()
@@ -397,10 +395,8 @@ class starts(threading.Thread):
                 options.add_argument('--window-size=1920,1080')
                 
                 driver = uc.Chrome(options=options)
-                try:
-                    driver.maximize_window()
-                except Exception:
-                    pass
+                try: driver.maximize_window()
+                except: pass
                     
                 wait = WebDriverWait(driver, 15)
                 actions = ActionChains(driver) 
@@ -411,14 +407,12 @@ class starts(threading.Thread):
                 print(f"{Colors.color_text(f'[{self.thread_id}] Đang chờ trang tải hoàn tất (10s)...', Colors.WARNING)}")
                 time.sleep(10)
                 
-                # Bấm tắt Cookie nếu có
                 try:
                     cookie_btns = driver.find_elements(By.XPATH, "//button[contains(text(), 'Allow') or contains(text(), 'Accept') or contains(text(), 'Cho phép') or contains(text(), 'Đồng ý')]")
                     if cookie_btns:
                         cookie_btns[0].click()
                         time.sleep(2)
-                except Exception:
-                    pass
+                except: pass
 
                 current_year = str(BASE_YEAR + random.randint(-3, 3))
                 if int(current_year) > 2005: current_year = "2005"
@@ -428,8 +422,6 @@ class starts(threading.Thread):
                 BASE_YEAR -= 1
                 if BASE_YEAR < 1990: BASE_YEAR = random.randint(1995, 2005)
 
-                print(f"{Colors.color_text(f'[{self.thread_id}] Bắt đầu cuộn trang và nhập từng thông tin...', Colors.INFO)}")
-                
                 def slow_scroll_to_element(element):
                     try:
                         target_y = element.location['y'] - 200 
@@ -440,36 +432,40 @@ class starts(threading.Thread):
                             driver.execute_script(f"window.scrollTo(0, {current_y + (distance * i / steps)});")
                             time.sleep(random.uniform(0.02, 0.05))
                         time.sleep(0.5)
-                    except Exception:
+                    except:
                         driver.execute_script("arguments[0].scrollIntoView({behavior: 'smooth', block: 'center'});", element)
                         time.sleep(0.5)
 
-                # NÂNG CẤP MỚI: Tự động xóa bằng Ctrl+A, Backspace và nút (X)
+                # HÀM NHẬP LIỆU ĐÃ ĐƯỢC CẢI TIẾN VỚI CƠ CHẾ NUKE CLEAR
                 def human_type(element, text, is_username=False):
                     slow_scroll_to_element(element)
                     actions.move_to_element(element).click().perform()
-                    time.sleep(0.3)
+                    time.sleep(0.5)
                     
-                    # 1. Bôi đen toàn bộ (Ctrl+A) và xóa (Backspace)
-                    element.send_keys(Keys.CONTROL + "a")
-                    time.sleep(0.2)
-                    element.send_keys(Keys.BACKSPACE)
-                    time.sleep(0.3)
-                    
-                    # 2. Xóa triệt để nếu form Username có nút (X) do Instagram tạo ra
                     if is_username:
-                        try:
-                            parent_div = element.find_element(By.XPATH, "..")
-                            clear_buttons = parent_div.find_elements(By.TAG_NAME, "button")
-                            for btn in clear_buttons:
-                                btn.click()
-                                time.sleep(0.3)
-                        except:
-                            pass
-                            
-                    # 3. Quét clear() dự phòng
-                    element.clear()
-                    time.sleep(0.3)
+                        # CHỜ 2 GIÂY CHO IG TỰ ĐIỀN GỢI Ý XONG RỒI MỚI XÓA
+                        print(f"{Colors.color_text(f'[{self.thread_id}] Chờ IG gợi ý Username để tiến hành xóa...', Colors.WARNING)}")
+                        time.sleep(2) 
+                        
+                        # Nhấn End để con trỏ về cuối, rồi xóa lùi thủ công để giả lập người thật
+                        element.send_keys(Keys.END)
+                        time.sleep(0.2)
+                        
+                        current_val = element.get_attribute("value")
+                        if current_val:
+                            for _ in range(len(current_val) + 5):
+                                element.send_keys(Keys.BACKSPACE)
+                                time.sleep(0.01) # Xóa nhanh
+                                
+                        # Tiêm thêm Javascript để đảm bảo rỗng 100% nếu React bị kẹt
+                        driver.execute_script("arguments[0].value = '';", element)
+                        driver.execute_script("arguments[0].dispatchEvent(new Event('input', { bubbles: true }));", element)
+                        time.sleep(0.5)
+                    else:
+                        element.send_keys(Keys.CONTROL + "a")
+                        time.sleep(0.2)
+                        element.send_keys(Keys.BACKSPACE)
+                        time.sleep(0.3)
                     
                     for char in text:
                         element.send_keys(char)
@@ -482,59 +478,50 @@ class starts(threading.Thread):
                     
                     if len(inputs) >= 4:
                         # 1. Điền Email
-                        print(f"{Colors.color_text(f'[{self.thread_id}] Cuộn và điền Email...', Colors.INFO)}")
+                        print(f"{Colors.color_text(f'[{self.thread_id}] Điền Email...', Colors.INFO)}")
                         human_type(inputs[0], used_email)
                         
                         # 2. Điền Mật khẩu
-                        print(f"{Colors.color_text(f'[{self.thread_id}] Cuộn và điền Mật khẩu...', Colors.INFO)}")
+                        print(f"{Colors.color_text(f'[{self.thread_id}] Điền Mật khẩu...', Colors.INFO)}")
                         human_type(inputs[1], secure_pass)
                         
-                        # 3. Chọn Ngày Sinh (Nâng cấp Click Form)
+                        # 3. CHỌN NGÀY SINH BẰNG JAVASCRIPT (Khắc phục triệt để lỗi không click được)
                         selects = driver.find_elements(By.TAG_NAME, "select")
                         if len(selects) >= 3:
-                            print(f"{Colors.color_text(f'[{self.thread_id}] Cuộn và chọn Ngày Sinh...', Colors.INFO)}")
-                            try:
-                                # Nhấp mở dropdown Ngày rồi chọn giá trị
-                                slow_scroll_to_element(selects[0])
-                                selects[0].click() 
-                                time.sleep(0.5)
-                                Select(selects[0]).select_by_value(current_day)
-                                time.sleep(random.uniform(0.3, 0.6))
-                                
-                                # Nhấp mở dropdown Tháng
-                                selects[1].click()
-                                time.sleep(0.5)
-                                Select(selects[1]).select_by_value(current_month)
-                                time.sleep(random.uniform(0.3, 0.6))
-                                
-                                # Nhấp mở dropdown Năm
-                                selects[2].click()
-                                time.sleep(0.5)
-                                Select(selects[2]).select_by_value(current_year)
-                                time.sleep(1)
-                            except Exception as e:
-                                # Phương án dự phòng (Fallback) nếu click lỗi
-                                print(f"{Colors.color_text(f'[{self.thread_id}] Dùng hàm gửi phím trực tiếp vào Ngày sinh...', Colors.WARNING)}")
-                                selects[0].send_keys(current_day)
-                                time.sleep(0.3)
-                                selects[1].send_keys(current_month)
-                                time.sleep(0.3)
-                                selects[2].send_keys(current_year)
-                                time.sleep(1)
+                            print(f"{Colors.color_text(f'[{self.thread_id}] Ép chọn Ngày Sinh qua Javascript...', Colors.INFO)}")
+                            slow_scroll_to_element(selects[0])
+                            
+                            # Cập nhật DOM trực tiếp và gọi Event để React nhận diện thay đổi
+                            driver.execute_script("""
+                                arguments[0].value = arguments[1];
+                                arguments[0].dispatchEvent(new Event('change', {bubbles: true}));
+                            """, selects[0], current_day)
+                            time.sleep(0.3)
+                            
+                            driver.execute_script("""
+                                arguments[0].value = arguments[1];
+                                arguments[0].dispatchEvent(new Event('change', {bubbles: true}));
+                            """, selects[1], current_month)
+                            time.sleep(0.3)
+                            
+                            driver.execute_script("""
+                                arguments[0].value = arguments[1];
+                                arguments[0].dispatchEvent(new Event('change', {bubbles: true}));
+                            """, selects[2], current_year)
+                            time.sleep(1)
                             
                         # 4. Điền Tên Đầy Đủ
-                        print(f"{Colors.color_text(f'[{self.thread_id}] Cuộn và điền Họ Tên...', Colors.INFO)}")
+                        print(f"{Colors.color_text(f'[{self.thread_id}] Điền Họ Tên...', Colors.INFO)}")
                         human_type(inputs[2], full_name)
                         
                         # 5. Điền Username (Bật cờ is_username=True để kích hoạt chế độ Xóa Sạch)
-                        print(f"{Colors.color_text(f'[{self.thread_id}] Cuộn và xử lý form Username...', Colors.INFO)}")
+                        print(f"{Colors.color_text(f'[{self.thread_id}] Xử lý form Username...', Colors.INFO)}")
                         human_type(inputs[3], username, is_username=True)
                     else:
-                        print(f"{Colors.color_text(f'[{self.thread_id}] Lỗi: Giao diện IG bị thay đổi, không đủ số lượng ô input!', Colors.ERROR)}")
+                        print(f"{Colors.color_text(f'[{self.thread_id}] Lỗi: Giao diện IG bị thay đổi!', Colors.ERROR)}")
                         driver.quit()
                         return False
                     
-                    # 6. NGÂM FORM
                     print(f"{Colors.color_text(f'[{self.thread_id}] Đã điền xong. Ngâm form 30s trước khi bấm nút Đăng Ký...', Colors.WARNING)}")
                     for w in range(30, 0, -5):
                         if STOP_EVENT.is_set(): 
@@ -547,7 +534,6 @@ class starts(threading.Thread):
                     if self.mode in ["3", "4"] and imap_service:
                         uid_moc = imap_service.get_latest_uid()
 
-                    # 7. Cuộn chậm đến nút Submit và bấm
                     print(f"{Colors.color_text(f'[{self.thread_id}] Cuộn từ từ đến nút Đăng Ký...', Colors.INFO)}")
                     submit_btn = driver.find_element(By.XPATH, "//button[@type='submit']")
                     slow_scroll_to_element(submit_btn)
@@ -563,9 +549,6 @@ class starts(threading.Thread):
                     except: pass
                     return False
 
-                # ========================================================
-                # NHẬP MÃ OTP
-                # ========================================================
                 print(f"{Colors.color_text(f'[{self.thread_id}] Chờ giao diện nhập OTP...', Colors.INFO)}")
                 try:
                     otp_input = wait.until(EC.presence_of_element_located((By.NAME, "email_confirmation_code")))
@@ -581,7 +564,7 @@ class starts(threading.Thread):
                     try:
                         otp_input = wait.until(EC.presence_of_element_located((By.NAME, "email_confirmation_code")))
                     except Exception:
-                        print(f"{Colors.color_text(f'[{self.thread_id}] Lỗi: Không thể chuyển sang trang OTP (Kẹt form/IP bị chặn).', Colors.ERROR)}")
+                        print(f"{Colors.color_text(f'[{self.thread_id}] Lỗi: Không thể chuyển sang trang OTP.', Colors.ERROR)}")
                         try: driver.quit() 
                         except: pass
                         return False
@@ -602,7 +585,7 @@ class starts(threading.Thread):
                         otp_code = hotmail_service.get_otp_code(timeout=120)
                 
                 if not otp_code:
-                    print(f"{Colors.color_text(f'[{self.thread_id}] Lỗi không lấy được OTP. Bỏ qua tài khoản này!', Colors.ERROR)}")
+                    print(f"{Colors.color_text(f'[{self.thread_id}] Lỗi không lấy được OTP.', Colors.ERROR)}")
                     try: driver.quit() 
                     except: pass
                     return False
