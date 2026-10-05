@@ -480,24 +480,29 @@ class starts(threading.Thread):
                         print(f"{Colors.color_text(f'[{self.thread_id}] Điền Mật khẩu...', Colors.INFO)}")
                         human_type(inputs[1], secure_pass)
                         
-                        # 3. CHỌN NGÀY SINH (CLICK VẬT LÝ ĐỂ REACT NHẬN DIỆN THAY ĐỔI)
+                        # 3. CHỌN NGÀY SINH (DÙNG SELECT CLASS HOẶC JAVASCRIPT ĐỂ VƯỢT REACT UI)
                         selects = driver.find_elements(By.TAG_NAME, "select")
                         if len(selects) >= 3:
-                            print(f"{Colors.color_text(f'[{self.thread_id}] Click mở Ngày Sinh và chọn giá trị...', Colors.INFO)}")
+                            print(f"{Colors.color_text(f'[{self.thread_id}] Bắt đầu chọn Ngày Sinh...', Colors.INFO)}")
                             slow_scroll_to_element(selects[0])
                             
                             dob_values = [current_day, current_month, current_year]
+                            
                             for idx, val in enumerate(dob_values):
                                 try:
-                                    selects[idx].click() # Click mở Menu
-                                    time.sleep(0.5)
-                                    option = selects[idx].find_element(By.XPATH, f"./option[@value='{val}']")
-                                    option.click() # Click vào lựa chọn
+                                    # CÁCH 1: Dùng class Select chuyên dụng của Selenium cho thẻ <select>
+                                    sel = Select(selects[idx])
+                                    sel.select_by_value(str(val))
                                     time.sleep(random.uniform(0.3, 0.6))
                                 except Exception as e:
-                                    print(f"{Colors.color_text(f'[{self.thread_id}] Lỗi click phụ, chuyển sang gửi phím...', Colors.WARNING)}")
-                                    selects[idx].send_keys(val)
-                                    time.sleep(0.5)
+                                    print(f"{Colors.color_text(f'[{self.thread_id}] UI chặn Click, dùng JS ép nhập...', Colors.WARNING)}")
+                                    # CÁCH 2: Ép React nhận dữ liệu bằng Javascript
+                                    driver.execute_script(f"""
+                                        var element = arguments[0];
+                                        element.value = '{val}';
+                                        element.dispatchEvent(new Event('change', {{ bubbles: true }}));
+                                    """, selects[idx])
+                                    time.sleep(random.uniform(0.3, 0.6))
                             
                         # 4. Điền Tên Đầy Đủ
                         print(f"{Colors.color_text(f'[{self.thread_id}] Điền Họ Tên...', Colors.INFO)}")
