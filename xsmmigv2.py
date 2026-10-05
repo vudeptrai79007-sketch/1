@@ -20,6 +20,7 @@ try:
     from selenium.webdriver.support import expected_conditions as EC
     from selenium.webdriver.support.ui import Select
     from selenium.webdriver.common.action_chains import ActionChains
+    from selenium.webdriver.common.keys import Keys  # Bổ sung thư viện nút bấm
     import requests
 except ImportError:
     print("Đang cài đặt thư viện thiếu...")
@@ -30,6 +31,7 @@ except ImportError:
     from selenium.webdriver.support import expected_conditions as EC
     from selenium.webdriver.support.ui import Select
     from selenium.webdriver.common.action_chains import ActionChains
+    from selenium.webdriver.common.keys import Keys
     import requests
 
 # BIẾN TOÀN CỤC
@@ -71,7 +73,7 @@ def banner():
 ╚██████╔╝██║  ██║██║  ██║╚██████╔╝██║ ╚═╝ ██║███████╗
  ╚═════╝ ╚═╝  ╚═╝╚═╝  ╚═╝ ╚═════╝ ╚═╝    ╚═╝╚══════╝
 {Colors.RESET}""")
-    print(f"{Colors.INFO}Phiên Bản: v12.7 (CHROME PC - HUMAN SLOW SCROLL & TYPING MODE){Colors.RESET}")
+    print(f"{Colors.INFO}Phiên Bản: v12.8 (FIX CỨNG NGÀY SINH & XÓA USERNAME){Colors.RESET}")
     print(f"{Colors.LINE}{'─'*70}{Colors.RESET}\n")
 
 def load_config():
@@ -401,7 +403,7 @@ class starts(threading.Thread):
                     pass
                     
                 wait = WebDriverWait(driver, 15)
-                actions = ActionChains(driver) # KHỞI TẠO CHỨC NĂNG GÕ PHÍM NGƯỜI THẬT
+                actions = ActionChains(driver) 
                 
                 print(f"{Colors.color_text(f'[{self.thread_id}] Đang truy cập Instagram Web...', Colors.INFO)}")
                 driver.get("https://www.instagram.com/accounts/emailsignup/")
@@ -418,7 +420,6 @@ class starts(threading.Thread):
                 except Exception:
                     pass
 
-                # Khởi tạo ngày tháng năm
                 current_year = str(BASE_YEAR + random.randint(-3, 3))
                 if int(current_year) > 2005: current_year = "2005"
                 current_day = str(random.randint(2, 28))
@@ -427,12 +428,11 @@ class starts(threading.Thread):
                 BASE_YEAR -= 1
                 if BASE_YEAR < 1990: BASE_YEAR = random.randint(1995, 2005)
 
-                print(f"{Colors.color_text(f'[{self.thread_id}] Bắt đầu cuộn trang và nhập từng thông tin như người thật...', Colors.INFO)}")
+                print(f"{Colors.color_text(f'[{self.thread_id}] Bắt đầu cuộn trang và nhập từng thông tin...', Colors.INFO)}")
                 
-                # HÀM CUỘN TRANG TỪ TỪ
                 def slow_scroll_to_element(element):
                     try:
-                        target_y = element.location['y'] - 200 # Để element nằm giữa giữa màn hình
+                        target_y = element.location['y'] - 200 
                         current_y = driver.execute_script("return window.pageYOffset;")
                         distance = target_y - current_y
                         steps = 20
@@ -444,20 +444,39 @@ class starts(threading.Thread):
                         driver.execute_script("arguments[0].scrollIntoView({behavior: 'smooth', block: 'center'});", element)
                         time.sleep(0.5)
 
-                # HÀM MÔ PHỎNG GÕ PHÍM NGƯỜI THẬT TỪNG KÝ TỰ
-                def human_type(element, text):
+                # NÂNG CẤP MỚI: Tự động xóa bằng Ctrl+A, Backspace và nút (X)
+                def human_type(element, text, is_username=False):
                     slow_scroll_to_element(element)
                     actions.move_to_element(element).click().perform()
                     time.sleep(0.3)
-                    element.clear()
+                    
+                    # 1. Bôi đen toàn bộ (Ctrl+A) và xóa (Backspace)
+                    element.send_keys(Keys.CONTROL + "a")
                     time.sleep(0.2)
+                    element.send_keys(Keys.BACKSPACE)
+                    time.sleep(0.3)
+                    
+                    # 2. Xóa triệt để nếu form Username có nút (X) do Instagram tạo ra
+                    if is_username:
+                        try:
+                            parent_div = element.find_element(By.XPATH, "..")
+                            clear_buttons = parent_div.find_elements(By.TAG_NAME, "button")
+                            for btn in clear_buttons:
+                                btn.click()
+                                time.sleep(0.3)
+                        except:
+                            pass
+                            
+                    # 3. Quét clear() dự phòng
+                    element.clear()
+                    time.sleep(0.3)
+                    
                     for char in text:
                         element.send_keys(char)
-                        time.sleep(random.uniform(0.05, 0.15)) # Tốc độ gõ ngẫu nhiên
+                        time.sleep(random.uniform(0.05, 0.15)) 
                     time.sleep(random.uniform(0.5, 1.0))
 
                 try:
-                    # Lấy tất cả các thẻ input hiển thị trên màn hình
                     wait.until(EC.presence_of_all_elements_located((By.TAG_NAME, "input")))
                     inputs = driver.find_elements(By.TAG_NAME, "input")
                     
@@ -470,26 +489,46 @@ class starts(threading.Thread):
                         print(f"{Colors.color_text(f'[{self.thread_id}] Cuộn và điền Mật khẩu...', Colors.INFO)}")
                         human_type(inputs[1], secure_pass)
                         
-                        # 3. Chọn Ngày Sinh
+                        # 3. Chọn Ngày Sinh (Nâng cấp Click Form)
                         selects = driver.find_elements(By.TAG_NAME, "select")
                         if len(selects) >= 3:
                             print(f"{Colors.color_text(f'[{self.thread_id}] Cuộn và chọn Ngày Sinh...', Colors.INFO)}")
-                            slow_scroll_to_element(selects[0])
-                            time.sleep(0.5)
-                            Select(selects[0]).select_by_value(current_day)
-                            time.sleep(random.uniform(0.3, 0.6))
-                            Select(selects[1]).select_by_value(current_month)
-                            time.sleep(random.uniform(0.3, 0.6))
-                            Select(selects[2]).select_by_value(current_year)
-                            time.sleep(1)
+                            try:
+                                # Nhấp mở dropdown Ngày rồi chọn giá trị
+                                slow_scroll_to_element(selects[0])
+                                selects[0].click() 
+                                time.sleep(0.5)
+                                Select(selects[0]).select_by_value(current_day)
+                                time.sleep(random.uniform(0.3, 0.6))
+                                
+                                # Nhấp mở dropdown Tháng
+                                selects[1].click()
+                                time.sleep(0.5)
+                                Select(selects[1]).select_by_value(current_month)
+                                time.sleep(random.uniform(0.3, 0.6))
+                                
+                                # Nhấp mở dropdown Năm
+                                selects[2].click()
+                                time.sleep(0.5)
+                                Select(selects[2]).select_by_value(current_year)
+                                time.sleep(1)
+                            except Exception as e:
+                                # Phương án dự phòng (Fallback) nếu click lỗi
+                                print(f"{Colors.color_text(f'[{self.thread_id}] Dùng hàm gửi phím trực tiếp vào Ngày sinh...', Colors.WARNING)}")
+                                selects[0].send_keys(current_day)
+                                time.sleep(0.3)
+                                selects[1].send_keys(current_month)
+                                time.sleep(0.3)
+                                selects[2].send_keys(current_year)
+                                time.sleep(1)
                             
                         # 4. Điền Tên Đầy Đủ
                         print(f"{Colors.color_text(f'[{self.thread_id}] Cuộn và điền Họ Tên...', Colors.INFO)}")
                         human_type(inputs[2], full_name)
                         
-                        # 5. Điền Username
-                        print(f"{Colors.color_text(f'[{self.thread_id}] Cuộn và điền Username...', Colors.INFO)}")
-                        human_type(inputs[3], username)
+                        # 5. Điền Username (Bật cờ is_username=True để kích hoạt chế độ Xóa Sạch)
+                        print(f"{Colors.color_text(f'[{self.thread_id}] Cuộn và xử lý form Username...', Colors.INFO)}")
+                        human_type(inputs[3], username, is_username=True)
                     else:
                         print(f"{Colors.color_text(f'[{self.thread_id}] Lỗi: Giao diện IG bị thay đổi, không đủ số lượng ô input!', Colors.ERROR)}")
                         driver.quit()
@@ -531,7 +570,6 @@ class starts(threading.Thread):
                 try:
                     otp_input = wait.until(EC.presence_of_element_located((By.NAME, "email_confirmation_code")))
                 except Exception:
-                    # Cuộn chậm để tìm OTP thay vì văng thẳng xuống
                     current_y = driver.execute_script("return window.pageYOffset;")
                     target_y = driver.execute_script("return document.body.scrollHeight;")
                     steps = 20
@@ -548,7 +586,6 @@ class starts(threading.Thread):
                         except: pass
                         return False
                 
-                # Lấy OTP
                 otp_code = None
                 print(f"{Colors.color_text(f'[{self.thread_id}] Đang chờ lấy mã OTP từ Email...', Colors.INFO)}")
                 
@@ -574,7 +611,6 @@ class starts(threading.Thread):
                 human_type(otp_input, otp_code)
                 time.sleep(1)
                 
-                # Bấm xác nhận OTP
                 try:
                     driver.execute_script("""
                         let buttons = Array.from(document.querySelectorAll('button'));
@@ -584,11 +620,9 @@ class starts(threading.Thread):
                 except:
                     pass
                 
-                # Chờ load trang chủ
                 print(f"{Colors.color_text(f'[{self.thread_id}] Chờ Server IG xử lý và tạo tài khoản (20s)...', Colors.INFO)}")
                 time.sleep(20)
                 
-                # Lấy Cookie
                 cookies_list = driver.get_cookies()
                 cookie_str = "; ".join([f"{c['name']}={c['value']}" for c in cookies_list])
                 
