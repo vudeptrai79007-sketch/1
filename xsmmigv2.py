@@ -19,6 +19,7 @@ try:
     from selenium.webdriver.support.ui import WebDriverWait
     from selenium.webdriver.support import expected_conditions as EC
     from selenium.webdriver.support.ui import Select
+    from selenium.webdriver.common.action_chains import ActionChains
     import requests
 except ImportError:
     print("Đang cài đặt thư viện thiếu...")
@@ -28,6 +29,7 @@ except ImportError:
     from selenium.webdriver.support.ui import WebDriverWait
     from selenium.webdriver.support import expected_conditions as EC
     from selenium.webdriver.support.ui import Select
+    from selenium.webdriver.common.action_chains import ActionChains
     import requests
 
 # BIẾN TOÀN CỤC
@@ -69,7 +71,7 @@ def banner():
 ╚██████╔╝██║  ██║██║  ██║╚██████╔╝██║ ╚═╝ ██║███████╗
  ╚═════╝ ╚═╝  ╚═╝╚═╝  ╚═╝ ╚═════╝ ╚═╝     ╚═╝╚══════╝
 {Colors.RESET}""")
-    print(f"{Colors.INFO}Phiên Bản: v12.5 (CHROME PC - KẾT HỢP JS SCROLL & NATIVE TYPE){Colors.RESET}")
+    print(f"{Colors.INFO}Phiên Bản: v12.6 (CHROME PC - HUMAN TYPING MODE){Colors.RESET}")
     print(f"{Colors.LINE}{'─'*70}{Colors.RESET}\n")
 
 def load_config():
@@ -390,7 +392,7 @@ class starts(threading.Thread):
                 options.add_argument('--incognito')
                 options.add_argument('--mute-audio')
                 options.add_argument('--disable-notifications')
-                options.add_argument('--window-size=1920,1080') # Cố định màn hình lớn
+                options.add_argument('--window-size=1920,1080')
                 
                 driver = uc.Chrome(options=options)
                 try:
@@ -399,6 +401,7 @@ class starts(threading.Thread):
                     pass
                     
                 wait = WebDriverWait(driver, 15)
+                actions = ActionChains(driver) # KHỞI TẠO CHỨC NĂNG GÕ PHÍM NGƯỜI THẬT
                 
                 print(f"{Colors.color_text(f'[{self.thread_id}] Đang truy cập Instagram Web...', Colors.INFO)}")
                 driver.get("https://www.instagram.com/accounts/emailsignup/")
@@ -424,50 +427,67 @@ class starts(threading.Thread):
                 BASE_YEAR -= 1
                 if BASE_YEAR < 1990: BASE_YEAR = random.randint(1995, 2005)
 
-                print(f"{Colors.color_text(f'[{self.thread_id}] Đang điền form và cuộn trang từng bước...', Colors.INFO)}")
+                print(f"{Colors.color_text(f'[{self.thread_id}] Đang mô phỏng thao tác gõ phím của người thật...', Colors.INFO)}")
                 
+                # HÀM MÔ PHỎNG GÕ PHÍM NGƯỜI THẬT
+                def human_type(element, text):
+                    # Cuộn ô input ra giữa màn hình
+                    driver.execute_script("arguments[0].scrollIntoView({behavior: 'smooth', block: 'center'});", element)
+                    time.sleep(0.5)
+                    # Click chuột vào ô
+                    actions.move_to_element(element).click().perform()
+                    time.sleep(0.3)
+                    element.clear()
+                    time.sleep(0.2)
+                    # Gõ từng chữ một với tốc độ ngẫu nhiên
+                    for char in text:
+                        element.send_keys(char)
+                        time.sleep(random.uniform(0.01, 0.08))
+
                 try:
-                    # 1. Điền Email
-                    email_input = wait.until(EC.presence_of_element_located((By.NAME, "emailOrPhone")))
-                    driver.execute_script("arguments[0].scrollIntoView({behavior: 'smooth', block: 'center'});", email_input)
-                    time.sleep(0.5)
-                    email_input.clear()
-                    email_input.send_keys(used_email)
+                    # Lấy tất cả các thẻ input hiển thị trên màn hình
+                    inputs = driver.find_elements(By.TAG_NAME, "input")
                     
-                    # 2. Điền Mật khẩu
-                    pass_input = driver.find_element(By.NAME, "password")
-                    driver.execute_script("arguments[0].scrollIntoView({behavior: 'smooth', block: 'center'});", pass_input)
-                    time.sleep(0.5)
-                    pass_input.clear()
-                    pass_input.send_keys(secure_pass)
-                    
-                    # 3. Chọn Ngày Sinh
-                    selects = driver.find_elements(By.TAG_NAME, "select")
-                    if len(selects) >= 3:
-                        driver.execute_script("arguments[0].scrollIntoView({behavior: 'smooth', block: 'center'});", selects[0])
-                        time.sleep(0.5)
-                        Select(selects[0]).select_by_value(current_day)
-                        Select(selects[1]).select_by_value(current_month)
-                        Select(selects[2]).select_by_value(current_year)
+                    if len(inputs) >= 4:
+                        # 1. Điền Email
+                        human_type(inputs[0], used_email)
+                        time.sleep(1)
                         
-                    # 4. Điền Tên Đầy Đủ
-                    name_input = driver.find_element(By.NAME, "fullName")
-                    driver.execute_script("arguments[0].scrollIntoView({behavior: 'smooth', block: 'center'});", name_input)
-                    time.sleep(0.5)
-                    name_input.clear()
-                    name_input.send_keys(full_name)
-                    
-                    # 5. Điền Username
-                    user_input = driver.find_element(By.NAME, "username")
-                    driver.execute_script("arguments[0].scrollIntoView({behavior: 'smooth', block: 'center'});", user_input)
-                    time.sleep(0.5)
-                    user_input.clear()
-                    user_input.send_keys(username)
+                        # 2. Điền Mật khẩu
+                        human_type(inputs[1], secure_pass)
+                        time.sleep(1)
+                        
+                        # 3. Chọn Ngày Sinh (Sử dụng lệnh Javascript an toàn cho riêng thẻ Select)
+                        selects = driver.find_elements(By.TAG_NAME, "select")
+                        if len(selects) >= 3:
+                            driver.execute_script("arguments[0].scrollIntoView({behavior: 'smooth', block: 'center'});", selects[0])
+                            time.sleep(0.5)
+                            Select(selects[0]).select_by_value(current_day)
+                            time.sleep(0.2)
+                            Select(selects[1]).select_by_value(current_month)
+                            time.sleep(0.2)
+                            Select(selects[2]).select_by_value(current_year)
+                            time.sleep(1)
+                            
+                        # 4. Điền Tên Đầy Đủ
+                        human_type(inputs[2], full_name)
+                        time.sleep(1)
+                        
+                        # 5. Điền Username
+                        human_type(inputs[3], username)
+                        time.sleep(1)
+                    else:
+                        print(f"{Colors.color_text(f'[{self.thread_id}] Lỗi: Giao diện IG bị thay đổi, không đủ số lượng ô input!', Colors.ERROR)}")
+                        driver.quit()
+                        return False
                     
                     # 6. NGÂM FORM
                     print(f"{Colors.color_text(f'[{self.thread_id}] Đã điền xong. Ngâm form 30s trước khi bấm nút Đăng Ký...', Colors.WARNING)}")
                     for w in range(30, 0, -5):
-                        if STOP_EVENT.is_set(): driver.quit(); return False
+                        if STOP_EVENT.is_set(): 
+                            try: driver.quit() 
+                            except: pass
+                            return False
                         time.sleep(5)
 
                     uid_moc = 0
@@ -479,14 +499,16 @@ class starts(threading.Thread):
                     time.sleep(1)
                     
                     submit_btn = driver.find_element(By.XPATH, "//button[@type='submit']")
-                    driver.execute_script("arguments[0].click();", submit_btn)
+                    # Dùng ActionChains để click như người thật
+                    actions.move_to_element(submit_btn).click().perform()
                     
-                    print(f"{Colors.color_text(f'[{self.thread_id}] Đã gửi form thành công, chờ load OTP (15s)...', Colors.SUCCESS)}")
+                    print(f"{Colors.color_text(f'[{self.thread_id}] Đã bấm gửi form thành công, chờ load OTP (15s)...', Colors.SUCCESS)}")
                     time.sleep(15)
                     
                 except Exception as e:
-                    print(f"{Colors.color_text(f'[{self.thread_id}] Bị lỗi trong quá trình cuộn và điền: {e}', Colors.ERROR)}")
-                    driver.quit()
+                    print(f"{Colors.color_text(f'[{self.thread_id}] Form chưa kịp tải hoặc IG đã chặn bot: {e}', Colors.ERROR)}")
+                    try: driver.quit() 
+                    except: pass
                     return False
 
                 # ========================================================
@@ -500,8 +522,9 @@ class starts(threading.Thread):
                     try:
                         otp_input = wait.until(EC.presence_of_element_located((By.NAME, "email_confirmation_code")))
                     except Exception:
-                        print(f"{Colors.color_text(f'[{self.thread_id}] Lỗi: Kẹt form hoặc Username bị trùng.', Colors.ERROR)}")
-                        driver.quit()
+                        print(f"{Colors.color_text(f'[{self.thread_id}] Lỗi: Không thể chuyển sang trang OTP (Kẹt form/IP bị chặn).', Colors.ERROR)}")
+                        try: driver.quit() 
+                        except: pass
                         return False
                 
                 # Lấy OTP
@@ -522,19 +545,23 @@ class starts(threading.Thread):
                 
                 if not otp_code:
                     print(f"{Colors.color_text(f'[{self.thread_id}] Lỗi không lấy được OTP. Bỏ qua tài khoản này!', Colors.ERROR)}")
-                    driver.quit()
+                    try: driver.quit() 
+                    except: pass
                     return False
                 
                 print(f"{Colors.color_text(f'[{self.thread_id}] Bắt đầu điền OTP: {otp_code}', Colors.SUCCESS)}")
-                otp_input.send_keys(otp_code)
+                human_type(otp_input, otp_code)
                 time.sleep(1)
                 
                 # Bấm xác nhận OTP
-                driver.execute_script("""
-                    let buttons = Array.from(document.querySelectorAll('button'));
-                    let nextBtn = buttons.find(b => /tiếp|next|xác nhận|confirm/i.test(b.innerText));
-                    if (nextBtn) nextBtn.click();
-                """)
+                try:
+                    driver.execute_script("""
+                        let buttons = Array.from(document.querySelectorAll('button'));
+                        let nextBtn = buttons.find(b => /tiếp|next|xác nhận|confirm/i.test(b.innerText));
+                        if (nextBtn) nextBtn.click();
+                    """)
+                except:
+                    pass
                 
                 # Chờ load trang chủ
                 print(f"{Colors.color_text(f'[{self.thread_id}] Chờ Server IG xử lý và tạo tài khoản (20s)...', Colors.INFO)}")
@@ -553,12 +580,15 @@ class starts(threading.Thread):
                 print(f"{Colors.color_text('─'*70, Colors.LINE)}\n")
                 
                 save_account(self.thread_id, used_email, secure_pass, username, full_name, f"mode_{self.mode}", cookie_str)
-                driver.quit()
+                
+                try: driver.quit()
+                except: pass
                 return True
                 
             except Exception as e:
-                print(f"{Colors.color_text(f'[{self.thread_id}] Gặp Lỗi: {e}', Colors.ERROR)}")
-                if driver: driver.quit()
+                print(f"{Colors.color_text(f'[{self.thread_id}] Gặp Lỗi Ngoại Lệ: {e}', Colors.ERROR)}")
+                try: driver.quit()
+                except: pass
                 return False
         
         success_count = 0
