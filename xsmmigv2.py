@@ -19,7 +19,6 @@ try:
     from selenium.webdriver.support.ui import WebDriverWait
     from selenium.webdriver.support import expected_conditions as EC
     from selenium.webdriver.support.ui import Select
-    from selenium.webdriver.common.action_chains import ActionChains
     from selenium.webdriver.common.keys import Keys
     import requests
 except ImportError:
@@ -30,7 +29,6 @@ except ImportError:
     from selenium.webdriver.support.ui import WebDriverWait
     from selenium.webdriver.support import expected_conditions as EC
     from selenium.webdriver.support.ui import Select
-    from selenium.webdriver.common.action_chains import ActionChains
     from selenium.webdriver.common.keys import Keys
     import requests
 
@@ -73,7 +71,7 @@ def banner():
 ╚██████╔╝██║  ██║██║  ██║╚██████╔╝██║ ╚═╝ ██║███████╗
  ╚═════╝ ╚═╝  ╚═╝╚═╝  ╚═╝ ╚═════╝ ╚═╝    ╚═╝╚══════╝
 {Colors.RESET}""")
-    print(f"{Colors.INFO}Phiên Bản: v12.11 (CLICK NGÀY SINH VẬT LÝ & FORCE SUBMIT){Colors.RESET}")
+    print(f"{Colors.INFO}Phiên Bản: v12.12 (JS CLICK ĐA LUỒNG & GÕ VẬT LÝ){Colors.RESET}")
     print(f"{Colors.LINE}{'─'*70}{Colors.RESET}\n")
 
 def load_config():
@@ -399,7 +397,6 @@ class starts(threading.Thread):
                 except: pass
                     
                 wait = WebDriverWait(driver, 15)
-                actions = ActionChains(driver) 
                 
                 print(f"{Colors.color_text(f'[{self.thread_id}] Đang truy cập Instagram Web...', Colors.INFO)}")
                 driver.get("https://www.instagram.com/accounts/emailsignup/")
@@ -410,7 +407,8 @@ class starts(threading.Thread):
                 try:
                     cookie_btns = driver.find_elements(By.XPATH, "//button[contains(text(), 'Allow') or contains(text(), 'Accept') or contains(text(), 'Cho phép') or contains(text(), 'Đồng ý')]")
                     if cookie_btns:
-                        cookie_btns[0].click()
+                        # JS Click đa luồng thay vì vật lý
+                        driver.execute_script("arguments[0].click();", cookie_btns[0])
                         time.sleep(2)
                 except: pass
 
@@ -436,9 +434,14 @@ class starts(threading.Thread):
                         driver.execute_script("arguments[0].scrollIntoView({behavior: 'smooth', block: 'center'});", element)
                         time.sleep(0.5)
 
+                # LOẠI BỎ ACTIONCHAINS Ở ĐÂY CHO ĐA LUỒNG
                 def human_type(element, text, is_username=False):
                     slow_scroll_to_element(element)
-                    actions.move_to_element(element).click().perform()
+                    
+                    try:
+                        element.click() # Thử click của Selenium
+                    except:
+                        driver.execute_script("arguments[0].click();", element) # Nếu vướng, dùng JS click ngầm
                     time.sleep(0.5)
                     
                     if is_username:
@@ -480,38 +483,37 @@ class starts(threading.Thread):
                         print(f"{Colors.color_text(f'[{self.thread_id}] Điền Mật khẩu...', Colors.INFO)}")
                         human_type(inputs[1], secure_pass)
                         
-                        # 3. CHỌN NGÀY SINH (CHỜ DOM VÀ XỬ LÝ GIAO DIỆN REACT)
-                        print(f"{Colors.color_text(f'[{self.thread_id}] Chờ tải hộp thoại Ngày Sinh...', Colors.INFO)}")
+                        # 3. CHỌN NGÀY SINH (CLICK JS VÀ GÕ PHÍM - AN TOÀN CHO ĐA LUỒNG)
+                        print(f"{Colors.color_text(f'[{self.thread_id}] Bắt đầu chọn Ngày Sinh...', Colors.INFO)}")
                         try:
-                            # Ép chờ tối đa 10s cho đến khi 3 thẻ select xuất hiện
                             selects = wait.until(EC.presence_of_all_elements_located((By.TAG_NAME, "select")))
                             
                             if len(selects) >= 3:
                                 slow_scroll_to_element(selects[0])
-                                # Dựa theo giao diện tiếng Việt, thứ tự là Ngày, Tháng, Năm
+                                time.sleep(1)
+                                
                                 dob_values = [current_day, current_month, current_year]
                                 
                                 for idx, val in enumerate(dob_values):
-                                    # Sử dụng Javascript để gán giá trị thẳng vào DOM ẩn và đánh thức React
-                                    driver.execute_script(f"""
-                                        var element = arguments[0];
-                                        element.value = '{val}';
-                                        element.dispatchEvent(new Event('change', {{ bubbles: true }}));
-                                    """, selects[idx])
-                                    time.sleep(random.uniform(0.3, 0.6))
+                                    try:
+                                        # JS Click ngầm thay vì dùng chuột hệ thống
+                                        driver.execute_script("arguments[0].click();", selects[idx])
+                                        time.sleep(0.5)
+                                        
+                                        # Bắn phím số thẳng vào element hiện tại
+                                        selects[idx].send_keys(str(val))
+                                        time.sleep(0.5)
+                                        
+                                        # Enter chốt sổ
+                                        selects[idx].send_keys(Keys.ENTER)
+                                        time.sleep(random.uniform(0.5, 0.8))
+                                        
+                                    except Exception as e:
+                                        print(f"{Colors.color_text(f'[{self.thread_id}] Lỗi nhập ô Ngày Sinh thứ {idx+1}...', Colors.WARNING)}")
                             else:
-                                print(f"{Colors.color_text(f'[{self.thread_id}] Lỗi: Không đủ dropdown Ngày Sinh!', Colors.WARNING)}")
+                                print(f"{Colors.color_text(f'[{self.thread_id}] Lỗi: Không tìm thấy đủ 3 ô Ngày Sinh!', Colors.WARNING)}")
                         except Exception as e:
-                            print(f"{Colors.color_text(f'[{self.thread_id}] Không tìm thấy thẻ select Ngày Sinh. Thử click vật lý UI...', Colors.WARNING)}")
-                            # Phương án dự phòng: Click trực tiếp vào các span chứa chữ Ngày, Tháng, Năm trên màn hình
-                            try:
-                                for label in ["Ngày", "Tháng", "Năm"]:
-                                    btn = driver.find_element(By.XPATH, f"//span[contains(text(), '{label}')]")
-                                    actions.move_to_element(btn).click().perform()
-                                    time.sleep(0.5)
-                                    actions.send_keys(Keys.ARROW_DOWN).send_keys(Keys.ENTER).perform()
-                                    time.sleep(0.5)
-                            except: pass
+                            print(f"{Colors.color_text(f'[{self.thread_id}] Lỗi tải khối Ngày Sinh: {e}', Colors.ERROR)}")
                             
                         # 4. Điền Tên Đầy Đủ
                         print(f"{Colors.color_text(f'[{self.thread_id}] Điền Họ Tên...', Colors.INFO)}")
@@ -532,19 +534,21 @@ class starts(threading.Thread):
                     if self.mode in ["3", "4"] and imap_service:
                         uid_moc = imap_service.get_latest_uid()
 
-                    # 7. ÉP CLICK NÚT SUBMIT BẰNG MỌI CÁCH
+                    # 7. CLICK NÚT SUBMIT BẰNG JS ĐA LUỒNG
                     print(f"{Colors.color_text(f'[{self.thread_id}] Đang tìm và nhấn nút Đăng Ký...', Colors.INFO)}")
                     try:
                         submit_btn = wait.until(EC.presence_of_element_located((By.XPATH, "//button[@type='submit']")))
                         slow_scroll_to_element(submit_btn)
                         
-                        # Chờ React mở khóa nút
                         try:
                             wait.until(EC.element_to_be_clickable((By.XPATH, "//button[@type='submit']")))
                         except: pass
                         
-                        try: actions.move_to_element(submit_btn).click().perform()
-                        except: submit_btn.click()
+                        # Bỏ qua ActionChains, dùng native click hoặc JS
+                        try: 
+                            submit_btn.click()
+                        except: 
+                            driver.execute_script("arguments[0].click();", submit_btn)
                         
                     except Exception:
                         print(f"{Colors.color_text(f'[{self.thread_id}] Nút khóa, dùng JS cưỡng chế bẻ khóa và click...', Colors.WARNING)}")
@@ -564,7 +568,6 @@ class starts(threading.Thread):
                     
                 except Exception as e:
                     print(f"{Colors.color_text(f'[{self.thread_id}] Lỗi quá trình điền form: {e}', Colors.ERROR)}")
-                    # Thêm time.sleep(10) ở đây để bạn kịp nhìn lỗi trên Chrome trước khi nó tự đóng trình duyệt
                     time.sleep(10)
                     try: driver.quit() 
                     except: pass
