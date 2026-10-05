@@ -73,7 +73,7 @@ def banner():
 ╚██████╔╝██║  ██║██║  ██║╚██████╔╝██║ ╚═╝ ██║███████╗
  ╚═════╝ ╚═╝  ╚═╝╚═╝  ╚═╝ ╚═════╝ ╚═╝    ╚═╝╚══════╝
 {Colors.RESET}""")
-    print(f"{Colors.INFO}Phiên Bản: v12.10 (CLICK NGÀY SINH VẬT LÝ & FORCE SUBMIT){Colors.RESET}")
+    print(f"{Colors.INFO}Phiên Bản: v12.11 (CLICK NGÀY SINH VẬT LÝ & FORCE SUBMIT){Colors.RESET}")
     print(f"{Colors.LINE}{'─'*70}{Colors.RESET}\n")
 
 def load_config():
@@ -480,29 +480,38 @@ class starts(threading.Thread):
                         print(f"{Colors.color_text(f'[{self.thread_id}] Điền Mật khẩu...', Colors.INFO)}")
                         human_type(inputs[1], secure_pass)
                         
-                        # 3. CHỌN NGÀY SINH (DÙNG SELECT CLASS HOẶC JAVASCRIPT ĐỂ VƯỢT REACT UI)
-                        selects = driver.find_elements(By.TAG_NAME, "select")
-                        if len(selects) >= 3:
-                            print(f"{Colors.color_text(f'[{self.thread_id}] Bắt đầu chọn Ngày Sinh...', Colors.INFO)}")
-                            slow_scroll_to_element(selects[0])
+                        # 3. CHỌN NGÀY SINH (CHỜ DOM VÀ XỬ LÝ GIAO DIỆN REACT)
+                        print(f"{Colors.color_text(f'[{self.thread_id}] Chờ tải hộp thoại Ngày Sinh...', Colors.INFO)}")
+                        try:
+                            # Ép chờ tối đa 10s cho đến khi 3 thẻ select xuất hiện
+                            selects = wait.until(EC.presence_of_all_elements_located((By.TAG_NAME, "select")))
                             
-                            dob_values = [current_day, current_month, current_year]
-                            
-                            for idx, val in enumerate(dob_values):
-                                try:
-                                    # CÁCH 1: Dùng class Select chuyên dụng của Selenium cho thẻ <select>
-                                    sel = Select(selects[idx])
-                                    sel.select_by_value(str(val))
-                                    time.sleep(random.uniform(0.3, 0.6))
-                                except Exception as e:
-                                    print(f"{Colors.color_text(f'[{self.thread_id}] UI chặn Click, dùng JS ép nhập...', Colors.WARNING)}")
-                                    # CÁCH 2: Ép React nhận dữ liệu bằng Javascript
+                            if len(selects) >= 3:
+                                slow_scroll_to_element(selects[0])
+                                # Dựa theo giao diện tiếng Việt, thứ tự là Ngày, Tháng, Năm
+                                dob_values = [current_day, current_month, current_year]
+                                
+                                for idx, val in enumerate(dob_values):
+                                    # Sử dụng Javascript để gán giá trị thẳng vào DOM ẩn và đánh thức React
                                     driver.execute_script(f"""
                                         var element = arguments[0];
                                         element.value = '{val}';
                                         element.dispatchEvent(new Event('change', {{ bubbles: true }}));
                                     """, selects[idx])
                                     time.sleep(random.uniform(0.3, 0.6))
+                            else:
+                                print(f"{Colors.color_text(f'[{self.thread_id}] Lỗi: Không đủ dropdown Ngày Sinh!', Colors.WARNING)}")
+                        except Exception as e:
+                            print(f"{Colors.color_text(f'[{self.thread_id}] Không tìm thấy thẻ select Ngày Sinh. Thử click vật lý UI...', Colors.WARNING)}")
+                            # Phương án dự phòng: Click trực tiếp vào các span chứa chữ Ngày, Tháng, Năm trên màn hình
+                            try:
+                                for label in ["Ngày", "Tháng", "Năm"]:
+                                    btn = driver.find_element(By.XPATH, f"//span[contains(text(), '{label}')]")
+                                    actions.move_to_element(btn).click().perform()
+                                    time.sleep(0.5)
+                                    actions.send_keys(Keys.ARROW_DOWN).send_keys(Keys.ENTER).perform()
+                                    time.sleep(0.5)
+                            except: pass
                             
                         # 4. Điền Tên Đầy Đủ
                         print(f"{Colors.color_text(f'[{self.thread_id}] Điền Họ Tên...', Colors.INFO)}")
@@ -555,6 +564,8 @@ class starts(threading.Thread):
                     
                 except Exception as e:
                     print(f"{Colors.color_text(f'[{self.thread_id}] Lỗi quá trình điền form: {e}', Colors.ERROR)}")
+                    # Thêm time.sleep(10) ở đây để bạn kịp nhìn lỗi trên Chrome trước khi nó tự đóng trình duyệt
+                    time.sleep(10)
                     try: driver.quit() 
                     except: pass
                     return False
@@ -575,6 +586,7 @@ class starts(threading.Thread):
                         otp_input = wait.until(EC.presence_of_element_located((By.NAME, "email_confirmation_code")))
                     except Exception:
                         print(f"{Colors.color_text(f'[{self.thread_id}] Lỗi: Không thể chuyển sang trang OTP.', Colors.ERROR)}")
+                        time.sleep(5)
                         try: driver.quit() 
                         except: pass
                         return False
@@ -596,6 +608,7 @@ class starts(threading.Thread):
                 
                 if not otp_code:
                     print(f"{Colors.color_text(f'[{self.thread_id}] Lỗi không lấy được OTP.', Colors.ERROR)}")
+                    time.sleep(5)
                     try: driver.quit() 
                     except: pass
                     return False
