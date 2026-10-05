@@ -71,7 +71,7 @@ def banner():
 ╚██████╔╝██║  ██║██║  ██║╚██████╔╝██║ ╚═╝ ██║███████╗
  ╚═════╝ ╚═╝  ╚═╝╚═╝  ╚═╝ ╚═════╝ ╚═╝    ╚═╝╚══════╝
 {Colors.RESET}""")
-    print(f"{Colors.INFO}Phiên Bản: v12.14 (FIX OTP ENCODING & FIX NÚT GỬI REACTJS){Colors.RESET}")
+    print(f"{Colors.INFO}Phiên Bản: v12.15 (TÍCH HỢP NGÂM OTP 60s & API SMAIL1S MỚI){Colors.RESET}")
     print(f"{Colors.LINE}{'─'*70}{Colors.RESET}\n")
 
 def load_config():
@@ -170,7 +170,6 @@ class MailService:
                     for msg in r.json().get('hydra:member', []):
                         sub = str(msg.get('subject', '')).lower()
                         frm = str(msg.get('from', {}).get('address', '')).lower()
-                        # Kiểm tra xem có chứa IG không
                         if 'instagram' in sub or 'instagram' in frm:
                             if msg.get('id') != last_id:
                                 last_id = msg['id']
@@ -268,8 +267,6 @@ class GmailIMAPService:
                                 if isinstance(item, tuple): raw = item[1]; break
                             if raw:
                                 msg = email.message_from_bytes(raw)
-                                
-                                # Đã xử lý vấn đề Mã hóa Base64 ở Header
                                 to_addr = self.decode_msg_header(msg.get("To", "")).lower()
                                 subject = self.decode_msg_header(msg.get("Subject", "")).lower()
                                 from_addr = self.decode_msg_header(msg.get("From", "")).lower()
@@ -284,6 +281,7 @@ class GmailIMAPService:
             time.sleep(5) 
         return None
 
+# ==================== DỊCH VỤ HOTMAIL/OUTLOOK API ====================
 class HotmailAPIService:
     def __init__(self, data_line, api_mode):
         self.url = "https://smail1s.com/get_messages"
@@ -293,32 +291,80 @@ class HotmailAPIService:
 
     def get_otp_code(self, timeout=120):
         start_time = time.time()
-        payload = {"mode": self.api_mode, "data": self.data_line}
-        headers = {'Content-Type': 'application/json', 'User-Agent': 'Mozilla/5.0'}
+        print(f"{Colors.color_text(f'[API Smail1s] Đang check hộp thư {self.email} (Mode: {self.api_mode})...', Colors.INFO)}")
+        
+        payload = {
+            "mode": self.api_mode,
+            "data": self.data_line
+        }
+        headers = {
+            'Content-Type': 'application/json',
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+        }
+        
+        last_logged = ""
         while time.time() - start_time < timeout:
-            if STOP_EVENT.is_set(): return None
+            if STOP_EVENT.is_set():
+                return None
             try:
                 response = requests.post(self.url, json=payload, headers=headers, timeout=20)
                 if response.status_code == 200:
-                    data_array = response.json().get("data", [])
+                    res_json = response.json()
+                    data_array = res_json.get("data", [])
+                    
                     if data_array and len(data_array) > 0:
                         account_data = data_array[0]
-                        if not account_data.get("error"):
+                        err = account_data.get("error")
+                        
+                        if err:
+                            msg_err = f"Lỗi hộp thư: {err}"
+                            if msg_err != last_logged:
+                                print(f"{Colors.color_text(f'[API Smail1s] {msg_err}', Colors.ERROR)}")
+                                last_logged = msg_err
+                        else:
                             messages = account_data.get("messages", [])
+                            msg_info = f"Tìm thấy {len(messages)} thư."
+                            if msg_info != last_logged:
+                                print(f"{Colors.color_text(f'[API Smail1s] {msg_info} Đang quét mã...', Colors.INFO)}")
+                                last_logged = msg_info
+                                
                             for msg in messages:
                                 subject = str(msg.get("subject", "")).lower()
                                 from_sender = str(msg.get("from", "")).lower()
                                 raw_msg = str(msg.get("message", ""))
                                 code_field = str(msg.get("code", "")).strip()
+                                
+                                # Kiểm tra xem thư có liên quan đến Instagram không
                                 is_ig = ("instagram" in subject) or ("instagram" in from_sender) or ("instagram" in raw_msg.lower())
+                                
                                 if is_ig:
-                                    if code_field and code_field.isdigit() and len(code_field) == 6: return code_field
-                                    match_subj = re.search(r'(?<!\d)(\d{6})(?!\d)', subject)
-                                    if match_subj: return match_subj.group(1)
+                                    # Lấy trường code API đã bóc sẵn
+                                    if code_field and code_field.isdigit() and len(code_field) == 6:
+                                        print(f"{Colors.color_text(f'[API Smail1s] Đã tìm thấy mã: {code_field}', Colors.SUCCESS)}")
+                                        return code_field
+                                    
+                                    # Lấy mã bằng regex trong tiêu đề hoặc nội dung
+                                    match_subj = re.search(r'\b(\d{6})\b', subject)
+                                    if match_subj:
+                                        print(f"{Colors.color_text(f'[API Smail1s] Đã tìm thấy mã: {match_subj.group(1)}', Colors.SUCCESS)}")
+                                        return match_subj.group(1)
+                                        
                                     clean_text = re.sub(r'<[^>]+>', ' ', raw_msg)
-                                    match_body = re.search(r'(?<!\d)(\d{6})(?!\d)', clean_text)
-                                    if match_body: return match_body.group(1)
-            except Exception: pass
+                                    match_body = re.search(r'\b(\d{6})\b', clean_text)
+                                    if match_body:
+                                        print(f"{Colors.color_text(f'[API Smail1s] Đã tìm thấy mã: {match_body.group(1)}', Colors.SUCCESS)}")
+                                        return match_body.group(1)
+                else:
+                    status_err = f"Lỗi HTTP {response.status_code}"
+                    if status_err != last_logged:
+                        print(f"{Colors.color_text(f'[API Smail1s] {status_err}', Colors.WARNING)}")
+                        last_logged = status_err
+            except Exception as e:
+                err_str = f"Lỗi kết nối: {str(e)}"
+                if err_str != last_logged:
+                    print(f"{Colors.color_text(f'[API Smail1s] {err_str}', Colors.WARNING)}")
+                    last_logged = err_str
+            
             time.sleep(5)
         return None
 
@@ -478,7 +524,6 @@ class starts(threading.Thread):
                         time.sleep(random.uniform(0.05, 0.15)) 
                     time.sleep(random.uniform(0.5, 1.0))
                     
-                    # Cực kỳ quan trọng: Bấm nút Tab để thoát khỏi ô, đánh lừa React kích hoạt Validate
                     try: element.send_keys(Keys.TAB)
                     except: pass
 
@@ -487,15 +532,12 @@ class starts(threading.Thread):
                     inputs = driver.find_elements(By.TAG_NAME, "input")
                     
                     if len(inputs) >= 4:
-                        # 1. Điền Email
                         print(f"{Colors.color_text(f'[{self.thread_id}] Điền Email...', Colors.INFO)}")
                         human_type(inputs[0], used_email)
                         
-                        # 2. Điền Mật khẩu
                         print(f"{Colors.color_text(f'[{self.thread_id}] Điền Mật khẩu...', Colors.INFO)}")
                         human_type(inputs[1], secure_pass)
                         
-                        # 3. CHỌN NGÀY SINH BẰNG JAVASCRIPT CUSTOM
                         print(f"{Colors.color_text(f'[{self.thread_id}] Bắt đầu chọn Ngày Sinh bằng Script Console...', Colors.INFO)}")
                         try:
                             wait.until(EC.presence_of_all_elements_located((By.XPATH, '//*[@role="combobox"]')))
@@ -548,11 +590,9 @@ class starts(threading.Thread):
                         except Exception as e:
                             print(f"{Colors.color_text(f'[{self.thread_id}] Lỗi tải khối Ngày Sinh (JS): {e}', Colors.ERROR)}")
                             
-                        # 4. Điền Tên Đầy Đủ
                         print(f"{Colors.color_text(f'[{self.thread_id}] Điền Họ Tên...', Colors.INFO)}")
                         human_type(inputs[2], full_name)
                         
-                        # 5. Điền Username
                         print(f"{Colors.color_text(f'[{self.thread_id}] Xử lý form Username...', Colors.INFO)}")
                         human_type(inputs[3], username, is_username=True)
                     else:
@@ -567,7 +607,6 @@ class starts(threading.Thread):
                     if self.mode in ["3", "4"] and imap_service:
                         uid_moc = imap_service.get_latest_uid()
 
-                    # 7. CLICK NÚT SUBMIT BẰNG JS ĐA LUỒNG - ĐÃ FIX MẠNH MẼ
                     print(f"{Colors.color_text(f'[{self.thread_id}] Cuộn trang xuống cuối để tìm nút Gửi...', Colors.INFO)}")
                     driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
                     time.sleep(1)
@@ -580,7 +619,6 @@ class starts(threading.Thread):
                     
                     print(f"{Colors.color_text(f'[{self.thread_id}] Đang tìm và nhấn nút Gửi/Đăng Ký...', Colors.INFO)}")
                     try:
-                        # Áp dụng đoạn JS mới kết hợp giả lập Event của ReactJS
                         click_result = driver.execute_script("""
                             const submitBtn = Array.from(document.querySelectorAll('button, div[role="button"]')).find(b => {
                                 const text = (b.innerText || b.textContent || "").trim().toLowerCase();
@@ -588,15 +626,11 @@ class starts(threading.Thread):
                             });
 
                             if (submitBtn) {
-                                // 1. Ép gỡ thuộc tính khóa của React/CSS
                                 submitBtn.disabled = false;
                                 submitBtn.removeAttribute('disabled');
                                 submitBtn.style.pointerEvents = 'auto';
-
-                                // 2. Click bằng DOM cơ bản
                                 submitBtn.click(); 
 
-                                // 3. Bắn event click giả lập để lừa cơ chế bảo mật của ReactJS
                                 var event = new MouseEvent('click', {
                                     view: window,
                                     bubbles: true,
@@ -613,7 +647,6 @@ class starts(threading.Thread):
                             print(f"{Colors.color_text(f'[{self.thread_id}] ĐÃ BẤM NÚT GỬI THÀNH CÔNG (Bằng Script)!', Colors.SUCCESS)}")
                         else:
                             print(f"{Colors.color_text(f'[{self.thread_id}] JS không tìm thấy nút Gửi, thử dùng phím ENTER...', Colors.WARNING)}")
-                            # Phương án dự phòng: Gửi lệnh bấm nút ENTER thẳng vào ô Username
                             try:
                                 inputs[3].send_keys(Keys.ENTER)
                                 print(f"{Colors.color_text(f'[{self.thread_id}] Đã bấm ENTER thành công!', Colors.SUCCESS)}")
@@ -653,14 +686,21 @@ class starts(threading.Thread):
                         except: pass
                         return False
                 
+                # ==================== CƠ CHẾ LẤY & NGÂM OTP ====================
                 otp_code = None
-                print(f"{Colors.color_text(f'[{self.thread_id}] Đang chờ lấy mã OTP từ Email...', Colors.INFO)}")
+                start_otp_wait = time.time()
                 
                 if self.mode == "2" and not (mail_service and mail_service.token):
                     with OTP_LOCK:
                         print(f"\n{Colors.color_text(f'[{self.thread_id}] MỜI SẾP NHẬP OTP CHO [{used_email}] TỪ BÀN PHÍM:', Colors.SUCCESS)}")
                         otp_code = input(">> ").strip()
                 else:
+                    target_wait = 60 if self.mode in ["3", "4", "5"] else 0
+                    if target_wait > 0:
+                        print(f"{Colors.color_text(f'[{self.thread_id}] Bắt đầu chu trình quét OTP và ngâm form {target_wait}s...', Colors.INFO)}")
+                    else:
+                        print(f"{Colors.color_text(f'[{self.thread_id}] Đang chờ lấy mã OTP từ Email...', Colors.INFO)}")
+
                     if self.mode == "1" or (self.mode == "2" and mail_service and mail_service.token):
                         otp_code = mail_service.get_otp_code(timeout=120)
                     elif self.mode in ["3", "4"]:
@@ -669,19 +709,32 @@ class starts(threading.Thread):
                         otp_code = hotmail_service.get_otp_code(timeout=120)
                 
                 if not otp_code:
-                    print(f"{Colors.color_text(f'[{self.thread_id}] Lỗi không lấy được OTP.', Colors.ERROR)}")
+                    print(f"{Colors.color_text(f'[{self.thread_id}] Lỗi: Quá 120s không lấy được mã OTP. Bỏ qua acc!', Colors.ERROR)}")
                     time.sleep(5)
                     try: driver.quit() 
                     except: pass
                     return False
                 
-                print(f"{Colors.color_text(f'[{self.thread_id}] Bắt đầu điền OTP: {otp_code}', Colors.SUCCESS)}")
+                # ÉP NGÂM TRANG OTP TRƯỚC KHI NHẬP MÃ (ĐẶC BIỆT CHẾ ĐỘ 5, 4, 3)
+                if self.mode in ["3", "4", "5"]:
+                    elapsed = time.time() - start_otp_wait
+                    remaining = target_wait - elapsed
+                    if remaining > 0:
+                        print(f"{Colors.color_text(f'[{self.thread_id}] Đã lấy được mã ({otp_code}) ở giây thứ {int(elapsed)}! Đang ngâm form đợi hết {target_wait}s...', Colors.WARNING)}")
+                        for w in range(int(remaining), 0, -5):
+                            if STOP_EVENT.is_set(): return False
+                            print(f"{Colors.color_text(f'[{self.thread_id}] Thời gian ngâm OTP còn lại: {w}s...', Colors.INFO)}")
+                            time.sleep(min(5, w))
+                        print(f"{Colors.color_text(f'[{self.thread_id}] Đã ngâm đủ {target_wait}s. Chuẩn bị điền mã OTP!', Colors.SUCCESS)}")
+
+                # TIẾN HÀNH ĐIỀN MÃ LÊN WEB (SELENIUM)
+                print(f"{Colors.color_text(f'[{self.thread_id}] Bắt đầu điền mã OTP: {otp_code} vào trang Web...', Colors.SUCCESS)}")
                 human_type(otp_input, otp_code)
                 time.sleep(1)
                 
                 try:
                     driver.execute_script("""
-                        let buttons = Array.from(document.querySelectorAll('button'));
+                        let buttons = Array.from(document.querySelectorAll('button, div[role="button"]'));
                         let nextBtn = buttons.find(b => /tiếp|next|xác nhận|confirm|gửi/i.test(b.innerText));
                         if (nextBtn) {
                             nextBtn.removeAttribute('disabled');
@@ -689,8 +742,7 @@ class starts(threading.Thread):
                             nextBtn.click();
                         }
                     """)
-                except:
-                    pass
+                except: pass
                 
                 print(f"{Colors.color_text(f'[{self.thread_id}] Chờ Server IG xử lý và tạo tài khoản (20s)...', Colors.INFO)}")
                 time.sleep(20)
