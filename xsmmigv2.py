@@ -71,7 +71,7 @@ def banner():
 ╚██████╔╝██║  ██║██║  ██║╚██████╔╝██║ ╚═╝ ██║███████╗
  ╚═════╝ ╚═╝  ╚═╝╚═╝  ╚═╝ ╚═════╝ ╚═╝    ╚═╝╚══════╝
 {Colors.RESET}""")
-    print(f"{Colors.INFO}Phiên Bản: v12.15 (TÍCH HỢP NGÂM OTP 60s & API SMAIL1S MỚI){Colors.RESET}")
+    print(f"{Colors.INFO}Phiên Bản: v12.17 (HỎI Y/N TRƯỚC KHI ĐÓNG TRÌNH DUYỆT){Colors.RESET}")
     print(f"{Colors.LINE}{'─'*70}{Colors.RESET}\n")
 
 def load_config():
@@ -383,6 +383,20 @@ def generate_dot_variants(gmail):
     random.shuffle(variants)
     return variants
 
+# ==================== HÀM HỎI TRƯỚC KHI ĐÓNG ====================
+def ask_before_close(driver, thread_id):
+    if driver:
+        with OTP_LOCK:  # Khoá màn hình console để nhập không bị đè lên nhau
+            print(f"\n{Colors.color_text(f'[{thread_id}] Bạn có muốn đóng trình duyệt không? (y/n): ', Colors.WARNING)}", end="")
+            choice = input().strip().lower()
+            if choice == 'y':
+                try: 
+                    driver.quit()
+                    print(f"{Colors.color_text(f'[{thread_id}] Đã đóng trình duyệt an toàn.', Colors.SUCCESS)}")
+                except: pass
+            else:
+                print(f"{Colors.color_text(f'[{thread_id}] Đã giữ trình duyệt mở (Bạn cần tự tắt thủ công sau).', Colors.INFO)}")
+
 # ==================== MAIN THREAD ====================
 class starts(threading.Thread):
     def __init__(self, thread_id, mode, account_count, data_source, manual_password=None, base_gmail=None, app_password=None, api_mode=None):
@@ -597,7 +611,7 @@ class starts(threading.Thread):
                         human_type(inputs[3], username, is_username=True)
                     else:
                         print(f"{Colors.color_text(f'[{self.thread_id}] Lỗi: Giao diện IG bị thay đổi!', Colors.ERROR)}")
-                        driver.quit()
+                        ask_before_close(driver, self.thread_id)
                         return False
                     
                     print(f"{Colors.color_text(f'[{self.thread_id}] Đã điền xong. Ngâm form 10s trước khi bấm nút Đăng Ký...', Colors.WARNING)}")
@@ -660,31 +674,51 @@ class starts(threading.Thread):
                     
                 except Exception as e:
                     print(f"{Colors.color_text(f'[{self.thread_id}] Lỗi quá trình điền form: {e}', Colors.ERROR)}")
-                    time.sleep(10)
-                    try: driver.quit() 
-                    except: pass
+                    time.sleep(5)
+                    ask_before_close(driver, self.thread_id)
                     return False
 
+                # ==================== NHẬN DIỆN Ô NHẬP OTP ĐA LỚP ====================
                 print(f"{Colors.color_text(f'[{self.thread_id}] Chờ giao diện nhập OTP...', Colors.INFO)}")
-                try:
-                    otp_input = wait.until(EC.presence_of_element_located((By.NAME, "email_confirmation_code")))
-                except Exception:
-                    current_y = driver.execute_script("return window.pageYOffset;")
-                    target_y = driver.execute_script("return document.body.scrollHeight;")
-                    steps = 20
-                    distance = target_y - current_y
-                    for i in range(1, steps + 1):
-                        driver.execute_script(f"window.scrollTo(0, {current_y + (distance * i / steps)});")
-                        time.sleep(0.05)
-                        
+                otp_input = None
+                
+                # Cho trang thời gian load DOM hoàn tất
+                time.sleep(3)
+                
+                # 1. Thử quét qua các định danh phổ biến của Instagram
+                locators = [
+                    (By.NAME, "email_confirmation_code"),
+                    (By.NAME, "confirmationCode"),
+                    (By.XPATH, "//input[contains(@aria-label, 'Mã')]"),
+                    (By.XPATH, "//input[contains(@aria-label, 'Code')]"),
+                    (By.XPATH, "//input[@type='text']") # Phương án quét input text đầu tiên trên trang
+                ]
+                
+                for loc in locators:
                     try:
-                        otp_input = wait.until(EC.presence_of_element_located((By.NAME, "email_confirmation_code")))
-                    except Exception:
-                        print(f"{Colors.color_text(f'[{self.thread_id}] Lỗi: Không thể chuyển sang trang OTP.', Colors.ERROR)}")
-                        time.sleep(5)
-                        try: driver.quit() 
-                        except: pass
-                        return False
+                        otp_input = WebDriverWait(driver, 3).until(EC.presence_of_element_located(loc))
+                        if otp_input:
+                            break
+                    except:
+                        pass
+                
+                # 2. Nếu vẫn không thấy, thử vuốt trang và dùng JS ép tìm
+                if not otp_input:
+                    try:
+                        driver.execute_script("window.scrollTo(0, document.body.scrollHeight/2);")
+                        time.sleep(1)
+                        # JS lấy ô input đầu tiên có thể nhập liệu trên màn hình
+                        otp_input = driver.execute_script("return document.querySelector('input');")
+                    except:
+                        pass
+
+                if not otp_input:
+                    print(f"{Colors.color_text(f'[{self.thread_id}] Lỗi: Không thể tìm thấy ô nhập OTP trên giao diện.', Colors.ERROR)}")
+                    time.sleep(5)
+                    ask_before_close(driver, self.thread_id)
+                    return False
+                
+                print(f"{Colors.color_text(f'[{self.thread_id}] Đã nhận diện được ô nhập OTP thành công!', Colors.SUCCESS)}")
                 
                 # ==================== CƠ CHẾ LẤY & NGÂM OTP ====================
                 otp_code = None
@@ -711,8 +745,7 @@ class starts(threading.Thread):
                 if not otp_code:
                     print(f"{Colors.color_text(f'[{self.thread_id}] Lỗi: Quá 120s không lấy được mã OTP. Bỏ qua acc!', Colors.ERROR)}")
                     time.sleep(5)
-                    try: driver.quit() 
-                    except: pass
+                    ask_before_close(driver, self.thread_id)
                     return False
                 
                 # ÉP NGÂM TRANG OTP TRƯỚC KHI NHẬP MÃ (ĐẶC BIỆT CHẾ ĐỘ 5, 4, 3)
@@ -760,14 +793,12 @@ class starts(threading.Thread):
                 
                 save_account(self.thread_id, used_email, secure_pass, username, full_name, f"mode_{self.mode}", cookie_str)
                 
-                try: driver.quit()
-                except: pass
+                ask_before_close(driver, self.thread_id)
                 return True
                 
             except Exception as e:
                 print(f"{Colors.color_text(f'[{self.thread_id}] Gặp Lỗi Ngoại Lệ: {e}', Colors.ERROR)}")
-                try: driver.quit()
-                except: pass
+                ask_before_close(driver, self.thread_id)
                 return False
         
         success_count = 0
