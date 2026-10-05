@@ -580,26 +580,45 @@ class starts(threading.Thread):
                     
                     print(f"{Colors.color_text(f'[{self.thread_id}] Đang tìm và nhấn nút Gửi/Đăng Ký...', Colors.INFO)}")
                     try:
-                        # Dùng Script dọn dẹp các attribute ngăn click của CSS và ReactJS
-                        driver.execute_script("""
-                            var btns = document.querySelectorAll('button');
-                            for(var i=0; i<btns.length; i++){
-                                let text = btns[i].textContent.toLowerCase();
-                                if(btns[i].type === 'submit' || text.includes('gửi') || text.includes('đăng ký') || text.includes('sign') || text.includes('next') || text.includes('tiếp')){
-                                    btns[i].disabled = false;
-                                    btns[i].removeAttribute('disabled');
-                                    btns[i].style.pointerEvents = 'auto'; // Ép gỡ chặn CSS
-                                    btns[i].click(); // Thử click DOM HTML
-                                    var event = new MouseEvent('click', {
-                                        view: window,
-                                        bubbles: true,
-                                        cancelable: true
-                                    });
-                                    btns[i].dispatchEvent(event); // Thử click DOM giả lập cho React
-                                    break;
-                                }
+                        # Áp dụng đoạn JS mới kết hợp giả lập Event của ReactJS
+                        click_result = driver.execute_script("""
+                            const submitBtn = Array.from(document.querySelectorAll('button, div[role="button"]')).find(b => {
+                                const text = (b.innerText || b.textContent || "").trim().toLowerCase();
+                                return text === "gửi" || text === "đăng ký" || text === "sign up" || text.includes("sign");
+                            });
+
+                            if (submitBtn) {
+                                // 1. Ép gỡ thuộc tính khóa của React/CSS
+                                submitBtn.disabled = false;
+                                submitBtn.removeAttribute('disabled');
+                                submitBtn.style.pointerEvents = 'auto';
+
+                                // 2. Click bằng DOM cơ bản
+                                submitBtn.click(); 
+
+                                // 3. Bắn event click giả lập để lừa cơ chế bảo mật của ReactJS
+                                var event = new MouseEvent('click', {
+                                    view: window,
+                                    bubbles: true,
+                                    cancelable: true
+                                });
+                                submitBtn.dispatchEvent(event);
+                                
+                                return "CLICKED";
                             }
+                            return "NOT_FOUND";
                         """)
+                        
+                        if click_result == "CLICKED":
+                            print(f"{Colors.color_text(f'[{self.thread_id}] ĐÃ BẤM NÚT GỬI THÀNH CÔNG (Bằng Script)!', Colors.SUCCESS)}")
+                        else:
+                            print(f"{Colors.color_text(f'[{self.thread_id}] JS không tìm thấy nút Gửi, thử dùng phím ENTER...', Colors.WARNING)}")
+                            # Phương án dự phòng: Gửi lệnh bấm nút ENTER thẳng vào ô Username
+                            try:
+                                inputs[3].send_keys(Keys.ENTER)
+                                print(f"{Colors.color_text(f'[{self.thread_id}] Đã bấm ENTER thành công!', Colors.SUCCESS)}")
+                            except: pass
+
                     except Exception as ex:
                         print(f"{Colors.color_text(f'[{self.thread_id}] Lỗi khi chạy Script click nút: {ex}', Colors.WARNING)}")
                     
