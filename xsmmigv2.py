@@ -550,20 +550,26 @@ class starts(threading.Thread):
                     if self.mode in ["3", "4"] and imap_service:
                         uid_moc = imap_service.get_latest_uid()
 
-                    # 7. CLICK NÚT SUBMIT BẰNG JS ĐA LUỒNG - ĐÃ FIX
+                    # 7. CLICK NÚT SUBMIT BẰNG JS ĐA LUỒNG - ĐÃ FIX SCROLL & TÌM NÚT "GỬI"
+                    print(f"{Colors.color_text(f'[{self.thread_id}] Cuộn trang xuống cuối để tìm nút Gửi...', Colors.INFO)}")
+                    # Ép trình duyệt cuộn thẳng xuống cuối trang để nút Gửi lọt vào tầm nhìn
+                    driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+                    time.sleep(1)
+
                     print(f"{Colors.color_text(f'[{self.thread_id}] Click ra ngoài form để kích hoạt Validate...', Colors.INFO)}")
                     driver.execute_script("document.body.click();")
                     
                     print(f"{Colors.color_text(f'[{self.thread_id}] Chờ form validate (Check Username)... (5s)', Colors.WARNING)}")
                     time.sleep(5)
                     
-                    print(f"{Colors.color_text(f'[{self.thread_id}] Đang tìm và nhấn nút Đăng Ký...', Colors.INFO)}")
+                    print(f"{Colors.color_text(f'[{self.thread_id}] Đang tìm và nhấn nút Gửi/Đăng Ký...', Colors.INFO)}")
                     try:
-                        submit_btn = wait.until(EC.presence_of_element_located((By.XPATH, "//button[@type='submit']")))
+                        # Mở rộng XPath tìm kiếm: type='submit' HOẶC chứa chữ 'Gửi'
+                        submit_btn = wait.until(EC.presence_of_element_located((By.XPATH, "//button[@type='submit' or contains(text(), 'Gửi') or contains(text(), 'Sign')]")))
                         slow_scroll_to_element(submit_btn)
                         
                         try:
-                            wait.until(EC.element_to_be_clickable((By.XPATH, "//button[@type='submit']")))
+                            wait.until(EC.element_to_be_clickable((By.XPATH, "//button[@type='submit' or contains(text(), 'Gửi')]")))
                         except: pass
                         
                         try: 
@@ -572,12 +578,13 @@ class starts(threading.Thread):
                             driver.execute_script("arguments[0].click();", submit_btn)
                         
                     except Exception:
-                        print(f"{Colors.color_text(f'[{self.thread_id}] Nút ẩn, dùng JS cưỡng chế bẻ khóa và click (React Event)...', Colors.WARNING)}")
+                        print(f"{Colors.color_text(f'[{self.thread_id}] Nút ẩn, dùng JS bẻ khóa và click (React Event)...', Colors.WARNING)}")
                         driver.execute_script("""
                             var btns = document.querySelectorAll('button');
                             for(var i=0; i<btns.length; i++){
                                 let text = btns[i].innerText.toLowerCase();
-                                if(btns[i].type === 'submit' || text.includes('đăng') || text.includes('sign') || text.includes('next') || text.includes('tiếp')){
+                                // Bổ sung thêm từ khóa 'gửi' vào danh sách nhận diện
+                                if(btns[i].type === 'submit' || text.includes('đăng') || text.includes('sign') || text.includes('next') || text.includes('tiếp') || text.includes('gửi')){
                                     btns[i].removeAttribute('disabled');
                                     var event = new MouseEvent('click', {
                                         view: window,
