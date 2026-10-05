@@ -69,9 +69,9 @@ def banner():
 ██║  ███╗███████║██████╔╝██║   ██║██╔████╔██║█████╗  
 ██║   ██║██╔══██║██╔══██╗██║   ██║██║╚██╔╝██║██╔══╝  
 ╚██████╔╝██║  ██║██║  ██║╚██████╔╝██║ ╚═╝ ██║███████╗
- ╚═════╝ ╚═╝  ╚═╝╚═╝  ╚═╝ ╚═════╝ ╚═╝     ╚═╝╚══════╝
+ ╚═════╝ ╚═╝  ╚═╝╚═╝  ╚═╝ ╚═════╝ ╚═╝    ╚═╝╚══════╝
 {Colors.RESET}""")
-    print(f"{Colors.INFO}Phiên Bản: v12.6 (CHROME PC - HUMAN TYPING MODE){Colors.RESET}")
+    print(f"{Colors.INFO}Phiên Bản: v12.7 (CHROME PC - HUMAN SLOW SCROLL & TYPING MODE){Colors.RESET}")
     print(f"{Colors.LINE}{'─'*70}{Colors.RESET}\n")
 
 def load_config():
@@ -427,55 +427,69 @@ class starts(threading.Thread):
                 BASE_YEAR -= 1
                 if BASE_YEAR < 1990: BASE_YEAR = random.randint(1995, 2005)
 
-                print(f"{Colors.color_text(f'[{self.thread_id}] Đang mô phỏng thao tác gõ phím của người thật...', Colors.INFO)}")
+                print(f"{Colors.color_text(f'[{self.thread_id}] Bắt đầu cuộn trang và nhập từng thông tin như người thật...', Colors.INFO)}")
                 
-                # HÀM MÔ PHỎNG GÕ PHÍM NGƯỜI THẬT
+                # HÀM CUỘN TRANG TỪ TỪ
+                def slow_scroll_to_element(element):
+                    try:
+                        target_y = element.location['y'] - 200 # Để element nằm giữa giữa màn hình
+                        current_y = driver.execute_script("return window.pageYOffset;")
+                        distance = target_y - current_y
+                        steps = 20
+                        for i in range(1, steps + 1):
+                            driver.execute_script(f"window.scrollTo(0, {current_y + (distance * i / steps)});")
+                            time.sleep(random.uniform(0.02, 0.05))
+                        time.sleep(0.5)
+                    except Exception:
+                        driver.execute_script("arguments[0].scrollIntoView({behavior: 'smooth', block: 'center'});", element)
+                        time.sleep(0.5)
+
+                # HÀM MÔ PHỎNG GÕ PHÍM NGƯỜI THẬT TỪNG KÝ TỰ
                 def human_type(element, text):
-                    # Cuộn ô input ra giữa màn hình
-                    driver.execute_script("arguments[0].scrollIntoView({behavior: 'smooth', block: 'center'});", element)
-                    time.sleep(0.5)
-                    # Click chuột vào ô
+                    slow_scroll_to_element(element)
                     actions.move_to_element(element).click().perform()
                     time.sleep(0.3)
                     element.clear()
                     time.sleep(0.2)
-                    # Gõ từng chữ một với tốc độ ngẫu nhiên
                     for char in text:
                         element.send_keys(char)
-                        time.sleep(random.uniform(0.01, 0.08))
+                        time.sleep(random.uniform(0.05, 0.15)) # Tốc độ gõ ngẫu nhiên
+                    time.sleep(random.uniform(0.5, 1.0))
 
                 try:
                     # Lấy tất cả các thẻ input hiển thị trên màn hình
+                    wait.until(EC.presence_of_all_elements_located((By.TAG_NAME, "input")))
                     inputs = driver.find_elements(By.TAG_NAME, "input")
                     
                     if len(inputs) >= 4:
                         # 1. Điền Email
+                        print(f"{Colors.color_text(f'[{self.thread_id}] Cuộn và điền Email...', Colors.INFO)}")
                         human_type(inputs[0], used_email)
-                        time.sleep(1)
                         
                         # 2. Điền Mật khẩu
+                        print(f"{Colors.color_text(f'[{self.thread_id}] Cuộn và điền Mật khẩu...', Colors.INFO)}")
                         human_type(inputs[1], secure_pass)
-                        time.sleep(1)
                         
-                        # 3. Chọn Ngày Sinh (Sử dụng lệnh Javascript an toàn cho riêng thẻ Select)
+                        # 3. Chọn Ngày Sinh
                         selects = driver.find_elements(By.TAG_NAME, "select")
                         if len(selects) >= 3:
-                            driver.execute_script("arguments[0].scrollIntoView({behavior: 'smooth', block: 'center'});", selects[0])
+                            print(f"{Colors.color_text(f'[{self.thread_id}] Cuộn và chọn Ngày Sinh...', Colors.INFO)}")
+                            slow_scroll_to_element(selects[0])
                             time.sleep(0.5)
                             Select(selects[0]).select_by_value(current_day)
-                            time.sleep(0.2)
+                            time.sleep(random.uniform(0.3, 0.6))
                             Select(selects[1]).select_by_value(current_month)
-                            time.sleep(0.2)
+                            time.sleep(random.uniform(0.3, 0.6))
                             Select(selects[2]).select_by_value(current_year)
                             time.sleep(1)
                             
                         # 4. Điền Tên Đầy Đủ
+                        print(f"{Colors.color_text(f'[{self.thread_id}] Cuộn và điền Họ Tên...', Colors.INFO)}")
                         human_type(inputs[2], full_name)
-                        time.sleep(1)
                         
                         # 5. Điền Username
+                        print(f"{Colors.color_text(f'[{self.thread_id}] Cuộn và điền Username...', Colors.INFO)}")
                         human_type(inputs[3], username)
-                        time.sleep(1)
                     else:
                         print(f"{Colors.color_text(f'[{self.thread_id}] Lỗi: Giao diện IG bị thay đổi, không đủ số lượng ô input!', Colors.ERROR)}")
                         driver.quit()
@@ -494,12 +508,11 @@ class starts(threading.Thread):
                     if self.mode in ["3", "4"] and imap_service:
                         uid_moc = imap_service.get_latest_uid()
 
-                    # 7. Cuộn kịch đáy và bấm nút Submit
-                    driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-                    time.sleep(1)
-                    
+                    # 7. Cuộn chậm đến nút Submit và bấm
+                    print(f"{Colors.color_text(f'[{self.thread_id}] Cuộn từ từ đến nút Đăng Ký...', Colors.INFO)}")
                     submit_btn = driver.find_element(By.XPATH, "//button[@type='submit']")
-                    # Dùng ActionChains để click như người thật
+                    slow_scroll_to_element(submit_btn)
+                    
                     actions.move_to_element(submit_btn).click().perform()
                     
                     print(f"{Colors.color_text(f'[{self.thread_id}] Đã bấm gửi form thành công, chờ load OTP (15s)...', Colors.SUCCESS)}")
@@ -518,7 +531,15 @@ class starts(threading.Thread):
                 try:
                     otp_input = wait.until(EC.presence_of_element_located((By.NAME, "email_confirmation_code")))
                 except Exception:
-                    driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+                    # Cuộn chậm để tìm OTP thay vì văng thẳng xuống
+                    current_y = driver.execute_script("return window.pageYOffset;")
+                    target_y = driver.execute_script("return document.body.scrollHeight;")
+                    steps = 20
+                    distance = target_y - current_y
+                    for i in range(1, steps + 1):
+                        driver.execute_script(f"window.scrollTo(0, {current_y + (distance * i / steps)});")
+                        time.sleep(0.05)
+                        
                     try:
                         otp_input = wait.until(EC.presence_of_element_located((By.NAME, "email_confirmation_code")))
                     except Exception:
