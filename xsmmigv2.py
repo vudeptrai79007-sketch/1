@@ -550,7 +550,13 @@ class starts(threading.Thread):
                     if self.mode in ["3", "4"] and imap_service:
                         uid_moc = imap_service.get_latest_uid()
 
-                    # 7. CLICK NÚT SUBMIT BẰNG JS ĐA LUỒNG
+                    # 7. CLICK NÚT SUBMIT BẰNG JS ĐA LUỒNG - ĐÃ FIX
+                    print(f"{Colors.color_text(f'[{self.thread_id}] Click ra ngoài form để kích hoạt Validate...', Colors.INFO)}")
+                    driver.execute_script("document.body.click();")
+                    
+                    print(f"{Colors.color_text(f'[{self.thread_id}] Chờ form validate (Check Username)... (5s)', Colors.WARNING)}")
+                    time.sleep(5)
+                    
                     print(f"{Colors.color_text(f'[{self.thread_id}] Đang tìm và nhấn nút Đăng Ký...', Colors.INFO)}")
                     try:
                         submit_btn = wait.until(EC.presence_of_element_located((By.XPATH, "//button[@type='submit']")))
@@ -566,13 +572,19 @@ class starts(threading.Thread):
                             driver.execute_script("arguments[0].click();", submit_btn)
                         
                     except Exception:
-                        print(f"{Colors.color_text(f'[{self.thread_id}] Nút khóa, dùng JS cưỡng chế bẻ khóa và click...', Colors.WARNING)}")
+                        print(f"{Colors.color_text(f'[{self.thread_id}] Nút ẩn, dùng JS cưỡng chế bẻ khóa và click (React Event)...', Colors.WARNING)}")
                         driver.execute_script("""
                             var btns = document.querySelectorAll('button');
                             for(var i=0; i<btns.length; i++){
-                                if(btns[i].type === 'submit' || btns[i].innerText.includes('Đăng') || btns[i].innerText.includes('Sign')){
-                                    btns[i].disabled = false;
-                                    btns[i].click();
+                                let text = btns[i].innerText.toLowerCase();
+                                if(btns[i].type === 'submit' || text.includes('đăng') || text.includes('sign') || text.includes('next') || text.includes('tiếp')){
+                                    btns[i].removeAttribute('disabled');
+                                    var event = new MouseEvent('click', {
+                                        view: window,
+                                        bubbles: true,
+                                        cancelable: true
+                                    });
+                                    btns[i].dispatchEvent(event);
                                     break;
                                 }
                             }
