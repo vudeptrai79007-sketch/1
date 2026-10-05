@@ -71,7 +71,7 @@ def banner():
 ╚██████╔╝██║  ██║██║  ██║╚██████╔╝██║ ╚═╝ ██║███████╗
  ╚═════╝ ╚═╝  ╚═╝╚═╝  ╚═╝ ╚═════╝ ╚═╝    ╚═╝╚══════╝
 {Colors.RESET}""")
-    print(f"{Colors.INFO}Phiên Bản: v12.13 (JS ASYNC CUSTOM CHO COMBOBOX){Colors.RESET}")
+    print(f"{Colors.INFO}Phiên Bản: v12.14 (FIX OTP ENCODING & FIX NÚT GỬI REACTJS){Colors.RESET}")
     print(f"{Colors.LINE}{'─'*70}{Colors.RESET}\n")
 
 def load_config():
@@ -159,7 +159,7 @@ class MailService:
             
     def get_otp_code(self, timeout=120):
         if not self.token: return None
-        headers = {"Authorization": f"Bearer {self.token}"}
+        headers = {"Authorization": f"Bearer {self.token}", "Accept": "application/json"}
         start_time = time.time()
         last_id = None
         while time.time() - start_time < timeout:
@@ -168,12 +168,15 @@ class MailService:
                 r = requests.get(f"{self.base_url}/messages", headers=headers, timeout=10)
                 if r.status_code == 200:
                     for msg in r.json().get('hydra:member', []):
-                        if 'Instagram' in msg.get('subject', ''):
+                        sub = str(msg.get('subject', '')).lower()
+                        frm = str(msg.get('from', {}).get('address', '')).lower()
+                        # Kiểm tra xem có chứa IG không
+                        if 'instagram' in sub or 'instagram' in frm:
                             if msg.get('id') != last_id:
                                 last_id = msg['id']
                                 detail = requests.get(f"{self.base_url}/messages/{last_id}", headers=headers, timeout=10).json()
                                 text = detail.get('text', '') or re.sub('<[^<]+?>', '', str(detail.get('html', '')))
-                                match = re.search(r'\b(\d{6})\b', text)
+                                match = re.search(r'(?<!\d)(\d{6})(?!\d)', text)
                                 if match: return match.group(1)
             except Exception: pass
             time.sleep(5)
@@ -229,6 +232,20 @@ class GmailIMAPService:
         if html: return re.sub(r'<[^>]+>', ' ', "\n".join(html)).strip()
         return ""
 
+    def decode_msg_header(self, raw_header):
+        if not raw_header: return ""
+        try:
+            decoded = decode_header(raw_header)
+            result = ""
+            for text, charset in decoded:
+                if isinstance(text, bytes):
+                    try: result += text.decode(charset or 'utf-8', errors='replace')
+                    except: result += text.decode('utf-8', errors='replace')
+                else:
+                    result += str(text)
+            return result
+        except: return str(raw_header)
+
     def get_otp_code(self, target_email, since_uid=0, timeout=120):
         if not self.mail:
             if not self.connect(): return None
@@ -251,14 +268,17 @@ class GmailIMAPService:
                                 if isinstance(item, tuple): raw = item[1]; break
                             if raw:
                                 msg = email.message_from_bytes(raw)
-                                to_addr = str(msg.get("To", "")).lower()
-                                subject = str(msg.get("Subject", "")).lower()
-                                from_addr = str(msg.get("From", "")).lower()
+                                
+                                # Đã xử lý vấn đề Mã hóa Base64 ở Header
+                                to_addr = self.decode_msg_header(msg.get("To", "")).lower()
+                                subject = self.decode_msg_header(msg.get("Subject", "")).lower()
+                                from_addr = self.decode_msg_header(msg.get("From", "")).lower()
+                                
                                 if target_email.lower() not in to_addr: continue
                                 if "instagram" in subject or "instagram" in from_addr:
                                     self.seen_uids.add(uid_bytes) 
                                     body = self.get_text(msg)
-                                    match = re.search(r'\b(\d{6})\b', body)
+                                    match = re.search(r'(?<!\d)(\d{6})(?!\d)', body)
                                     if match: return match.group(1)
             except Exception: pass
             time.sleep(5) 
@@ -293,10 +313,10 @@ class HotmailAPIService:
                                 is_ig = ("instagram" in subject) or ("instagram" in from_sender) or ("instagram" in raw_msg.lower())
                                 if is_ig:
                                     if code_field and code_field.isdigit() and len(code_field) == 6: return code_field
-                                    match_subj = re.search(r'\b(\d{6})\b', subject)
+                                    match_subj = re.search(r'(?<!\d)(\d{6})(?!\d)', subject)
                                     if match_subj: return match_subj.group(1)
                                     clean_text = re.sub(r'<[^>]+>', ' ', raw_msg)
-                                    match_body = re.search(r'\b(\d{6})\b', clean_text)
+                                    match_body = re.search(r'(?<!\d)(\d{6})(?!\d)', clean_text)
                                     if match_body: return match_body.group(1)
             except Exception: pass
             time.sleep(5)
@@ -457,6 +477,10 @@ class starts(threading.Thread):
                         element.send_keys(char)
                         time.sleep(random.uniform(0.05, 0.15)) 
                     time.sleep(random.uniform(0.5, 1.0))
+                    
+                    # Cực kỳ quan trọng: Bấm nút Tab để thoát khỏi ô, đánh lừa React kích hoạt Validate
+                    try: element.send_keys(Keys.TAB)
+                    except: pass
 
                 try:
                     wait.until(EC.presence_of_all_elements_located((By.TAG_NAME, "input")))
@@ -471,16 +495,11 @@ class starts(threading.Thread):
                         print(f"{Colors.color_text(f'[{self.thread_id}] Điền Mật khẩu...', Colors.INFO)}")
                         human_type(inputs[1], secure_pass)
                         
-                        # 3. CHỌN NGÀY SINH BẰNG JAVASCRIPT CUSTOM (ASYNC SCRIPT)
+                        # 3. CHỌN NGÀY SINH BẰNG JAVASCRIPT CUSTOM
                         print(f"{Colors.color_text(f'[{self.thread_id}] Bắt đầu chọn Ngày Sinh bằng Script Console...', Colors.INFO)}")
                         try:
-                            # Đợi thẻ role="combobox" xuất hiện
                             wait.until(EC.presence_of_all_elements_located((By.XPATH, '//*[@role="combobox"]')))
-                            
-                            # Tăng thời gian timeout cho JavaScript
                             driver.set_script_timeout(15)
-                            
-                            # Đẩy script JS của bạn vào thẳng trình duyệt qua execute_async_script
                             js_script = """
                             const day = arguments[0];
                             const month = arguments[1];
@@ -520,9 +539,7 @@ class starts(threading.Thread):
                                 callback("SUCCESS");
                             })();
                             """
-                            # Thực thi JS và truyền vào các giá trị ngày, tháng, năm ngẫu nhiên
                             result = driver.execute_async_script(js_script, current_day, current_month, current_year)
-                            
                             if result == "SUCCESS":
                                 print(f"{Colors.color_text(f'[{self.thread_id}] Đã chạy xong JS chọn: {current_day}/{current_month}/{current_year}', Colors.SUCCESS)}")
                             else:
@@ -550,9 +567,8 @@ class starts(threading.Thread):
                     if self.mode in ["3", "4"] and imap_service:
                         uid_moc = imap_service.get_latest_uid()
 
-                    # 7. CLICK NÚT SUBMIT BẰNG JS ĐA LUỒNG - ĐÃ FIX SCROLL & TÌM NÚT "GỬI"
+                    # 7. CLICK NÚT SUBMIT BẰNG JS ĐA LUỒNG - ĐÃ FIX MẠNH MẼ
                     print(f"{Colors.color_text(f'[{self.thread_id}] Cuộn trang xuống cuối để tìm nút Gửi...', Colors.INFO)}")
-                    # Ép trình duyệt cuộn thẳng xuống cuối trang để nút Gửi lọt vào tầm nhìn
                     driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
                     time.sleep(1)
 
@@ -564,38 +580,28 @@ class starts(threading.Thread):
                     
                     print(f"{Colors.color_text(f'[{self.thread_id}] Đang tìm và nhấn nút Gửi/Đăng Ký...', Colors.INFO)}")
                     try:
-                        # Mở rộng XPath tìm kiếm: type='submit' HOẶC chứa chữ 'Gửi'
-                        submit_btn = wait.until(EC.presence_of_element_located((By.XPATH, "//button[@type='submit' or contains(text(), 'Gửi') or contains(text(), 'Sign')]")))
-                        slow_scroll_to_element(submit_btn)
-                        
-                        try:
-                            wait.until(EC.element_to_be_clickable((By.XPATH, "//button[@type='submit' or contains(text(), 'Gửi')]")))
-                        except: pass
-                        
-                        try: 
-                            submit_btn.click()
-                        except: 
-                            driver.execute_script("arguments[0].click();", submit_btn)
-                        
-                    except Exception:
-                        print(f"{Colors.color_text(f'[{self.thread_id}] Nút ẩn, dùng JS bẻ khóa và click (React Event)...', Colors.WARNING)}")
+                        # Dùng Script dọn dẹp các attribute ngăn click của CSS và ReactJS
                         driver.execute_script("""
                             var btns = document.querySelectorAll('button');
                             for(var i=0; i<btns.length; i++){
-                                let text = btns[i].innerText.toLowerCase();
-                                // Bổ sung thêm từ khóa 'gửi' vào danh sách nhận diện
-                                if(btns[i].type === 'submit' || text.includes('đăng') || text.includes('sign') || text.includes('next') || text.includes('tiếp') || text.includes('gửi')){
+                                let text = btns[i].textContent.toLowerCase();
+                                if(btns[i].type === 'submit' || text.includes('gửi') || text.includes('đăng ký') || text.includes('sign') || text.includes('next') || text.includes('tiếp')){
+                                    btns[i].disabled = false;
                                     btns[i].removeAttribute('disabled');
+                                    btns[i].style.pointerEvents = 'auto'; // Ép gỡ chặn CSS
+                                    btns[i].click(); // Thử click DOM HTML
                                     var event = new MouseEvent('click', {
                                         view: window,
                                         bubbles: true,
                                         cancelable: true
                                     });
-                                    btns[i].dispatchEvent(event);
+                                    btns[i].dispatchEvent(event); // Thử click DOM giả lập cho React
                                     break;
                                 }
                             }
                         """)
+                    except Exception as ex:
+                        print(f"{Colors.color_text(f'[{self.thread_id}] Lỗi khi chạy Script click nút: {ex}', Colors.WARNING)}")
                     
                     print(f"{Colors.color_text(f'[{self.thread_id}] Đã bấm gửi form, chờ load OTP (15s)...', Colors.SUCCESS)}")
                     time.sleep(15)
@@ -657,8 +663,12 @@ class starts(threading.Thread):
                 try:
                     driver.execute_script("""
                         let buttons = Array.from(document.querySelectorAll('button'));
-                        let nextBtn = buttons.find(b => /tiếp|next|xác nhận|confirm/i.test(b.innerText));
-                        if (nextBtn) nextBtn.click();
+                        let nextBtn = buttons.find(b => /tiếp|next|xác nhận|confirm|gửi/i.test(b.innerText));
+                        if (nextBtn) {
+                            nextBtn.removeAttribute('disabled');
+                            nextBtn.style.pointerEvents = 'auto';
+                            nextBtn.click();
+                        }
                     """)
                 except:
                     pass
