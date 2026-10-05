@@ -73,7 +73,7 @@ def banner():
 ╚██████╔╝██║  ██║██║  ██║╚██████╔╝██║ ╚═╝ ██║███████╗
  ╚═════╝ ╚═╝  ╚═╝╚═╝  ╚═╝ ╚═════╝ ╚═╝    ╚═╝╚══════╝
 {Colors.RESET}""")
-    print(f"{Colors.INFO}Phiên Bản: v12.9 (FIX TRIỆT ĐỂ LỖI USERNAME & NGÀY SINH JS){Colors.RESET}")
+    print(f"{Colors.INFO}Phiên Bản: v12.10 (CLICK NGÀY SINH VẬT LÝ & FORCE SUBMIT){Colors.RESET}")
     print(f"{Colors.LINE}{'─'*70}{Colors.RESET}\n")
 
 def load_config():
@@ -436,18 +436,14 @@ class starts(threading.Thread):
                         driver.execute_script("arguments[0].scrollIntoView({behavior: 'smooth', block: 'center'});", element)
                         time.sleep(0.5)
 
-                # HÀM NHẬP LIỆU ĐÃ ĐƯỢC CẢI TIẾN VỚI CƠ CHẾ NUKE CLEAR
                 def human_type(element, text, is_username=False):
                     slow_scroll_to_element(element)
                     actions.move_to_element(element).click().perform()
                     time.sleep(0.5)
                     
                     if is_username:
-                        # CHỜ 2 GIÂY CHO IG TỰ ĐIỀN GỢI Ý XONG RỒI MỚI XÓA
                         print(f"{Colors.color_text(f'[{self.thread_id}] Chờ IG gợi ý Username để tiến hành xóa...', Colors.WARNING)}")
                         time.sleep(2) 
-                        
-                        # Nhấn End để con trỏ về cuối, rồi xóa lùi thủ công để giả lập người thật
                         element.send_keys(Keys.END)
                         time.sleep(0.2)
                         
@@ -455,9 +451,8 @@ class starts(threading.Thread):
                         if current_val:
                             for _ in range(len(current_val) + 5):
                                 element.send_keys(Keys.BACKSPACE)
-                                time.sleep(0.01) # Xóa nhanh
+                                time.sleep(0.01)
                                 
-                        # Tiêm thêm Javascript để đảm bảo rỗng 100% nếu React bị kẹt
                         driver.execute_script("arguments[0].value = '';", element)
                         driver.execute_script("arguments[0].dispatchEvent(new Event('input', { bubbles: true }));", element)
                         time.sleep(0.5)
@@ -485,36 +480,30 @@ class starts(threading.Thread):
                         print(f"{Colors.color_text(f'[{self.thread_id}] Điền Mật khẩu...', Colors.INFO)}")
                         human_type(inputs[1], secure_pass)
                         
-                        # 3. CHỌN NGÀY SINH BẰNG JAVASCRIPT (Khắc phục triệt để lỗi không click được)
+                        # 3. CHỌN NGÀY SINH (CLICK VẬT LÝ ĐỂ REACT NHẬN DIỆN THAY ĐỔI)
                         selects = driver.find_elements(By.TAG_NAME, "select")
                         if len(selects) >= 3:
-                            print(f"{Colors.color_text(f'[{self.thread_id}] Ép chọn Ngày Sinh qua Javascript...', Colors.INFO)}")
+                            print(f"{Colors.color_text(f'[{self.thread_id}] Click mở Ngày Sinh và chọn giá trị...', Colors.INFO)}")
                             slow_scroll_to_element(selects[0])
                             
-                            # Cập nhật DOM trực tiếp và gọi Event để React nhận diện thay đổi
-                            driver.execute_script("""
-                                arguments[0].value = arguments[1];
-                                arguments[0].dispatchEvent(new Event('change', {bubbles: true}));
-                            """, selects[0], current_day)
-                            time.sleep(0.3)
-                            
-                            driver.execute_script("""
-                                arguments[0].value = arguments[1];
-                                arguments[0].dispatchEvent(new Event('change', {bubbles: true}));
-                            """, selects[1], current_month)
-                            time.sleep(0.3)
-                            
-                            driver.execute_script("""
-                                arguments[0].value = arguments[1];
-                                arguments[0].dispatchEvent(new Event('change', {bubbles: true}));
-                            """, selects[2], current_year)
-                            time.sleep(1)
+                            dob_values = [current_day, current_month, current_year]
+                            for idx, val in enumerate(dob_values):
+                                try:
+                                    selects[idx].click() # Click mở Menu
+                                    time.sleep(0.5)
+                                    option = selects[idx].find_element(By.XPATH, f"./option[@value='{val}']")
+                                    option.click() # Click vào lựa chọn
+                                    time.sleep(random.uniform(0.3, 0.6))
+                                except Exception as e:
+                                    print(f"{Colors.color_text(f'[{self.thread_id}] Lỗi click phụ, chuyển sang gửi phím...', Colors.WARNING)}")
+                                    selects[idx].send_keys(val)
+                                    time.sleep(0.5)
                             
                         # 4. Điền Tên Đầy Đủ
                         print(f"{Colors.color_text(f'[{self.thread_id}] Điền Họ Tên...', Colors.INFO)}")
                         human_type(inputs[2], full_name)
                         
-                        # 5. Điền Username (Bật cờ is_username=True để kích hoạt chế độ Xóa Sạch)
+                        # 5. Điền Username
                         print(f"{Colors.color_text(f'[{self.thread_id}] Xử lý form Username...', Colors.INFO)}")
                         human_type(inputs[3], username, is_username=True)
                     else:
@@ -522,29 +511,45 @@ class starts(threading.Thread):
                         driver.quit()
                         return False
                     
-                    print(f"{Colors.color_text(f'[{self.thread_id}] Đã điền xong. Ngâm form 30s trước khi bấm nút Đăng Ký...', Colors.WARNING)}")
-                    for w in range(30, 0, -5):
-                        if STOP_EVENT.is_set(): 
-                            try: driver.quit() 
-                            except: pass
-                            return False
-                        time.sleep(5)
+                    print(f"{Colors.color_text(f'[{self.thread_id}] Đã điền xong. Ngâm form 10s trước khi bấm nút Đăng Ký...', Colors.WARNING)}")
+                    time.sleep(10)
 
                     uid_moc = 0
                     if self.mode in ["3", "4"] and imap_service:
                         uid_moc = imap_service.get_latest_uid()
 
-                    print(f"{Colors.color_text(f'[{self.thread_id}] Cuộn từ từ đến nút Đăng Ký...', Colors.INFO)}")
-                    submit_btn = driver.find_element(By.XPATH, "//button[@type='submit']")
-                    slow_scroll_to_element(submit_btn)
+                    # 7. ÉP CLICK NÚT SUBMIT BẰNG MỌI CÁCH
+                    print(f"{Colors.color_text(f'[{self.thread_id}] Đang tìm và nhấn nút Đăng Ký...', Colors.INFO)}")
+                    try:
+                        submit_btn = wait.until(EC.presence_of_element_located((By.XPATH, "//button[@type='submit']")))
+                        slow_scroll_to_element(submit_btn)
+                        
+                        # Chờ React mở khóa nút
+                        try:
+                            wait.until(EC.element_to_be_clickable((By.XPATH, "//button[@type='submit']")))
+                        except: pass
+                        
+                        try: actions.move_to_element(submit_btn).click().perform()
+                        except: submit_btn.click()
+                        
+                    except Exception:
+                        print(f"{Colors.color_text(f'[{self.thread_id}] Nút khóa, dùng JS cưỡng chế bẻ khóa và click...', Colors.WARNING)}")
+                        driver.execute_script("""
+                            var btns = document.querySelectorAll('button');
+                            for(var i=0; i<btns.length; i++){
+                                if(btns[i].type === 'submit' || btns[i].innerText.includes('Đăng') || btns[i].innerText.includes('Sign')){
+                                    btns[i].disabled = false;
+                                    btns[i].click();
+                                    break;
+                                }
+                            }
+                        """)
                     
-                    actions.move_to_element(submit_btn).click().perform()
-                    
-                    print(f"{Colors.color_text(f'[{self.thread_id}] Đã bấm gửi form thành công, chờ load OTP (15s)...', Colors.SUCCESS)}")
+                    print(f"{Colors.color_text(f'[{self.thread_id}] Đã bấm gửi form, chờ load OTP (15s)...', Colors.SUCCESS)}")
                     time.sleep(15)
                     
                 except Exception as e:
-                    print(f"{Colors.color_text(f'[{self.thread_id}] Form chưa kịp tải hoặc IG đã chặn bot: {e}', Colors.ERROR)}")
+                    print(f"{Colors.color_text(f'[{self.thread_id}] Lỗi quá trình điền form: {e}', Colors.ERROR)}")
                     try: driver.quit() 
                     except: pass
                     return False
