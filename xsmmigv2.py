@@ -71,7 +71,7 @@ def banner():
 ╚██████╔╝██║  ██║██║  ██║╚██████╔╝██║ ╚═╝ ██║███████╗
  ╚═════╝ ╚═╝  ╚═╝╚═╝  ╚═╝ ╚═════╝ ╚═╝    ╚═╝╚══════╝
 {Colors.RESET}""")
-    print(f"{Colors.INFO}Phiên Bản: v12.17 (HỎI Y/N TRƯỚC KHI ĐÓNG TRÌNH DUYỆT){Colors.RESET}")
+    print(f"{Colors.INFO}Phiên Bản: v12.18 (FIX LỖI NOT INTERACTABLE TRANG OTP){Colors.RESET}")
     print(f"{Colors.LINE}{'─'*70}{Colors.RESET}\n")
 
 def load_config():
@@ -681,36 +681,27 @@ class starts(threading.Thread):
                 # ==================== NHẬN DIỆN Ô NHẬP OTP ĐA LỚP ====================
                 print(f"{Colors.color_text(f'[{self.thread_id}] Chờ giao diện nhập OTP...', Colors.INFO)}")
                 otp_input = None
-                
-                # Cho trang thời gian load DOM hoàn tất
-                time.sleep(3)
-                
-                # 1. Thử quét qua các định danh phổ biến của Instagram
                 locators = [
                     (By.NAME, "email_confirmation_code"),
                     (By.NAME, "confirmationCode"),
                     (By.XPATH, "//input[contains(@aria-label, 'Mã')]"),
                     (By.XPATH, "//input[contains(@aria-label, 'Code')]"),
-                    (By.XPATH, "//input[@type='text']") # Phương án quét input text đầu tiên trên trang
+                    (By.XPATH, "//input[@type='text']")
                 ]
+                time.sleep(3)
                 
                 for loc in locators:
                     try:
                         otp_input = WebDriverWait(driver, 3).until(EC.presence_of_element_located(loc))
-                        if otp_input:
-                            break
-                    except:
-                        pass
+                        if otp_input: break
+                    except: pass
                 
-                # 2. Nếu vẫn không thấy, thử vuốt trang và dùng JS ép tìm
                 if not otp_input:
                     try:
                         driver.execute_script("window.scrollTo(0, document.body.scrollHeight/2);")
                         time.sleep(1)
-                        # JS lấy ô input đầu tiên có thể nhập liệu trên màn hình
                         otp_input = driver.execute_script("return document.querySelector('input');")
-                    except:
-                        pass
+                    except: pass
 
                 if not otp_input:
                     print(f"{Colors.color_text(f'[{self.thread_id}] Lỗi: Không thể tìm thấy ô nhập OTP trên giao diện.', Colors.ERROR)}")
@@ -748,7 +739,6 @@ class starts(threading.Thread):
                     ask_before_close(driver, self.thread_id)
                     return False
                 
-                # ÉP NGÂM TRANG OTP TRƯỚC KHI NHẬP MÃ (ĐẶC BIỆT CHẾ ĐỘ 5, 4, 3)
                 if self.mode in ["3", "4", "5"]:
                     elapsed = time.time() - start_otp_wait
                     remaining = target_wait - elapsed
@@ -760,10 +750,48 @@ class starts(threading.Thread):
                             time.sleep(min(5, w))
                         print(f"{Colors.color_text(f'[{self.thread_id}] Đã ngâm đủ {target_wait}s. Chuẩn bị điền mã OTP!', Colors.SUCCESS)}")
 
-                # TIẾN HÀNH ĐIỀN MÃ LÊN WEB (SELENIUM)
+                # ==================== TIẾN HÀNH ĐIỀN MÃ LÊN WEB ====================
                 print(f"{Colors.color_text(f'[{self.thread_id}] Bắt đầu điền mã OTP: {otp_code} vào trang Web...', Colors.SUCCESS)}")
-                human_type(otp_input, otp_code)
-                time.sleep(1)
+                
+                try:
+                    # Truy quét lại ô nhập mã sau 60s ngâm (Phòng ReactJS làm mới DOM)
+                    fresh_input = None
+                    for loc in locators:
+                        try:
+                            els = driver.find_elements(*loc)
+                            for el in els:
+                                if el.is_displayed():
+                                    fresh_input = el
+                                    break
+                            if fresh_input: break
+                        except: pass
+                    
+                    target_input = fresh_input if fresh_input else otp_input
+                    
+                    try:
+                        # Thử gõ mã bình thường bằng Selenium
+                        human_type(target_input, otp_code)
+                    except Exception:
+                        # Bắt lỗi ElementNotInteractableException -> Ép điền bằng JavaScript
+                        print(f"{Colors.color_text(f'[{self.thread_id}] Selenium bị chặn, đang ép điền mã bằng JavaScript...', Colors.WARNING)}")
+                        driver.execute_script(f"""
+                            let input = arguments[0];
+                            input.value = '{otp_code}';
+                            input.dispatchEvent(new Event('input', {{ bubbles: true }}));
+                            input.dispatchEvent(new Event('change', {{ bubbles: true }}));
+                        """, target_input)
+                except Exception as ex:
+                    # Phương án dự phòng cuối cùng nếu DOM lỗi hoàn toàn
+                    print(f"{Colors.color_text(f'[{self.thread_id}] Lỗi nghiêm trọng lúc điền ({ex}), dùng JS quét toàn cục...', Colors.WARNING)}")
+                    driver.execute_script(f"""
+                        let input = document.querySelector('input[type="text"], input[name*="code"]');
+                        if(input) {{
+                            input.value = '{otp_code}';
+                            input.dispatchEvent(new Event('input', {{ bubbles: true }}));
+                        }}
+                    """)
+                    
+                time.sleep(1.5)
                 
                 try:
                     driver.execute_script("""
