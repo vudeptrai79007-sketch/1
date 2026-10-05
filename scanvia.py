@@ -57,11 +57,11 @@ def banner():
  ██████╗ ██╗  ██╗██████╗  ██████╗ ███╗   ███╗███████╗
 ██╔════╝ ██║  ██║██╔══██╗██╔═══██╗████╗ ████║██╔════╝
 ██║  ███╗███████║██████╔╝██║   ██║██╔████╔██║█████╗  
-██║   ██║██╔══██║██╔══██║██║   ██║██║╚██╔╝██║██╔══╝  
+██║   ██║██╔══██║██╔══██╗██║   ██║██║╚██╔╝██║██╔══╝  
 ╚██████╔╝██║  ██║██║  ██║╚██████╔╝██║ ╚═╝ ██║███████╗
  ╚═════╝ ╚═╝  ╚═╝╚═╝  ╚═╝ ╚═════╝ ╚═╝    ╚═╝╚══════╝
 {Colors.RESET}""")
-    print(f"{Colors.INFO}Phiên Bản: v13.0 (DRISSIONPAGE & CHIA LƯỚI MÀN HÌNH TỰ ĐỘNG){Colors.RESET}")
+    print(f"{Colors.INFO}Phiên Bản: v13.1 (FIX SYNTAX ERROR & DRISSIONPAGE){Colors.RESET}")
     print(f"{Colors.LINE}{'─'*70}{Colors.RESET}\n")
 
 def load_config():
@@ -184,7 +184,8 @@ class GmailIMAPService:
             self.mail.login(self.base_email, self.app_password)
             return True
         except Exception as e:
-            print(f"{Colors.color_text(f'Lỗi đăng nhập IMAP cho {self.base_email}: {e}', Colors.ERROR)}")
+            err_msg = f"Lỗi đăng nhập IMAP cho {self.base_email}: {e}"
+            print(Colors.color_text(err_msg, Colors.ERROR))
             return False
 
     def get_latest_uid(self):
@@ -301,7 +302,8 @@ class HotmailAPIService:
 
     def get_otp_code(self, timeout=120):
         start_time = time.time()
-        print(f"{Colors.color_text(f'[API Smail1s] Đang check hộp thư {self.email} (Mode: {self.api_mode})...', Colors.INFO)}")
+        info_msg = f"[API Smail1s] Đang check hộp thư {self.email} (Mode: {self.api_mode})..."
+        print(Colors.color_text(info_msg, Colors.INFO))
         
         payload = {"mode": self.api_mode, "data": self.data_line}
         headers = {'Content-Type': 'application/json', 'User-Agent': 'Mozilla/5.0'}
@@ -320,7 +322,7 @@ class HotmailAPIService:
                         if err:
                             msg_err = f"Lỗi hộp thư: {err}"
                             if msg_err != last_logged:
-                                print(f"{Colors.color_text(f'[API Smail1s] {msg_err}', Colors.ERROR)}")
+                                print(Colors.color_text(f"[API Smail1s] {msg_err}", Colors.ERROR))
                                 last_logged = msg_err
                         else:
                             messages = account_data.get("messages", [])
@@ -367,15 +369,18 @@ def generate_dot_variants(gmail):
 def ask_before_close(page, thread_id):
     if page:
         with OTP_LOCK:
-            print(f"\n{Colors.color_text(f'[{thread_id}] Bạn có muốn đóng trình duyệt không? (y/n): ', Colors.WARNING)}", end="")
+            prompt_text = f"[{thread_id}] Bạn có muốn đóng trình duyệt không? (y/n): "
+            print(Colors.color_text(prompt_text, Colors.WARNING), end="")
             choice = input().strip().lower()
             if choice == 'y':
                 try: 
                     page.quit()
-                    print(f"{Colors.color_text(f'[{thread_id}] Đã đóng trình duyệt an toàn.', Colors.SUCCESS)}")
+                    success_msg = f"[{thread_id}] Đã đóng trình duyệt an toàn."
+                    print(Colors.color_text(success_msg, Colors.SUCCESS))
                 except: pass
             else:
-                print(f"{Colors.color_text(f'[{thread_id}] Đã giữ trình duyệt mở.', Colors.INFO)}")
+                info_msg = f"[{thread_id}] Đã giữ trình duyệt mở."
+                print(Colors.color_text(info_msg, Colors.INFO))
 
 # ==================== MAIN THREAD (DRISSIONPAGE & CHIA LƯỚI) ====================
 class starts(threading.Thread):
@@ -399,8 +404,9 @@ class starts(threading.Thread):
             global BASE_YEAR
             if STOP_EVENT.is_set(): return False
                 
-            print(f"\n{Colors.color_text('─'*70, Colors.LINE)}")
-            print(f"{Colors.color_text(f'[{self.thread_id}] BẮT ĐẦU TẠO TÀI KHOẢN THỨ {account_index}', Colors.TITLE)}")
+            print(Colors.color_text('─'*70, Colors.LINE))
+            start_msg = f"[{self.thread_id}] BẮT ĐẦU TẠO TÀI KHOẢN THỨ {account_index}"
+            print(Colors.color_text(start_msg, Colors.TITLE))
             
             used_email = ""
             imap_service = None
@@ -440,18 +446,16 @@ class starts(threading.Thread):
                 used_email = data_line.split('|')[0]
                 hotmail_service = HotmailAPIService(data_line, self.api_mode)
 
-            print(f"{Colors.color_text(f'[{self.thread_id}] Đang dùng Email: {used_email}', Colors.INFO)}")
+            email_info = f"[{self.thread_id}] Đang dùng Email: {used_email}"
+            print(Colors.color_text(email_info, Colors.INFO))
 
             page = None
             try:
-                # Cấu hình DrissionPage ẩn danh và tự động chia lưới cửa sổ thu nhỏ phủ màn hình
                 co = ChromiumOptions()
-                co.incognito(True) # Chế độ ẩn danh
+                co.incognito(True)
                 co.set_argument('--mute-audio')
                 co.set_argument('--disable-notifications')
                 
-                # Tính toán kích thước và vị trí chia lưới (Grid) phủ kín màn hình
-                # Giả định màn hình chuẩn Full HD (1920x1080)
                 screen_w, screen_h = 1920, 1040 
                 cols = 2 if self.total_threads > 1 else 1
                 if self.total_threads > 4: cols = 3
@@ -469,13 +473,14 @@ class starts(threading.Thread):
 
                 page = ChromiumPage(addr_or_opts=co)
                 
-                print(f"{Colors.color_text(f'[{self.thread_id}] Đang truy cập Instagram Web...', Colors.INFO)}")
+                access_msg = f"[{self.thread_id}] Đang truy cập Instagram Web..."
+                print(Colors.color_text(access_msg, Colors.INFO))
                 page.get("https://www.instagram.com/accounts/emailsignup/")
                 
-                print(f"{Colors.color_text(f'[{self.thread_id}] Đang chờ trang tải hoàn tất (8s)...', Colors.WARNING)}")
+                wait_msg = f"[{self.thread_id}] Đang chờ trang tải hoàn tất (8s)..."
+                print(Colors.color_text(wait_msg, Colors.WARNING))
                 time.sleep(8)
                 
-                # Xử lý nút Cookie nếu có
                 try:
                     btn_cookie = page.ele('xpath://button[contains(text(), "Allow") or contains(text(), "Accept") or contains(text(), "Cho phép")]', timeout=2)
                     if btn_cookie: btn_cookie.click()
@@ -489,8 +494,8 @@ class starts(threading.Thread):
                 BASE_YEAR -= 1
                 if BASE_YEAR < 1990: BASE_YEAR = random.randint(1995, 2005)
 
-                # Điền thông tin form bằng DrissionPage
-                print(f"{Colors.color_text(f'[{self.thread_id}] Đang điền thông tin đăng ký...', Colors.INFO)}")
+                filling_msg = f"[{self.thread_id}] Đang điền thông tin đăng ký..."
+                print(Colors.color_text(filling_msg, Colors.INFO))
                 
                 inputs = page.eles('tag:input')
                 if len(inputs) >= 4:
@@ -498,17 +503,16 @@ class starts(threading.Thread):
                     inputs[1].input(secure_pass)
                     inputs[2].input(full_name)
                     
-                    # Xử lý Username thông minh
                     inputs[3].click()
                     time.sleep(1)
                     inputs[3].clear()
                     inputs[3].input(username)
                 else:
-                    print(f"{Colors.color_text(f'[{self.thread_id}] Lỗi: Không tìm đủ ô input!', Colors.ERROR)}")
+                    err_input_msg = f"[{self.thread_id}] Lỗi: Không tìm đủ ô input!"
+                    print(Colors.color_text(err_input_msg, Colors.ERROR))
                     ask_before_close(page, self.thread_id)
                     return False
 
-                # Chọn ngày tháng năm sinh bằng cấu hình combobox
                 try:
                     combos = page.eles('xpath://*[@role="combobox"]')
                     if len(combos) >= 3:
@@ -517,18 +521,20 @@ class starts(threading.Thread):
                         combos[2].click(); time.sleep(0.3); page.ele(f'xpath://div[text()="{current_year}"] | //span[text()="{current_year}"]', timeout=2).click()
                 except: pass
 
-                print(f"{Colors.color_text(f'[{self.thread_id}] Đã điền xong. Đợi 5s trước khi bấm Đăng ký...', Colors.WARNING)}")
+                sleep_msg = f"[{self.thread_id}] Đã điền xong. Đợi 5s trước khi bấm Đăng ký..."
+                print(Colors.color_text(sleep_msg, Colors.WARNING))
                 time.sleep(5)
 
                 uid_moc = 0
                 if self.mode in ["3", "4"] and imap_service:
                     uid_moc = imap_service.get_latest_uid()
                 elif self.mode == "5" and hotmail_service:
-                    print(f"{Colors.color_text(f'[{self.thread_id}] Đang quét hộp thư để loại trừ mã cũ...', Colors.INFO)}")
+                    baseline_msg = f"[{self.thread_id}] Đang quét hộp thư để loại trừ mã cũ..."
+                    print(Colors.color_text(baseline_msg, Colors.INFO))
                     hotmail_service.init_baseline()
 
-                # Bấm nút Gửi / Đăng ký qua JS của DrissionPage
-                print(f"{Colors.color_text(f'[{self.thread_id}] Đang bấm nút Đăng ký...', Colors.INFO)}')
+                submit_msg = f"[{self.thread_id}] Đang bấm nút Đăng ký..."
+                print(Colors.color_text(submit_msg, Colors.INFO))
                 page.run_js("""
                     const btn = Array.from(document.querySelectorAll('button, div[role="button"]')).find(b => {
                         const t = (b.innerText || "").trim().toLowerCase();
@@ -537,21 +543,23 @@ class starts(threading.Thread):
                     if(btn) { btn.disabled = false; btn.click(); }
                 """)
                 
-                print(f"{Colors.color_text(f'[{self.thread_id}] Đã gửi form, chờ chuyển sang trang OTP (15s)...', Colors.SUCCESS)}")
+                otp_wait_msg = f"[{self.thread_id}] Đã gửi form, chờ chuyển sang trang OTP (15s)..."
+                print(Colors.color_text(otp_wait_msg, Colors.SUCCESS))
                 time.sleep(15)
 
-                # Lấy mã OTP & Ngâm form
                 otp_code = None
                 start_otp_wait = time.time()
                 
                 if self.mode == "2" and not (mail_service and mail_service.token):
                     with OTP_LOCK:
-                        print(f"\n{Colors.color_text(f'[{self.thread_id}] MỜI SẾP NHẬP OTP CHO [{used_email}] TỪ BÀN PHÍM:', Colors.SUCCESS)}")
+                        prompt_otp_msg = f"\n[{self.thread_id}] MỜI SẾP NHẬP OTP CHO [{used_email}] TỪ BÀN PHÍM:"
+                        print(Colors.color_text(prompt_otp_msg, Colors.SUCCESS))
                         otp_code = input(">> ").strip()
                 else:
                     target_wait = 60 if self.mode in ["3", "4", "5"] else 0
                     if target_wait > 0:
-                        print(f"{Colors.color_text(f'[{self.thread_id}] Đang quét mã OTP và ngâm form {target_wait}s...', Colors.INFO)}")
+                        scan_wait_msg = f"[{self.thread_id}] Đang quét mã OTP và ngâm form {target_wait}s..."
+                        print(Colors.color_text(scan_wait_msg, Colors.INFO))
                     
                     if self.mode == "1" or (self.mode == "2" and mail_service and mail_service.token):
                         otp_code = mail_service.get_otp_code(timeout=120)
@@ -561,7 +569,8 @@ class starts(threading.Thread):
                         otp_code = hotmail_service.get_otp_code(timeout=120)
 
                 if not otp_code:
-                    print(f"{Colors.color_text(f'[{self.thread_id}] Lỗi: Quá 120s không lấy được mã OTP!', Colors.ERROR)}")
+                    err_otp_msg = f"[{self.thread_id}] Lỗi: Quá 120s không lấy được mã OTP!"
+                    print(Colors.color_text(err_otp_msg, Colors.ERROR))
                     ask_before_close(page, self.thread_id)
                     return False
 
@@ -573,10 +582,9 @@ class starts(threading.Thread):
                             if STOP_EVENT.is_set(): return False
                             time.sleep(min(5, w))
 
-                # Điền OTP và Bấm Tiếp tục
-                print(f"{Colors.color_text(f'[{self.thread_id}] Điền mã OTP: {otp_code} và Xác nhận...', Colors.SUCCESS)}")
+                filling_otp_msg = f"[{self.thread_id}] Điền mã OTP: {otp_code} và Xác nhận..."
+                print(Colors.color_text(filling_otp_msg, Colors.SUCCESS))
                 
-                # Tìm ô nhập OTP linh hoạt bằng DrissionPage
                 otp_box = page.ele('xpath://input[@name="email_confirmation_code" or @name="confirmationCode" or contains(@aria-label, "Mã") or contains(@aria-label, "Code")] | //input[@type="text"]', timeout=5)
                 if otp_box:
                     otp_box.input(otp_code)
@@ -585,7 +593,6 @@ class starts(threading.Thread):
 
                 time.sleep(1.5)
 
-                # Bấm nút Tiếp tục
                 page.run_js("""
                     const nextBtn = Array.from(document.querySelectorAll('button, div[role="button"]')).find(b => {
                         const t = (b.innerText || "").trim().toLowerCase();
@@ -594,19 +601,21 @@ class starts(threading.Thread):
                     if(nextBtn) { nextBtn.disabled = false; nextBtn.click(); }
                 """)
 
-                print(f"{Colors.color_text(f'[{self.thread_id}] Chờ Server tạo tài khoản (20s)...', Colors.INFO)}")
+                server_wait_msg = f"[{self.thread_id}] Chờ Server tạo tài khoản (20s)..."
+                print(Colors.color_text(server_wait_msg, Colors.INFO))
                 time.sleep(20)
 
                 cookies = page.cookies()
                 cookie_str = "; ".join([f"{c.get('name')}={c.get('value')}" for c in cookies])
 
-                print(f"\n{Colors.color_text('─'*70, Colors.LINE)}")
-                print(f"{Colors.color_text(f'[{self.thread_id}] THÀNH CÔNG ACC {account_index}!', Colors.SUCCESS)}")
+                print(Colors.color_text('─'*70, Colors.LINE))
+                success_acc_msg = f"[{self.thread_id}] THÀNH CÔNG ACC {account_index}!"
+                print(Colors.color_text(success_acc_msg, Colors.SUCCESS))
                 print(f"{Colors.KEY}Mail: {Colors.EMAIL}{used_email}{Colors.RESET}")
                 print(f"{Colors.KEY}Pass: {Colors.PASSWORD}{secure_pass}{Colors.RESET}")
                 print(f"{Colors.KEY}User: {Colors.USERNAME}{username}{Colors.RESET}")
                 print(f"{Colors.KEY}Cookie: {Colors.VALUE}{cookie_str if cookie_str else 'Trống'}{Colors.RESET}")
-                print(f"{Colors.color_text('─'*70, Colors.LINE)}\n")
+                print(Colors.color_text('─'*70, Colors.LINE))
 
                 save_account(self.thread_id, used_email, secure_pass, username, full_name, f"mode_{self.mode}", cookie_str)
                 
@@ -614,7 +623,8 @@ class starts(threading.Thread):
                 return True
 
             except Exception as e:
-                print(f"{Colors.color_text(f'[{self.thread_id}] Gặp Lỗi Ngoại Lệ: {e}', Colors.ERROR)}")
+                err_exc_msg = f"[{self.thread_id}] Gặp Lỗi Ngoại Lệ: {e}"
+                print(Colors.color_text(err_exc_msg, Colors.ERROR))
                 ask_before_close(page, self.thread_id)
                 return False
 
@@ -624,7 +634,8 @@ class starts(threading.Thread):
             if create_one_account(i): success_count += 1
             time.sleep(random.uniform(3, 6))
 
-        print(f"\n{Colors.color_text(f'[{self.thread_id}] TỔNG KẾT: {success_count}/{self.account_count} THÀNH CÔNG', Colors.TITLE)}")
+        summary_msg = f"[{self.thread_id}] TỔNG KẾT: {success_count}/{self.account_count} THÀNH CÔNG"
+        print(Colors.color_text(summary_msg, Colors.TITLE))
 
 # ==================== MENU CHÍNH ====================
 def select_mode():
@@ -686,7 +697,6 @@ if __name__ == "__main__":
     
     threads = []
     for i in range(threads_count):
-        # Truyền thêm tổng số luồng để thuật toán tự động chia lưới màn hình
         t = starts(i+1, threads_count, mode, accs_per_thread, data_source, manual_password, base_gmail, app_password, api_mode)
         threads.append(t)
         
@@ -694,8 +704,8 @@ if __name__ == "__main__":
     
     try:
         for t in threads: t.join()
-        print(f"\n{Colors.color_text('AUTO HOÀN THÀNH TOÀN BỘ!', Colors.SUCCESS)}")
+        print(Colors.color_text('AUTO HOÀN THÀNH TOÀN BỘ!', Colors.SUCCESS))
     except KeyboardInterrupt:
         STOP_EVENT.set() 
-        print(f"\n{Colors.color_text('Đang đóng các luồng an toàn...', Colors.WARNING)}")
+        print(Colors.color_text('Đang đóng các luồng an toàn...', Colors.WARNING))
         sys.exit(0)
