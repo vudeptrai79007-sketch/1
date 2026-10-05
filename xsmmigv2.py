@@ -18,6 +18,7 @@ try:
     from selenium.webdriver.common.by import By
     from selenium.webdriver.support.ui import WebDriverWait
     from selenium.webdriver.support import expected_conditions as EC
+    from selenium.webdriver.support.ui import Select
     import requests
 except ImportError:
     print("Đang cài đặt thư viện thiếu...")
@@ -26,6 +27,7 @@ except ImportError:
     from selenium.webdriver.common.by import By
     from selenium.webdriver.support.ui import WebDriverWait
     from selenium.webdriver.support import expected_conditions as EC
+    from selenium.webdriver.support.ui import Select
     import requests
 
 # BIẾN TOÀN CỤC
@@ -67,7 +69,7 @@ def banner():
 ╚██████╔╝██║  ██║██║  ██║╚██████╔╝██║ ╚═╝ ██║███████╗
  ╚═════╝ ╚═╝  ╚═╝╚═╝  ╚═╝ ╚═════╝ ╚═╝     ╚═╝╚══════╝
 {Colors.RESET}""")
-    print(f"{Colors.INFO}Phiên Bản: v12.4 (CHROME PC - AUTO SCROLL & JS INJECT){Colors.RESET}")
+    print(f"{Colors.INFO}Phiên Bản: v12.5 (CHROME PC - KẾT HỢP JS SCROLL & NATIVE TYPE){Colors.RESET}")
     print(f"{Colors.LINE}{'─'*70}{Colors.RESET}\n")
 
 def load_config():
@@ -422,91 +424,70 @@ class starts(threading.Thread):
                 BASE_YEAR -= 1
                 if BASE_YEAR < 1990: BASE_YEAR = random.randint(1995, 2005)
 
-                print(f"{Colors.color_text(f'[{self.thread_id}] Đang tiêm JavaScript ép cuộn trang và điền dữ liệu...', Colors.INFO)}")
-                
-                # ========================================================
-                # KỊCH BẢN JAVASCRIPT: CUỘN & ĐIỀN TỪ A-Z CHỐNG KẸT
-                # ========================================================
-                js_master_script = f"""
-                // 1. Hàm cuộn và ép điền text cho React
-                function fillInput(name, value) {{
-                    let el = document.querySelector('input[name="' + name + '"]');
-                    if(el) {{
-                        el.scrollIntoView({{behavior: 'smooth', block: 'center'}});
-                        let setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
-                        setter.call(el, value);
-                        el.dispatchEvent(new Event('input', {{ bubbles: true }}));
-                        el.dispatchEvent(new Event('change', {{ bubbles: true }}));
-                    }}
-                }}
-
-                // 2. Hàm cuộn và ép chọn Ngày Sinh cho React
-                function fillSelect(keywords, value) {{
-                    let selects = Array.from(document.querySelectorAll('select'));
-                    let el = selects.find(s => keywords.some(k => (s.title || '').includes(k)));
-                    if(el) {{
-                        el.scrollIntoView({{behavior: 'smooth', block: 'center'}});
-                        let setter = Object.getOwnPropertyDescriptor(window.HTMLSelectElement.prototype, 'value').set;
-                        setter.call(el, value);
-                        el.dispatchEvent(new Event('change', {{ bubbles: true }}));
-                    }}
-                }}
-
-                // Thực thi tuần tự từ trên xuống dưới
-                fillInput('emailOrPhone', '{used_email}');
-                fillInput('password', '{secure_pass}');
-                
-                // Cuộn xuống đoạn Ngày Sinh và điền
-                fillSelect(['Ngày', 'Day'], '{current_day}');
-                fillSelect(['Tháng', 'Month'], '{current_month}');
-                fillSelect(['Năm', 'Year'], '{current_year}');
-                
-                // Cuộn tiếp xuống đoạn Tên và điền
-                fillInput('fullName', '{full_name}');
-                fillInput('username', '{username}');
-                
-                // Cuối cùng cuộn xuống kịch đáy trang
-                window.scrollTo(0, document.body.scrollHeight);
-                """
+                print(f"{Colors.color_text(f'[{self.thread_id}] Đang điền form và cuộn trang từng bước...', Colors.INFO)}")
                 
                 try:
-                    driver.execute_script(js_master_script)
-                    print(f"{Colors.color_text(f'[{self.thread_id}] Đã ép cuộn trang và điền xong toàn bộ thông tin!', Colors.SUCCESS)}")
+                    # 1. Điền Email
+                    email_input = wait.until(EC.presence_of_element_located((By.NAME, "emailOrPhone")))
+                    driver.execute_script("arguments[0].scrollIntoView({behavior: 'smooth', block: 'center'});", email_input)
+                    time.sleep(0.5)
+                    email_input.clear()
+                    email_input.send_keys(used_email)
+                    
+                    # 2. Điền Mật khẩu
+                    pass_input = driver.find_element(By.NAME, "password")
+                    driver.execute_script("arguments[0].scrollIntoView({behavior: 'smooth', block: 'center'});", pass_input)
+                    time.sleep(0.5)
+                    pass_input.clear()
+                    pass_input.send_keys(secure_pass)
+                    
+                    # 3. Chọn Ngày Sinh
+                    selects = driver.find_elements(By.TAG_NAME, "select")
+                    if len(selects) >= 3:
+                        driver.execute_script("arguments[0].scrollIntoView({behavior: 'smooth', block: 'center'});", selects[0])
+                        time.sleep(0.5)
+                        Select(selects[0]).select_by_value(current_day)
+                        Select(selects[1]).select_by_value(current_month)
+                        Select(selects[2]).select_by_value(current_year)
+                        
+                    # 4. Điền Tên Đầy Đủ
+                    name_input = driver.find_element(By.NAME, "fullName")
+                    driver.execute_script("arguments[0].scrollIntoView({behavior: 'smooth', block: 'center'});", name_input)
+                    time.sleep(0.5)
+                    name_input.clear()
+                    name_input.send_keys(full_name)
+                    
+                    # 5. Điền Username
+                    user_input = driver.find_element(By.NAME, "username")
+                    driver.execute_script("arguments[0].scrollIntoView({behavior: 'smooth', block: 'center'});", user_input)
+                    time.sleep(0.5)
+                    user_input.clear()
+                    user_input.send_keys(username)
+                    
+                    # 6. NGÂM FORM
+                    print(f"{Colors.color_text(f'[{self.thread_id}] Đã điền xong. Ngâm form 30s trước khi bấm nút Đăng Ký...', Colors.WARNING)}")
+                    for w in range(30, 0, -5):
+                        if STOP_EVENT.is_set(): driver.quit(); return False
+                        time.sleep(5)
+
+                    uid_moc = 0
+                    if self.mode in ["3", "4"] and imap_service:
+                        uid_moc = imap_service.get_latest_uid()
+
+                    # 7. Cuộn kịch đáy và bấm nút Submit
+                    driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+                    time.sleep(1)
+                    
+                    submit_btn = driver.find_element(By.XPATH, "//button[@type='submit']")
+                    driver.execute_script("arguments[0].click();", submit_btn)
+                    
+                    print(f"{Colors.color_text(f'[{self.thread_id}] Đã gửi form thành công, chờ load OTP (15s)...', Colors.SUCCESS)}")
+                    time.sleep(15)
+                    
                 except Exception as e:
-                    print(f"{Colors.color_text(f'[{self.thread_id}] Lỗi khi chạy JS: {e}', Colors.ERROR)}")
-
-                # NGÂM FORM
-                print(f"{Colors.color_text(f'[{self.thread_id}] Ngâm form 30s trước khi bấm nút Đăng Ký...', Colors.WARNING)}")
-                for w in range(30, 0, -5):
-                    if STOP_EVENT.is_set(): driver.quit(); return False
-                    time.sleep(5)
-
-                uid_moc = 0
-                if self.mode in ["3", "4"] and imap_service:
-                    uid_moc = imap_service.get_latest_uid()
-                
-                # ========================================================
-                # DÙNG JAVASCRIPT ĐỂ TÌM VÀ BẤM NÚT GỬI (BẤT KỂ BỊ CHE)
-                # ========================================================
-                print(f"{Colors.color_text(f'[{self.thread_id}] Đang bấm nút gửi form...', Colors.INFO)}")
-                js_submit = """
-                let submitBtn = document.querySelector('button[type="submit"]');
-                if (submitBtn) {
-                    submitBtn.scrollIntoView({behavior: 'smooth', block: 'center'});
-                    setTimeout(() => { submitBtn.click(); }, 500);
-                } else {
-                    let buttons = Array.from(document.querySelectorAll('button'));
-                    let nextBtn = buttons.find(b => /tiếp|next|đăng ký|sign up/i.test(b.innerText));
-                    if (nextBtn) {
-                        nextBtn.scrollIntoView({behavior: 'smooth', block: 'center'});
-                        setTimeout(() => { nextBtn.click(); }, 500);
-                    }
-                }
-                """
-                driver.execute_script(js_submit)
-                
-                print(f"{Colors.color_text(f'[{self.thread_id}] Đã gửi form, chờ load OTP (15s)...', Colors.INFO)}")
-                time.sleep(15)
+                    print(f"{Colors.color_text(f'[{self.thread_id}] Bị lỗi trong quá trình cuộn và điền: {e}', Colors.ERROR)}")
+                    driver.quit()
+                    return False
 
                 # ========================================================
                 # NHẬP MÃ OTP
