@@ -71,7 +71,7 @@ def banner():
 ╚██████╔╝██║  ██║██║  ██║╚██████╔╝██║ ╚═╝ ██║███████╗
  ╚═════╝ ╚═╝  ╚═╝╚═╝  ╚═╝ ╚═════╝ ╚═╝    ╚═╝╚══════╝
 {Colors.RESET}""")
-    print(f"{Colors.INFO}Phiên Bản: v12.12 (JS CLICK ĐA LUỒNG & GÕ VẬT LÝ){Colors.RESET}")
+    print(f"{Colors.INFO}Phiên Bản: v12.13 (JS ASYNC CUSTOM CHO COMBOBOX){Colors.RESET}")
     print(f"{Colors.LINE}{'─'*70}{Colors.RESET}\n")
 
 def load_config():
@@ -407,7 +407,6 @@ class starts(threading.Thread):
                 try:
                     cookie_btns = driver.find_elements(By.XPATH, "//button[contains(text(), 'Allow') or contains(text(), 'Accept') or contains(text(), 'Cho phép') or contains(text(), 'Đồng ý')]")
                     if cookie_btns:
-                        # JS Click đa luồng thay vì vật lý
                         driver.execute_script("arguments[0].click();", cookie_btns[0])
                         time.sleep(2)
                 except: pass
@@ -422,26 +421,15 @@ class starts(threading.Thread):
 
                 def slow_scroll_to_element(element):
                     try:
-                        target_y = element.location['y'] - 200 
-                        current_y = driver.execute_script("return window.pageYOffset;")
-                        distance = target_y - current_y
-                        steps = 20
-                        for i in range(1, steps + 1):
-                            driver.execute_script(f"window.scrollTo(0, {current_y + (distance * i / steps)});")
-                            time.sleep(random.uniform(0.02, 0.05))
-                        time.sleep(0.5)
-                    except:
                         driver.execute_script("arguments[0].scrollIntoView({behavior: 'smooth', block: 'center'});", element)
                         time.sleep(0.5)
+                    except: pass
 
-                # LOẠI BỎ ACTIONCHAINS Ở ĐÂY CHO ĐA LUỒNG
                 def human_type(element, text, is_username=False):
                     slow_scroll_to_element(element)
                     
-                    try:
-                        element.click() # Thử click của Selenium
-                    except:
-                        driver.execute_script("arguments[0].click();", element) # Nếu vướng, dùng JS click ngầm
+                    try: element.click() 
+                    except: driver.execute_script("arguments[0].click();", element) 
                     time.sleep(0.5)
                     
                     if is_username:
@@ -483,37 +471,65 @@ class starts(threading.Thread):
                         print(f"{Colors.color_text(f'[{self.thread_id}] Điền Mật khẩu...', Colors.INFO)}")
                         human_type(inputs[1], secure_pass)
                         
-                        # 3. CHỌN NGÀY SINH (CLICK JS VÀ GÕ PHÍM - AN TOÀN CHO ĐA LUỒNG)
-                        print(f"{Colors.color_text(f'[{self.thread_id}] Bắt đầu chọn Ngày Sinh...', Colors.INFO)}")
+                        # 3. CHỌN NGÀY SINH BẰNG JAVASCRIPT CUSTOM (ASYNC SCRIPT)
+                        print(f"{Colors.color_text(f'[{self.thread_id}] Bắt đầu chọn Ngày Sinh bằng Script Console...', Colors.INFO)}")
                         try:
-                            selects = wait.until(EC.presence_of_all_elements_located((By.TAG_NAME, "select")))
+                            # Đợi thẻ role="combobox" xuất hiện
+                            wait.until(EC.presence_of_all_elements_located((By.XPATH, '//*[@role="combobox"]')))
                             
-                            if len(selects) >= 3:
-                                slow_scroll_to_element(selects[0])
-                                time.sleep(1)
-                                
-                                dob_values = [current_day, current_month, current_year]
-                                
-                                for idx, val in enumerate(dob_values):
-                                    try:
-                                        # JS Click ngầm thay vì dùng chuột hệ thống
-                                        driver.execute_script("arguments[0].click();", selects[idx])
-                                        time.sleep(0.5)
-                                        
-                                        # Bắn phím số thẳng vào element hiện tại
-                                        selects[idx].send_keys(str(val))
-                                        time.sleep(0.5)
-                                        
-                                        # Enter chốt sổ
-                                        selects[idx].send_keys(Keys.ENTER)
-                                        time.sleep(random.uniform(0.5, 0.8))
-                                        
-                                    except Exception as e:
-                                        print(f"{Colors.color_text(f'[{self.thread_id}] Lỗi nhập ô Ngày Sinh thứ {idx+1}...', Colors.WARNING)}")
+                            # Tăng thời gian timeout cho JavaScript
+                            driver.set_script_timeout(15)
+                            
+                            # Đẩy script JS của bạn vào thẳng trình duyệt qua execute_async_script
+                            js_script = """
+                            const day = arguments[0];
+                            const month = arguments[1];
+                            const year = arguments[2];
+                            const callback = arguments[arguments.length - 1];
+
+                            (async function() {
+                                async function selectComboboxStrict(box, targetText) {
+                                    if (!box) return false;
+                                    box.scrollIntoView({ block: 'center' });
+                                    box.click(); 
+                                    await new Promise(r => setTimeout(r, 450)); 
+                                    const allLeafs = Array.from(document.querySelectorAll('*')).filter(el => 
+                                        el.children.length === 0 && 
+                                        (el.innerText?.trim() === String(targetText) || el.innerText?.trim() === "Tháng " + targetText)
+                                    );
+
+                                    if (allLeafs.length > 0) {
+                                        const targetEl = allLeafs[allLeafs.length - 1];
+                                        targetEl.scrollIntoView({ block: 'nearest' });
+                                        targetEl.click(); 
+                                        await new Promise(r => setTimeout(r, 450)); 
+                                        return true;
+                                    }
+                                    return false;
+                                }
+
+                                const comboboxes = Array.from(document.querySelectorAll('[role="combobox"]'));
+                                if (comboboxes.length < 3) {
+                                    return callback("ERROR: Không tìm thấy 3 ô combobox Ngày/Tháng/Năm!");
+                                }
+
+                                await selectComboboxStrict(comboboxes[0], day);
+                                await selectComboboxStrict(comboboxes[1], month);
+                                await selectComboboxStrict(comboboxes[2], year);
+
+                                callback("SUCCESS");
+                            })();
+                            """
+                            # Thực thi JS và truyền vào các giá trị ngày, tháng, năm ngẫu nhiên
+                            result = driver.execute_async_script(js_script, current_day, current_month, current_year)
+                            
+                            if result == "SUCCESS":
+                                print(f"{Colors.color_text(f'[{self.thread_id}] Đã chạy xong JS chọn: {current_day}/{current_month}/{current_year}', Colors.SUCCESS)}")
                             else:
-                                print(f"{Colors.color_text(f'[{self.thread_id}] Lỗi: Không tìm thấy đủ 3 ô Ngày Sinh!', Colors.WARNING)}")
+                                print(f"{Colors.color_text(f'[{self.thread_id}] JS chạy lỗi: {result}', Colors.WARNING)}")
+                                
                         except Exception as e:
-                            print(f"{Colors.color_text(f'[{self.thread_id}] Lỗi tải khối Ngày Sinh: {e}', Colors.ERROR)}")
+                            print(f"{Colors.color_text(f'[{self.thread_id}] Lỗi tải khối Ngày Sinh (JS): {e}', Colors.ERROR)}")
                             
                         # 4. Điền Tên Đầy Đủ
                         print(f"{Colors.color_text(f'[{self.thread_id}] Điền Họ Tên...', Colors.INFO)}")
@@ -544,7 +560,6 @@ class starts(threading.Thread):
                             wait.until(EC.element_to_be_clickable((By.XPATH, "//button[@type='submit']")))
                         except: pass
                         
-                        # Bỏ qua ActionChains, dùng native click hoặc JS
                         try: 
                             submit_btn.click()
                         except: 
