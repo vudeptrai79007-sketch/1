@@ -36,6 +36,8 @@ except ImportError:
 STOP_EVENT = threading.Event()
 OTP_LOCK = threading.Lock() 
 DATA_LOCK = threading.Lock()
+BROWSER_LOCK = threading.Lock()  # Khóa chống tranh chấp file khi mở đa luồng Chrome
+INPUT_LOCK = threading.Lock()    # Khóa chống loạn Terminal khi hỏi y/n
 CONFIG_FILE = "config_gmail.json"
 BASE_YEAR = random.randint(1995, 2005)
 
@@ -71,7 +73,7 @@ def banner():
 ╚██████╔╝██║  ██║██║  ██║╚██████╔╝██║ ╚═╝ ██║███████╗
  ╚═════╝ ╚═╝  ╚═╝╚═╝  ╚═╝ ╚═════╝ ╚═╝    ╚═╝╚══════╝
 {Colors.RESET}""")
-    print(f"{Colors.INFO}Phiên Bản: v12.19 (CHẶN LẤY MÃ CŨ & FIX NÚT TIẾP TỤC & ĐA LUỒNG XẾP GẠCH){Colors.RESET}")
+    print(f"{Colors.INFO}Phiên Bản: v12.20 (FIX ĐA LUỒNG & HỎI ĐÓNG LUỒNG){Colors.RESET}")
     print(f"{Colors.LINE}{'─'*70}{Colors.RESET}\n")
 
 def load_config():
@@ -288,10 +290,9 @@ class HotmailAPIService:
         self.data_line = data_line.strip()
         self.api_mode = api_mode.strip()
         self.email = self.data_line.split('|')[0] if '|' in self.data_line else self.data_line
-        self.seen_codes = set() # LƯU TRỮ CÁC MÃ CŨ ĐỂ KHÔNG BỊ LẤY NHẦM
+        self.seen_codes = set()
 
     def init_baseline(self):
-        """Quét và ghi nhớ các mã cũ trong hộp thư trước khi bấm Submit form đăng ký"""
         try:
             payload = {"mode": self.api_mode, "data": self.data_line}
             headers = {'Content-Type': 'application/json', 'User-Agent': 'Mozilla/5.0'}
@@ -407,13 +408,23 @@ def generate_dot_variants(gmail):
     random.shuffle(variants)
     return variants
 
-# ==================== HÀM ĐÓNG TRÌNH DUYỆT (ĐÃ SỬA ĐỂ TỰ ĐỘNG KHÔNG HỎI) ====================
+# ==================== HÀM HỎI ĐÓNG TRÌNH DUYỆT (ĐÃ SỬA) ====================
 def ask_before_close(driver, thread_id):
     if driver:
-        try: 
-            driver.quit()
-            print(f"{Colors.color_text(f'[{thread_id}] Đã đóng trình duyệt tự động và giải phóng RAM.', Colors.SUCCESS)}")
-        except: pass
+        with INPUT_LOCK:  # Dùng khóa để các luồng không đè câu hỏi lên nhau
+            while True:
+                choice = input(f"{Colors.WARNING}[{thread_id}] Bạn có muốn đóng Chrome của luồng này không? (y/n): {Colors.RESET}").strip().lower()
+                if choice == 'y':
+                    try: 
+                        driver.quit()
+                        print(f"{Colors.SUCCESS}[{thread_id}] Đã đóng trình duyệt và giải phóng RAM.{Colors.RESET}")
+                    except: pass
+                    break
+                elif choice == 'n':
+                    print(f"{Colors.INFO}[{thread_id}] Đã giữ lại trình duyệt để bạn kiểm tra.{Colors.RESET}")
+                    break
+                else:
+                    print(f"{Colors.ERROR}Vui lòng chỉ nhập y hoặc n!{Colors.RESET}")
 
 # ==================== MAIN THREAD ====================
 class starts(threading.Thread):
@@ -488,13 +499,12 @@ class starts(threading.Thread):
                 # CÁCH 1: XẾP GẠCH CỬA SỔ & THU NHỎ HIỂN THỊ (SCALE FACTOR)
                 # ========================================================
                 
-                # 1. Tính toán vị trí xếp cửa sổ không đè nhau
                 thread_idx = int(self.thread_id.split("-")[1]) - 1 
                 
                 win_width = 960  
                 win_height = 540 
                 
-                columns = 2 # Nếu màn hình bạn siêu to (2K/4K) có thể đổi thành 3 hoặc 4
+                columns = 2 
                 col = thread_idx % columns
                 row = thread_idx // columns
                 
@@ -506,11 +516,9 @@ class starts(threading.Thread):
                 options.add_argument('--mute-audio')
                 options.add_argument('--disable-notifications')
                 
-                # Set kích thước và vị trí theo công thức đã tính
                 options.add_argument(f'--window-size={win_width},{win_height}')
                 options.add_argument(f'--window-position={x_pos},{y_pos}')
                 
-                # TRICK CỐT LÕI: Thu nhỏ giao diện web còn 50%
                 options.add_argument('--force-device-scale-factor=0.5')
                 
                 # Tối ưu RAM & CPU để chạy nhiều luồng không giật lag
@@ -518,7 +526,10 @@ class starts(threading.Thread):
                 options.add_argument('--disable-software-rasterizer')
                 options.add_argument('--disable-dev-shm-usage')
                 
-                driver = uc.Chrome(options=options)
+                # SỬA LỖI TRANG CHẤP FILE KHI ĐA LUỒNG (WinError 183)
+                with BROWSER_LOCK:
+                    driver = uc.Chrome(options=options)
+                    time.sleep(1) # Nghỉ 1s nhường cho luồng tiếp theo mở
                 # ========================================================
                     
                 wait = WebDriverWait(driver, 15)
@@ -557,7 +568,6 @@ class starts(threading.Thread):
                     except: driver.execute_script("arguments[0].click();", element) 
                     time.sleep(0.5)
                     
-                    # === ĐÃ THÊM: ÉP FOCUS ĐỂ GÕ NGẦM KHÔNG BỊ TRƯỢT ===
                     driver.execute_script("arguments[0].focus();", element)
                     
                     if is_username:
@@ -582,7 +592,6 @@ class starts(threading.Thread):
                         time.sleep(0.3)
                     
                     for char in text:
-                        # Ép lại focus mỗi ký tự phòng khi luồng khác nhảy lên
                         driver.execute_script("arguments[0].focus();", element)
                         element.send_keys(char)
                         time.sleep(random.uniform(0.05, 0.15)) 
@@ -667,7 +676,6 @@ class starts(threading.Thread):
                     print(f"{Colors.color_text(f'[{self.thread_id}] Đã điền xong. Ngâm form 10s trước khi bấm nút Đăng Ký...', Colors.WARNING)}")
                     time.sleep(10)
 
-                    # GHI NHỚ MÃ CŨ ĐỂ KHÔNG BỊ TRÙNG
                     uid_moc = 0
                     if self.mode in ["3", "4"] and imap_service:
                         uid_moc = imap_service.get_latest_uid()
@@ -845,11 +853,12 @@ class starts(threading.Thread):
                 
                 # ==================== CLICK NÚT TIẾP TỤC (MẠNH MẼ) ====================
                 print(f"{Colors.color_text(f'[{self.thread_id}] Đang tìm và nhấn nút Tiếp tục/Xác nhận...', Colors.INFO)}")
+                time.sleep(2)
                 try:
                     click_result = driver.execute_script("""
                         const submitBtn = Array.from(document.querySelectorAll('button, div[role="button"]')).find(b => {
                             const text = (b.innerText || b.textContent || "").trim().toLowerCase();
-                            return text === "tiếp tục" || text === "tiếp" || text === "next" || text === "xác nhận" || text === "confirm" || text === "gửi";
+                            return text.includes("tiếp") || text.includes("next") || text.includes("xác nhận") || text.includes("confirm") || text.includes("gửi") || b.type === 'submit';
                         });
 
                         if (submitBtn) {
@@ -867,6 +876,17 @@ class starts(threading.Thread):
                             
                             return "CLICKED";
                         }
+                        
+                        const form = document.querySelector('form');
+                        if (form) {
+                            const hiddenBtn = document.createElement('button');
+                            hiddenBtn.type = 'submit';
+                            hiddenBtn.style.display = 'none';
+                            form.appendChild(hiddenBtn);
+                            hiddenBtn.click();
+                            return "CLICKED";
+                        }
+
                         return "NOT_FOUND";
                     """)
                     
@@ -877,7 +897,8 @@ class starts(threading.Thread):
                         try:
                             target_input.send_keys(Keys.ENTER)
                             print(f"{Colors.color_text(f'[{self.thread_id}] Đã bấm ENTER thành công!', Colors.SUCCESS)}")
-                        except: pass
+                        except Exception as e: 
+                            pass
                 except Exception as ex:
                     print(f"{Colors.color_text(f'[{self.thread_id}] Lỗi khi chạy Script click nút Tiếp tục: {ex}', Colors.WARNING)}")
 
@@ -984,7 +1005,8 @@ if __name__ == "__main__":
     
     try:
         for t in threads: t.join()
-        print(f"\n{Colors.color_text('AUTO HOÀN THÀNH TOÀN BỘ!', Colors.SUCCESS)}")
+        print(f"\n{Colors.color_text('AUTO HOÀN THÀNH TOÀN BỘ CÁC LUỒNG!', Colors.SUCCESS)}")
+        input(f"{Colors.KEY}Nhấn Enter để thoát chương trình...{Colors.RESET}")
     except KeyboardInterrupt:
         STOP_EVENT.set() 
         print(f"\n{Colors.color_text('Đang đóng các luồng an toàn...', Colors.WARNING)}")
