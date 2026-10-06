@@ -118,7 +118,7 @@ def banner():
 ╚██████╔╝██║  ██║██║  ██║╚██████╔╝██║ ╚═╝ ██║███████╗
  ╚═════╝ ╚═╝  ╚═╝╚═╝  ╚═╝ ╚═════╝ ╚═╝    ╚═╝╚══════╝
 {Colors.RESET}""")
-    print(f"{Colors.INFO}Phiên Bản: v12.31 (GIAO DIỆN MOBILE CHUYÊN NGHIỆP){Colors.RESET}")
+    print(f"{Colors.INFO}Phiên Bản: v12.32 (FIX CHỌN THÁNG TUYỆT ĐỐI CHO MỌI NGÔN NGỮ){Colors.RESET}")
     print(f"{Colors.LINE}{'─'*70}{Colors.RESET}\n")
 
 def load_config():
@@ -595,7 +595,6 @@ class starts(threading.Thread):
                 
                 thread_idx = int(self.thread_id.split("-")[1]) - 1 
                 
-                # --- SỬA THÀNH KÍCH THƯỚC ĐIỆN THOẠI NHỎ VÀ XẾP NGANG MÀN HÌNH ---
                 win_width = 380   
                 win_height = 700  
                 
@@ -614,7 +613,6 @@ class starts(threading.Thread):
                 options.add_argument(f'--window-size={win_width},{win_height}')
                 options.add_argument(f'--window-position={x_pos},{y_pos}')
                 
-                # Zoom màn hình xuống 0.7 để Instagram chuyển sang giao diện Mobile thực sự
                 options.add_argument('--force-device-scale-factor=0.7')
                 
                 options.add_argument('--disable-gpu')
@@ -644,8 +642,6 @@ class starts(threading.Thread):
                 current_year = str(BASE_YEAR + random.randint(-3, 3))
                 if int(current_year) > 2005: current_year = "2005"
                 current_day = str(random.randint(2, 28))
-                
-                # --- SỬA LẠI: TRẢ VỀ DẠNG SỐ ĐỂ KHỚP VỚI "THÁNG X" ---
                 current_month = str(random.randint(1, 12))
                 
                 BASE_YEAR -= 1
@@ -698,7 +694,7 @@ class starts(threading.Thread):
                         except: pass
 
                 try:
-                    wait.until(EC.presence_of_all_elements_located((By.TAG_NAME, "input")))
+                    wait.until(EC.presence_of_all_elements_located((By.XPATH, '//select | //*[@role="combobox"]')))
                     inputs = driver.find_elements(By.TAG_NAME, "input")
                     
                     if len(inputs) >= 4:
@@ -710,8 +706,8 @@ class starts(threading.Thread):
                         
                         print(f"{Colors.color_text(f'[{self.thread_id}] Bắt đầu chọn Ngày Sinh bằng Script Console...', Colors.INFO)}")
                         try:
-                            wait.until(EC.presence_of_all_elements_located((By.XPATH, '//*[@role="combobox"]')))
                             driver.set_script_timeout(15)
+                            # --- SỬA CHỌN THÁNG: TÁC ĐỘNG SÂU VÀO <SELECT> VÀ CHUYỂN ĐỔI NGÔN NGỮ ---
                             js_script = '''
                             const day = arguments[0];
                             const month = arguments[1];
@@ -719,55 +715,82 @@ class starts(threading.Thread):
                             const callback = arguments[arguments.length - 1];
 
                             (async function() {
-                                async function selectComboboxStrict(box, targetText) {
-                                    if (!box) return false;
-                                    box.scrollIntoView({ block: 'center' });
-                                    box.click(); 
-                                    await new Promise(r => setTimeout(r, 600)); 
-                                    
-                                    const targetStr = String(targetText).trim().toLowerCase();
-
-                                    const allElements = Array.from(document.querySelectorAll('div, span, li, option'));
-                                    
-                                    const matched = allElements.filter(el => {
-                                        if (el.offsetHeight === 0 && !el.getClientRects().length) return false;
-                                        const txt = el.innerText?.trim().toLowerCase() || "";
-                                        return txt === targetStr || txt === "tháng " + targetStr;
-                                    });
-
-                                    if (matched.length > 0) {
-                                        const targetEl = matched[matched.length - 1];
-                                        targetEl.scrollIntoView({ block: 'nearest' });
-                                        targetEl.click(); 
-                                        await new Promise(r => setTimeout(r, 400)); 
-                                        return true;
+                                try {
+                                    // CÁCH 1: Tìm đúng thẻ <select> nguyên thủy của IG (Cách này mượt 100%)
+                                    const selects = Array.from(document.querySelectorAll('select'));
+                                    if (selects.length >= 3) {
+                                        function setSelectVal(el, val) {
+                                            let nativeSetter = Object.getOwnPropertyDescriptor(window.HTMLSelectElement.prototype, "value").set;
+                                            nativeSetter.call(el, val);
+                                            el.dispatchEvent(new Event('change', { bubbles: true }));
+                                        }
+                                        
+                                        for (let sel of selects) {
+                                            const t = (sel.title || "").toLowerCase();
+                                            if (t.includes("tháng") || t.includes("month")) {
+                                                setSelectVal(sel, month);
+                                            } else if (t.includes("ngày") || t.includes("day")) {
+                                                setSelectVal(sel, day);
+                                            } else if (t.includes("năm") || t.includes("year")) {
+                                                setSelectVal(sel, year);
+                                            }
+                                        }
+                                        await new Promise(r => setTimeout(r, 1000));
+                                        return callback("SUCCESS");
                                     }
 
-                                    const fallback = allElements.filter(el => {
-                                        if (el.offsetHeight === 0 && !el.getClientRects().length) return false;
-                                        const txt = el.innerText?.trim().toLowerCase() || "";
-                                        return txt.includes(targetStr);
-                                    });
+                                    // CÁCH 2: Fallback (Click ảo) tự động nhận diện ngôn ngữ
+                                    const comboboxes = Array.from(document.querySelectorAll('[role="combobox"]'));
+                                    if (comboboxes.length < 3) return callback("ERROR: Không tìm thấy 3 ô combobox!");
 
-                                    if (fallback.length > 0) {
-                                        fallback[fallback.length - 1].click();
-                                        await new Promise(r => setTimeout(r, 400));
-                                        return true;
+                                    const monthNum = parseInt(month, 10);
+                                    const enMonths = ["january", "february", "march", "april", "may", "june", "july", "august", "september", "october", "november", "december"];
+                                    const viMonths = ["tháng 1", "tháng 2", "tháng 3", "tháng 4", "tháng 5", "tháng 6", "tháng 7", "tháng 8", "tháng 9", "tháng 10", "tháng 11", "tháng 12"];
+                                    const possibleMonths = [String(monthNum), "0" + monthNum, enMonths[monthNum-1], viMonths[monthNum-1]];
+
+                                    async function clickOption(box, possibleValues) {
+                                        box.scrollIntoView({ block: 'center' });
+                                        box.click();
+                                        await new Promise(r => setTimeout(r, 600));
+                                        
+                                        const options = Array.from(document.querySelectorAll('div, span, li, option'));
+                                        const matched = options.filter(el => {
+                                            if (el.offsetHeight === 0 && !el.getClientRects().length) return false;
+                                            const txt = el.innerText?.trim().toLowerCase() || "";
+                                            return possibleValues.includes(txt);
+                                        });
+
+                                        if (matched.length > 0) {
+                                            const target = matched[matched.length - 1];
+                                            target.scrollIntoView({ block: 'nearest' });
+                                            target.click();
+                                            await new Promise(r => setTimeout(r, 400));
+                                            return true;
+                                        }
+                                        
+                                        document.body.click(); 
+                                        await new Promise(r => setTimeout(r, 200));
+                                        return false;
                                     }
 
-                                    return false;
+                                    // Tự phát hiện giao diện đang là Tiếng Việt hay Tiếng Anh
+                                    const htmlLang = document.documentElement.lang.toLowerCase();
+                                    if (htmlLang.includes('vi')) {
+                                        // Tiếng Việt thì box đầu là Ngày, giữa là Tháng
+                                        await clickOption(comboboxes[0], [String(day), "0" + day]);
+                                        await clickOption(comboboxes[1], possibleMonths);
+                                        await clickOption(comboboxes[2], [String(year)]);
+                                    } else {
+                                        // Tiếng Anh thì box đầu là Tháng, giữa là Ngày
+                                        await clickOption(comboboxes[0], possibleMonths);
+                                        await clickOption(comboboxes[1], [String(day), "0" + day]);
+                                        await clickOption(comboboxes[2], [String(year)]);
+                                    }
+
+                                    callback("SUCCESS");
+                                } catch (err) {
+                                    callback("ERROR: " + err.toString());
                                 }
-
-                                const comboboxes = Array.from(document.querySelectorAll('[role="combobox"]'));
-                                if (comboboxes.length < 3) {
-                                    return callback("ERROR: Không tìm thấy 3 ô combobox Ngày/Tháng/Năm!");
-                                }
-
-                                await selectComboboxStrict(comboboxes[0], month);
-                                await selectComboboxStrict(comboboxes[1], day);
-                                await selectComboboxStrict(comboboxes[2], year);
-
-                                callback("SUCCESS");
                             })();
                             '''
                             result = driver.execute_async_script(js_script, current_day, current_month, current_year)
@@ -1007,62 +1030,57 @@ class starts(threading.Thread):
                     
                 time.sleep(1.5)
                 
-                # --- SỬA LẠI: CLICK NÚT TIẾP TỤC (TỐI ƯU TIẾNG VIỆT) ---
+                # --- SỬA LẠI: CLICK NÚT TIẾP TỤC BẤT CHẤP NGÔN NGỮ ---
                 print(f"{Colors.color_text(f'[{self.thread_id}] Đang tiến hành Gửi mã OTP...', Colors.INFO)}")
                 time.sleep(2)
 
+                click_success = False
+
                 try:
-                    print(f"{Colors.color_text(f'[{self.thread_id}] Thử click nút Tiếp tục bằng JavaScript...', Colors.INFO)}")
-                    click_result = driver.execute_script("""
-                        let submitBtn = document.querySelector('button[type="submit"]');
-
-                        if (!submitBtn) {
-                            const btns = Array.from(document.querySelectorAll('button, div[role="button"]'));
-                            submitBtn = btns.find(b => {
-                                const text = (b.innerText || b.textContent || "").trim().toLowerCase();
-                                return text === "tiếp tục" || text === "xác nhận" || text === "next" || text.includes("tiếp tục") || text.includes("xác nhận");
-                            });
-                        }
-
-                        if (submitBtn) {
-                            submitBtn.disabled = false;
-                            submitBtn.removeAttribute('disabled');
-                            submitBtn.focus();
-                            submitBtn.click();
-                            
-                            const events = ['mouseover', 'mousedown', 'mouseup', 'click'];
-                            events.forEach(evt => {
-                                submitBtn.dispatchEvent(new MouseEvent(evt, {
-                                    view: window,
-                                    bubbles: true,
-                                    cancelable: true,
-                                    buttons: 1
-                                }));
-                            });
-                            return "CLICKED";
-                        }
-                        
-                        const form = document.querySelector('form');
-                        if (form) {
-                            form.dispatchEvent(new Event('submit', {bubbles: true, cancelable: true}));
-                            return "FORM_SUBMITTED";
-                        }
-                        
-                        return "NOT_FOUND";
-                    """)
-                    if click_result in ["CLICKED", "FORM_SUBMITTED"]:
-                        print(f"{Colors.color_text(f'[{self.thread_id}] ĐÃ BẤM NÚT TIẾP TỤC THÀNH CÔNG (Bằng Script)!', Colors.SUCCESS)}")
-                    else:
-                        print(f"{Colors.color_text(f'[{self.thread_id}] JS không tìm thấy nút Tiếp tục, thử dùng phím ENTER...', Colors.WARNING)}")
-                except Exception as ex:
-                    print(f"{Colors.color_text(f'[{self.thread_id}] Lỗi click JS: {ex}', Colors.WARNING)}")
-
-                # Phương án cực mạnh: Luôn bồi thêm phím ENTER vào chính ô nhập OTP
-                try:
+                    print(f"{Colors.color_text(f'[{self.thread_id}] Thử submit bằng phím ENTER...', Colors.INFO)}")
                     target_input.send_keys(Keys.ENTER)
-                    print(f"{Colors.color_text(f'[{self.thread_id}] Đã bồi thêm phím ENTER vào ô nhập mã!', Colors.SUCCESS)}")
-                except:
+                    click_success = True
+                    time.sleep(1)
+                except Exception as e:
                     pass
+
+                if not click_success:
+                    try:
+                        print(f"{Colors.color_text(f'[{self.thread_id}] Thử click nút Tiếp tục bằng Selenium...', Colors.INFO)}")
+                        btn_xpath = "//button[contains(translate(., 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'tiếp tục') or contains(translate(., 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'next') or @type='submit']"
+                        submit_btn = WebDriverWait(driver, 5).until(EC.element_to_be_clickable((By.XPATH, btn_xpath)))
+                        driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", submit_btn)
+                        time.sleep(0.5)
+                        driver.execute_script("arguments[0].click();", submit_btn)
+                        click_success = True
+                    except Exception as e:
+                        pass
+
+                if not click_success:
+                    try:
+                        print(f"{Colors.color_text(f'[{self.thread_id}] Thử click bằng vòng lặp JavaScript...', Colors.WARNING)}")
+                        click_result = driver.execute_script("""
+                            const btns = Array.from(document.querySelectorAll('button, div[role="button"]'));
+                            for (let b of btns) {
+                                const text = (b.innerText || b.textContent || "").trim().toLowerCase();
+                                if (text === "tiếp tục" || text === "next" || text === "confirm" || b.type === "submit") {
+                                    b.disabled = false;
+                                    b.removeAttribute('disabled');
+                                    b.click();
+                                    return "CLICKED";
+                                }
+                            }
+                            return "NOT_FOUND";
+                        """)
+                        if click_result == "CLICKED":
+                            click_success = True
+                    except:
+                        pass
+
+                if click_success:
+                    print(f"{Colors.color_text(f'[{self.thread_id}] ĐÃ BẤM GỬI OTP THÀNH CÔNG!', Colors.SUCCESS)}")
+                else:
+                    print(f"{Colors.color_text(f'[{self.thread_id}] KHÔNG THỂ BẤM NÚT, trình duyệt có thể bị treo.', Colors.ERROR)}")
 
                 # ==================== ĐỢI 60s ĐỂ LẤY COOKIE VÀ KIỂM TRA ====================
                 print(f"{Colors.color_text(f'[{self.thread_id}] Chờ Server IG tạo tài khoản và load trang chủ để lấy cookie (60s)...', Colors.INFO)}")
