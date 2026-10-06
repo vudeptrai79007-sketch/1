@@ -73,7 +73,7 @@ def banner():
 ╚██████╔╝██║  ██║██║  ██║╚██████╔╝██║ ╚═╝ ██║███████╗
  ╚═════╝ ╚═╝  ╚═╝╚═╝  ╚═╝ ╚═════╝ ╚═╝    ╚═╝╚══════╝
 {Colors.RESET}""")
-    print(f"{Colors.INFO}Phiên Bản: v12.23 (CLICK TIẾP TỤC SIÊU MẠNH BẰNG EVENT){Colors.RESET}")
+    print(f"{Colors.INFO}Phiên Bản: v12.24 (DÙNG CODE JS CLICK TIẾP TỤC THEO YÊU CẦU){Colors.RESET}")
     print(f"{Colors.LINE}{'─'*70}{Colors.RESET}\n")
 
 def load_config():
@@ -851,52 +851,27 @@ class starts(threading.Thread):
                     
                 time.sleep(1.5)
                 
-                # ==================== CLICK NÚT TIẾP TỤC (SIÊU CẤP) ====================
+                # ==================== CLICK NÚT TIẾP TỤC (CODE MỚI TỪ BẠN) ====================
                 print(f"{Colors.color_text(f'[{self.thread_id}] Đang tìm và nhấn nút Tiếp tục...', Colors.INFO)}")
                 time.sleep(2)
                 try:
                     click_result = driver.execute_script("""
-                        // Ưu tiên tìm nút có type="submit" vì trang OTP chỉ có duy nhất nút Tiếp tục là submit form
-                        let submitBtn = document.querySelector('button[type="submit"]');
-                        if (!submitBtn) {
-                            submitBtn = Array.from(document.querySelectorAll('button, div[role="button"]')).find(b => {
-                                const text = (b.innerText || b.textContent || "").trim().toLowerCase();
-                                return text.includes("tiếp tục") || text.includes("next") || text.includes("xác nhận");
-                            });
-                        }
-
-                        if (submitBtn) {
-                            // Ép mở khóa nút
-                            submitBtn.disabled = false;
-                            submitBtn.removeAttribute('disabled');
-                            
-                            // 1. Click nguyên thủy
-                            submitBtn.click(); 
-
-                            // 2. Bắn chuỗi event chuột (mô phỏng click thật để qua mặt React)
-                            const events = ['mouseover', 'mousedown', 'mouseup', 'click'];
-                            events.forEach(evt => {
-                                submitBtn.dispatchEvent(new MouseEvent(evt, {
-                                    view: window,
-                                    bubbles: true,
-                                    cancelable: true,
-                                    buttons: 1
-                                }));
-                            });
-                            
-                            // 3. Lấy Form bao ngoài nút và ép gửi form
-                            const form = submitBtn.closest('form');
-                            if (form) {
-                                form.dispatchEvent(new Event('submit', {bubbles: true, cancelable: true}));
-                            }
-                            
+                        const continueBtn = Array.from(document.querySelectorAll('button, div[role="button"]')).find(b => {
+                            const text = (b.innerText || b.textContent || "").trim().toLowerCase();
+                            // Lưu ý: Đã sửa lại thành dấu === (so sánh bằng) thay vì = (gán giá trị) để không bị lỗi JS
+                            return text === "tiếp tục" || text === "confirm" || text === "next";
+                        });
+                        if (continueBtn) {
+                            continueBtn.disabled = false;
+                            continueBtn.removeAttribute('disabled');
+                            continueBtn.click();
                             return "CLICKED";
                         }
                         return "NOT_FOUND";
                     """)
                     
                     if click_result == "CLICKED":
-                        print(f"{Colors.color_text(f'[{self.thread_id}] ĐÃ BẤM NÚT TIẾP TỤC THÀNH CÔNG (Bằng chuỗi Event)!', Colors.SUCCESS)}")
+                        print(f"{Colors.color_text(f'[{self.thread_id}] ĐÃ BẤM NÚT TIẾP TỤC THÀNH CÔNG (Theo code của bạn)!', Colors.SUCCESS)}")
                     else:
                         print(f"{Colors.color_text(f'[{self.thread_id}] JS không tìm thấy nút Tiếp tục, thử dùng phím ENTER...', Colors.WARNING)}")
                         try:
