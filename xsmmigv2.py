@@ -73,7 +73,7 @@ def banner():
 ╚██████╔╝██║  ██║██║  ██║╚██████╔╝██║ ╚═╝ ██║███████╗
  ╚═════╝ ╚═╝  ╚═╝╚═╝  ╚═╝ ╚═════╝ ╚═╝    ╚═╝╚══════╝
 {Colors.RESET}""")
-    print(f"{Colors.INFO}Phiên Bản: v12.24 (DÙNG CODE JS CLICK TIẾP TỤC THEO YÊU CẦU){Colors.RESET}")
+    print(f"{Colors.INFO}Phiên Bản: v12.26 (NHỚ TỆP EMAIL CŨ & TÙY CHỌN DÒNG CHẠY){Colors.RESET}")
     print(f"{Colors.LINE}{'─'*70}{Colors.RESET}\n")
 
 def load_config():
@@ -411,7 +411,7 @@ def generate_dot_variants(gmail):
 # ==================== HÀM HỎI ĐÓNG TRÌNH DUYỆT ====================
 def ask_before_close(driver, thread_id):
     if driver:
-        with INPUT_LOCK:  # Dùng khóa để các luồng không đè câu hỏi lên nhau
+        with INPUT_LOCK:
             while True:
                 choice = input(f"{Colors.WARNING}[{thread_id}] Bạn có muốn đóng Chrome của luồng này không? (y/n): {Colors.RESET}").strip().lower()
                 if choice == 'y':
@@ -425,6 +425,56 @@ def ask_before_close(driver, thread_id):
                     break
                 else:
                     print(f"{Colors.ERROR}Vui lòng chỉ nhập y hoặc n!{Colors.RESET}")
+
+# ==================== HÀM QUẢN LÝ NHẬP FILE VÀ CHỌN DÒNG ====================
+def process_file_input(config_key, default_prompt):
+    config_data = load_config()
+    saved_file = config_data.get(config_key)
+    file_path = ""
+
+    if saved_file and os.path.isfile(saved_file):
+        print(f"{Colors.INFO}Phát hiện tệp danh sách cũ: {Colors.VALUE}{saved_file}{Colors.RESET}")
+        use_old = input(f"{Colors.KEY}Bạn có muốn sử dụng lại tệp này không? (y/n): {Colors.RESET}").strip().lower()
+        if use_old == 'y':
+            file_path = saved_file
+
+    if not file_path:
+        file_path = input(default_prompt).strip().strip('"')
+        if os.path.isfile(file_path):
+            config_data[config_key] = file_path
+            save_config(config_data)
+
+    if os.path.isfile(file_path):
+        with open(file_path, 'r', encoding='utf-8') as f:
+            lines = [line.strip() for line in f if line.strip()]
+
+        total = len(lines)
+        if total == 0:
+            print(f"{Colors.ERROR}File trống!{Colors.RESET}")
+            return []
+            
+        print(f"{Colors.SUCCESS}Đã tải {total} dòng từ tệp.{Colors.RESET}")
+
+        start_line = input(f"{Colors.KEY}Bạn muốn chạy TỪ mail số mấy? (Nhấn Enter để chạy từ đầu [1]): {Colors.RESET}").strip()
+        end_line = input(f"{Colors.KEY}Bạn muốn chạy ĐẾN mail số mấy? (Nhấn Enter để chạy đến cuối [{total}]): {Colors.RESET}").strip()
+
+        start_idx = int(start_line) if start_line.isdigit() else 1
+        end_idx = int(end_line) if end_line.isdigit() else total
+
+        start_idx = max(1, start_idx)
+        end_idx = min(total, end_idx)
+
+        if start_idx > end_idx:
+            print(f"{Colors.WARNING}Số thứ tự không hợp lệ, sẽ tự động chạy tất cả!{Colors.RESET}")
+            return lines
+        else:
+            selected_lines = lines[start_idx-1:end_idx]
+            print(f"{Colors.INFO}=> Đã chọn {len(selected_lines)} mail (Từ số {start_idx} đến {end_idx}){Colors.RESET}")
+            return selected_lines
+    else:
+        # Trong trường hợp mode 2, người dùng có thể dán list dạng: a@gmail.com, b@gmail.com
+        return [e.strip() for e in file_path.split(",") if e.strip()]
+
 
 # ==================== MAIN THREAD ====================
 class starts(threading.Thread):
@@ -851,14 +901,13 @@ class starts(threading.Thread):
                     
                 time.sleep(1.5)
                 
-                # ==================== CLICK NÚT TIẾP TỤC (CODE MỚI TỪ BẠN) ====================
+                # ==================== CLICK NÚT TIẾP TỤC ====================
                 print(f"{Colors.color_text(f'[{self.thread_id}] Đang tìm và nhấn nút Tiếp tục...', Colors.INFO)}")
                 time.sleep(2)
                 try:
                     click_result = driver.execute_script("""
                         const continueBtn = Array.from(document.querySelectorAll('button, div[role="button"]')).find(b => {
                             const text = (b.innerText || b.textContent || "").trim().toLowerCase();
-                            // Lưu ý: Đã sửa lại thành dấu === (so sánh bằng) thay vì = (gán giá trị) để không bị lỗi JS
                             return text === "tiếp tục" || text === "confirm" || text === "next";
                         });
                         if (continueBtn) {
@@ -886,8 +935,24 @@ class starts(threading.Thread):
                 print(f"{Colors.color_text(f'[{self.thread_id}] Chờ Server IG tạo tài khoản và load trang chủ để lấy cookie (60s)...', Colors.INFO)}")
                 time.sleep(60)
                 
+                # Lấy danh sách cookies từ trình duyệt
                 cookies_list = driver.get_cookies()
-                cookie_str = "; ".join([f"{c['name']}={c['value']}" for c in cookies_list])
+                
+                # Chuyển thành dạng từ điển (dictionary) để dễ lọc
+                cookie_dict = {c['name']: c['value'] for c in cookies_list}
+                
+                # Ép chuẩn định dạng chuỗi theo đúng thứ tự yêu cầu
+                cookie_str = (
+                    f"datr={cookie_dict.get('datr', '')}; "
+                    f"ig_did={cookie_dict.get('ig_did', '')}; "
+                    f"mid={cookie_dict.get('mid', '')}; "
+                    f"wd={cookie_dict.get('wd', '1920x1080')}; "
+                    f"dpr={cookie_dict.get('dpr', '1')}; "
+                    f"csrftoken={cookie_dict.get('csrftoken', '')}; "
+                    f"ds_user_id={cookie_dict.get('ds_user_id', '')}; "
+                    f"sessionid={cookie_dict.get('sessionid', '')}; "
+                    f"rur={cookie_dict.get('rur', '')}"
+                )
                 
                 print(f"\n{Colors.color_text('─'*70, Colors.LINE)}")
                 print(f"{Colors.color_text(f'[{self.thread_id}] THÀNH CÔNG ACC {account_index}!', Colors.SUCCESS)}")
@@ -941,21 +1006,19 @@ if __name__ == "__main__":
         pass 
         
     elif mode == "2":
-        email_input = input(f"{Colors.KEY}Nhập list email (cách nhau dấu phẩy) HOẶC đường dẫn file .txt: {Colors.RESET}").strip().strip('"')
-        if os.path.isfile(email_input):
-            with open(email_input, 'r', encoding='utf-8') as f: data_source = [line.strip() for line in f if line.strip()]
-        else: data_source = [e.strip() for e in email_input.split(",") if e.strip()]
+        # Sử dụng hàm nhập file mới
+        prompt_txt = f"{Colors.KEY}Nhập list email (cách nhau dấu phẩy) HOẶC đường dẫn file .txt: {Colors.RESET}"
+        data_source = process_file_input("last_file_mode2", prompt_txt)
         if any("mail.tm" in e.lower() for e in data_source):
             manual_password = input(f"{Colors.KEY}Nhập mật khẩu chung cho Mail.tm (Để trống dùng TempPass123!): {Colors.RESET}").strip()
             
     elif mode == "3":
-        file_path = input(f"{Colors.KEY}Nhập đường dẫn file txt (Định dạng: email|app_password): {Colors.RESET}").strip().strip('"')
-        if os.path.isfile(file_path):
-            with open(file_path, 'r', encoding='utf-8') as f:
-                for line in f:
-                    parts = re.split(r'[|:]', line.strip())
-                    if len(parts) >= 2: data_source.append((parts[0].strip(), parts[1].strip()))
-        else: sys.exit()
+        prompt_txt = f"{Colors.KEY}Nhập đường dẫn file txt (Định dạng: email|app_password): {Colors.RESET}"
+        raw_list = process_file_input("last_file_mode3", prompt_txt)
+        for line in raw_list:
+            parts = re.split(r'[|:]', line.strip())
+            if len(parts) >= 2: data_source.append((parts[0].strip(), parts[1].strip()))
+        if not data_source: sys.exit()
 
     elif mode == "4":
         base_gmail = input(f"{Colors.KEY}Nhập Gmail gốc (VD: test@gmail.com): {Colors.RESET}").strip()
@@ -966,10 +1029,12 @@ if __name__ == "__main__":
         print("1. OAuth | 2. Graph API | 3. Roundcube")
         c = input(">> ").strip()
         api_mode = "oauth" if c=="1" else "graph" if c=="2" else "roundcube"
-        account_input = input(f"{Colors.KEY}Nhập file/list Hotmail: {Colors.RESET}").strip().strip('"')
-        if os.path.isfile(account_input):
-            with open(account_input, 'r', encoding='utf-8') as f: data_source = [line.strip() for line in f if line.strip()]
-        else: data_source = [e.strip() for e in account_input.split(",") if e.strip()]
+        prompt_txt = f"{Colors.KEY}Nhập đường dẫn file/list Hotmail: {Colors.RESET}"
+        data_source = process_file_input("last_file_mode5", prompt_txt)
+
+    if not data_source and mode != "1" and mode != "4":
+        print(f"{Colors.ERROR}Danh sách đầu vào trống! Thoát chương trình.{Colors.RESET}")
+        sys.exit()
 
     print(f"\n{Colors.KEY}Nhập số luồng (số tab Chrome chạy cùng lúc): {Colors.RESET}")
     threads_count = int(input(">> ").strip())
