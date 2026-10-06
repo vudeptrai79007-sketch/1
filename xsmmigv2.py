@@ -38,6 +38,7 @@ OTP_LOCK = threading.Lock()
 DATA_LOCK = threading.Lock()
 BROWSER_LOCK = threading.Lock()  # Khóa chống tranh chấp file khi mở đa luồng Chrome
 INPUT_LOCK = threading.Lock()    # Khóa chống loạn Terminal khi hỏi y/n
+TYPE_LOCK = threading.Lock()     # Khóa gõ phím (chống giật focus làm rớt ký tự khi chạy đa luồng)
 CONFIG_FILE = "config_gmail.json"
 BASE_YEAR = random.randint(1995, 2005)
 
@@ -73,7 +74,7 @@ def banner():
 ╚██████╔╝██║  ██║██║  ██║╚██████╔╝██║ ╚═╝ ██║███████╗
  ╚═════╝ ╚═╝  ╚═╝╚═╝  ╚═╝ ╚═════╝ ╚═╝    ╚═╝╚══════╝
 {Colors.RESET}""")
-    print(f"{Colors.INFO}Phiên Bản: v12.26 (NHỚ TỆP EMAIL CŨ & TÙY CHỌN DÒNG CHẠY){Colors.RESET}")
+    print(f"{Colors.INFO}Phiên Bản: v12.27 (KHÓA GÕ PHÍM & VƯỢT REACT OTP ĐA LUỒNG){Colors.RESET}")
     print(f"{Colors.LINE}{'─'*70}{Colors.RESET}\n")
 
 def load_config():
@@ -472,7 +473,6 @@ def process_file_input(config_key, default_prompt):
             print(f"{Colors.INFO}=> Đã chọn {len(selected_lines)} mail (Từ số {start_idx} đến {end_idx}){Colors.RESET}")
             return selected_lines
     else:
-        # Trong trường hợp mode 2, người dùng có thể dán list dạng: a@gmail.com, b@gmail.com
         return [e.strip() for e in file_path.split(",") if e.strip()]
 
 
@@ -571,15 +571,13 @@ class starts(threading.Thread):
                 
                 options.add_argument('--force-device-scale-factor=0.5')
                 
-                # Tối ưu RAM & CPU để chạy nhiều luồng không giật lag
                 options.add_argument('--disable-gpu')
                 options.add_argument('--disable-software-rasterizer')
                 options.add_argument('--disable-dev-shm-usage')
                 
-                # SỬA LỖI TRANG CHẤP FILE KHI ĐA LUỒNG (WinError 183)
                 with BROWSER_LOCK:
                     driver = uc.Chrome(options=options)
-                    time.sleep(1) # Nghỉ 1s nhường cho luồng tiếp theo mở
+                    time.sleep(1) 
                 # ========================================================
                     
                 wait = WebDriverWait(driver, 15)
@@ -611,44 +609,46 @@ class starts(threading.Thread):
                         time.sleep(0.5)
                     except: pass
 
+                # Thêm TYPE_LOCK vào hàm gõ phím để giải quyết triệt để lỗi mất chữ khi chạy đa luồng
                 def human_type(element, text, is_username=False):
-                    slow_scroll_to_element(element)
-                    
-                    try: element.click() 
-                    except: driver.execute_script("arguments[0].click();", element) 
-                    time.sleep(0.5)
-                    
-                    driver.execute_script("arguments[0].focus();", element)
-                    
-                    if is_username:
-                        print(f"{Colors.color_text(f'[{self.thread_id}] Chờ IG gợi ý Username để tiến hành xóa...', Colors.WARNING)}")
-                        time.sleep(2) 
-                        element.send_keys(Keys.END)
-                        time.sleep(0.2)
+                    with TYPE_LOCK:
+                        slow_scroll_to_element(element)
                         
-                        current_val = element.get_attribute("value")
-                        if current_val:
-                            for _ in range(len(current_val) + 5):
-                                element.send_keys(Keys.BACKSPACE)
-                                time.sleep(0.01)
-                                
-                        driver.execute_script("arguments[0].value = '';", element)
-                        driver.execute_script("arguments[0].dispatchEvent(new Event('input', { bubbles: true }));", element)
+                        try: element.click() 
+                        except: driver.execute_script("arguments[0].click();", element) 
                         time.sleep(0.5)
-                    else:
-                        element.send_keys(Keys.CONTROL + "a")
-                        time.sleep(0.2)
-                        element.send_keys(Keys.BACKSPACE)
-                        time.sleep(0.3)
-                    
-                    for char in text:
+                        
                         driver.execute_script("arguments[0].focus();", element)
-                        element.send_keys(char)
-                        time.sleep(random.uniform(0.05, 0.15)) 
-                    time.sleep(random.uniform(0.5, 1.0))
-                    
-                    try: element.send_keys(Keys.TAB)
-                    except: pass
+                        
+                        if is_username:
+                            print(f"{Colors.color_text(f'[{self.thread_id}] Chờ IG gợi ý Username để tiến hành xóa...', Colors.WARNING)}")
+                            time.sleep(2) 
+                            element.send_keys(Keys.END)
+                            time.sleep(0.2)
+                            
+                            current_val = element.get_attribute("value")
+                            if current_val:
+                                for _ in range(len(current_val) + 5):
+                                    element.send_keys(Keys.BACKSPACE)
+                                    time.sleep(0.01)
+                                    
+                            driver.execute_script("arguments[0].value = '';", element)
+                            driver.execute_script("arguments[0].dispatchEvent(new Event('input', { bubbles: true }));", element)
+                            time.sleep(0.5)
+                        else:
+                            element.send_keys(Keys.CONTROL + "a")
+                            time.sleep(0.2)
+                            element.send_keys(Keys.BACKSPACE)
+                            time.sleep(0.3)
+                        
+                        for char in text:
+                            driver.execute_script("arguments[0].focus();", element)
+                            element.send_keys(char)
+                            time.sleep(random.uniform(0.05, 0.15)) 
+                        time.sleep(random.uniform(0.5, 1.0))
+                        
+                        try: element.send_keys(Keys.TAB)
+                        except: pass
 
                 try:
                     wait.until(EC.presence_of_all_elements_located((By.TAG_NAME, "input")))
@@ -882,22 +882,27 @@ class starts(threading.Thread):
                     try:
                         human_type(target_input, otp_code)
                     except Exception:
-                        print(f"{Colors.color_text(f'[{self.thread_id}] Selenium bị chặn, đang ép điền mã bằng JavaScript...', Colors.WARNING)}")
-                        driver.execute_script(f"""
+                        # Nâng cấp Bypass ReactJS 16+
+                        print(f"{Colors.color_text(f'[{self.thread_id}] Dùng hàm JS tiêu chuẩn React để bơm OTP...', Colors.WARNING)}")
+                        driver.execute_script("""
                             let input = arguments[0];
-                            input.value = '{otp_code}';
-                            input.dispatchEvent(new Event('input', {{ bubbles: true }}));
-                            input.dispatchEvent(new Event('change', {{ bubbles: true }}));
-                        """, target_input)
+                            let value = arguments[1];
+                            let nativeInputValueSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value").set;
+                            nativeInputValueSetter.call(input, value);
+                            input.dispatchEvent(new Event('input', { bubbles: true }));
+                            input.dispatchEvent(new Event('change', { bubbles: true }));
+                        """, target_input, otp_code)
                 except Exception as ex:
                     print(f"{Colors.color_text(f'[{self.thread_id}] Lỗi nghiêm trọng lúc điền ({ex}), dùng JS quét toàn cục...', Colors.WARNING)}")
-                    driver.execute_script(f"""
+                    driver.execute_script("""
                         let input = document.querySelector('input[type="text"], input[name*="code"]');
-                        if(input) {{
-                            input.value = '{otp_code}';
-                            input.dispatchEvent(new Event('input', {{ bubbles: true }}));
-                        }}
-                    """)
+                        if(input) {
+                            let value = arguments[0];
+                            let nativeInputValueSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value").set;
+                            nativeInputValueSetter.call(input, value);
+                            input.dispatchEvent(new Event('input', { bubbles: true }));
+                        }
+                    """, otp_code)
                     
                 time.sleep(1.5)
                 
@@ -1006,7 +1011,6 @@ if __name__ == "__main__":
         pass 
         
     elif mode == "2":
-        # Sử dụng hàm nhập file mới
         prompt_txt = f"{Colors.KEY}Nhập list email (cách nhau dấu phẩy) HOẶC đường dẫn file .txt: {Colors.RESET}"
         data_source = process_file_input("last_file_mode2", prompt_txt)
         if any("mail.tm" in e.lower() for e in data_source):
