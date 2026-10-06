@@ -41,7 +41,7 @@ if 'distutils' not in sys.modules:
     sys.modules['distutils'] = distutils_mod
     sys.modules['distutils.version'] = distutils_version_mod
 # -----------------------------------------------------------------------------------
-# -----------------------------------------------------------------------------------
+
 import os
 import time
 import threading
@@ -118,7 +118,7 @@ def banner():
 ╚██████╔╝██║  ██║██║  ██║╚██████╔╝██║ ╚═╝ ██║███████╗
  ╚═════╝ ╚═╝  ╚═╝╚═╝  ╚═╝ ╚═════╝ ╚═╝    ╚═╝╚══════╝
 {Colors.RESET}""")
-    print(f"{Colors.INFO}Phiên Bản: v12.27 (KHÓA GÕ PHÍM & VƯỢT REACT OTP ĐA LUỒNG){Colors.RESET}")
+    print(f"{Colors.INFO}Phiên Bản: v12.31 (GIAO DIỆN MOBILE CHUYÊN NGHIỆP){Colors.RESET}")
     print(f"{Colors.LINE}{'─'*70}{Colors.RESET}\n")
 
 def load_config():
@@ -595,10 +595,11 @@ class starts(threading.Thread):
                 
                 thread_idx = int(self.thread_id.split("-")[1]) - 1 
                 
-                win_width = 960  
-                win_height = 540 
+                # --- SỬA THÀNH KÍCH THƯỚC ĐIỆN THOẠI NHỎ VÀ XẾP NGANG MÀN HÌNH ---
+                win_width = 380   
+                win_height = 700  
                 
-                columns = 2 
+                columns = 5       
                 col = thread_idx % columns
                 row = thread_idx // columns
                 
@@ -613,7 +614,8 @@ class starts(threading.Thread):
                 options.add_argument(f'--window-size={win_width},{win_height}')
                 options.add_argument(f'--window-position={x_pos},{y_pos}')
                 
-                options.add_argument('--force-device-scale-factor=0.5')
+                # Zoom màn hình xuống 0.7 để Instagram chuyển sang giao diện Mobile thực sự
+                options.add_argument('--force-device-scale-factor=0.7')
                 
                 options.add_argument('--disable-gpu')
                 options.add_argument('--disable-software-rasterizer')
@@ -642,8 +644,9 @@ class starts(threading.Thread):
                 current_year = str(BASE_YEAR + random.randint(-3, 3))
                 if int(current_year) > 2005: current_year = "2005"
                 current_day = str(random.randint(2, 28))
-                month_names_en = ["", "January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"]
-                current_month = month_names_en[random.randint(1, 12)]
+                
+                # --- SỬA LẠI: TRẢ VỀ DẠNG SỐ ĐỂ KHỚP VỚI "THÁNG X" ---
+                current_month = str(random.randint(1, 12))
                 
                 BASE_YEAR -= 1
                 if BASE_YEAR < 1990: BASE_YEAR = random.randint(1995, 2005)
@@ -654,7 +657,6 @@ class starts(threading.Thread):
                         time.sleep(0.5)
                     except: pass
 
-                # Thêm TYPE_LOCK vào hàm gõ phím để giải quyết triệt để lỗi mất chữ khi chạy đa luồng
                 def human_type(element, text, is_username=False):
                     with TYPE_LOCK:
                         slow_scroll_to_element(element)
@@ -725,18 +727,15 @@ class starts(threading.Thread):
                                     
                                     const targetStr = String(targetText).trim().toLowerCase();
 
-                                    // Tìm tất cả các phần tử có thể là option hoặc item trong danh sách thả xuống đang mở
                                     const allElements = Array.from(document.querySelectorAll('div, span, li, option'));
                                     
-                                    // Lọc các phần tử hiển thị và có text khớp chính xác
                                     const matched = allElements.filter(el => {
                                         if (el.offsetHeight === 0 && !el.getClientRects().length) return false;
                                         const txt = el.innerText?.trim().toLowerCase() || "";
-                                        return txt === targetStr;
+                                        return txt === targetStr || txt === "tháng " + targetStr;
                                     });
 
                                     if (matched.length > 0) {
-                                        // Lấy phần tử cuối cùng (thường là item nằm trong popup mới mở)
                                         const targetEl = matched[matched.length - 1];
                                         targetEl.scrollIntoView({ block: 'nearest' });
                                         targetEl.click(); 
@@ -744,7 +743,6 @@ class starts(threading.Thread):
                                         return true;
                                     }
 
-                                    // Fallback: tìm theo kiểu chứa chuỗi nếu khớp chính xác không thấy
                                     const fallback = allElements.filter(el => {
                                         if (el.offsetHeight === 0 && !el.getClientRects().length) return false;
                                         const txt = el.innerText?.trim().toLowerCase() || "";
@@ -814,10 +812,8 @@ class starts(threading.Thread):
                     print(f"{Colors.color_text(f'[{self.thread_id}] Đang tìm và nhấn nút Gửi/Đăng Ký (Sign up)...', Colors.INFO)}")
                     try:
                         click_result = driver.execute_script("""
-                            // 1. Ưu tiên cao nhất: Tìm trực tiếp button[type="submit"]
                             let submitBtn = document.querySelector('button[type="submit"]');
 
-                            // 2. Nếu chưa thấy, tìm trong tất cả button hoặc div[role="button"] có text phù hợp
                             if (!submitBtn) {
                                 const allClickables = Array.from(document.querySelectorAll('button, div[role="button"]'));
                                 submitBtn = allClickables.find(b => {
@@ -827,7 +823,6 @@ class starts(threading.Thread):
                                 });
                             }
 
-                            // 3. Nếu vẫn chưa thấy, tìm qua thẻ span bên trong
                             if (!submitBtn) {
                                 const spans = Array.from(document.querySelectorAll('span')).filter(s => {
                                     const t = s.innerText?.trim().toLowerCase() || "";
@@ -862,7 +857,6 @@ class starts(threading.Thread):
                                 return "CLICKED";
                             }
                             
-                            // Fallback cuối: Submit form trực tiếp qua DOM
                             const form = document.querySelector('form');
                             if (form) {
                                 form.submit();
@@ -897,7 +891,6 @@ class starts(threading.Thread):
                     time.sleep(5)
                     ask_before_close(driver, self.thread_id)
                     return False
-
 
                 # ==================== NHẬN DIỆN Ô NHẬP OTP ĐA LỚP ====================
                 print(f"{Colors.color_text(f'[{self.thread_id}] Chờ giao diện nhập OTP...', Colors.INFO)}")
@@ -991,8 +984,7 @@ class starts(threading.Thread):
                     try:
                         human_type(target_input, otp_code)
                     except Exception:
-                        # Nâng cấp Bypass ReactJS 16+
-                        print(f"{Colors.color_text(f'[{self.thread_id}] Dùng hàm JS tiêu chuẩn React để bơm OTP...', Colors.WARNING)}")
+                        print(f"{Colors.color_text(f'[{self.thread_id}] Selenium bị chặn, đang ép điền mã bằng JavaScript...', Colors.WARNING)}")
                         driver.execute_script("""
                             let input = arguments[0];
                             let value = arguments[1];
@@ -1015,45 +1007,78 @@ class starts(threading.Thread):
                     
                 time.sleep(1.5)
                 
-                # ==================== CLICK NÚT TIẾP TỤC ====================
-                print(f"{Colors.color_text(f'[{self.thread_id}] Đang tìm và nhấn nút Tiếp tục...', Colors.INFO)}")
+                # --- SỬA LẠI: CLICK NÚT TIẾP TỤC (TỐI ƯU TIẾNG VIỆT) ---
+                print(f"{Colors.color_text(f'[{self.thread_id}] Đang tiến hành Gửi mã OTP...', Colors.INFO)}")
                 time.sleep(2)
+
                 try:
+                    print(f"{Colors.color_text(f'[{self.thread_id}] Thử click nút Tiếp tục bằng JavaScript...', Colors.INFO)}")
                     click_result = driver.execute_script("""
-                        const continueBtn = Array.from(document.querySelectorAll('button, div[role="button"]')).find(b => {
-                            const text = (b.innerText || b.textContent || "").trim().toLowerCase();
-                            return text === "tiếp tục" || text === "confirm" || text === "next";
-                        });
-                        if (continueBtn) {
-                            continueBtn.disabled = false;
-                            continueBtn.removeAttribute('disabled');
-                            continueBtn.click();
+                        let submitBtn = document.querySelector('button[type="submit"]');
+
+                        if (!submitBtn) {
+                            const btns = Array.from(document.querySelectorAll('button, div[role="button"]'));
+                            submitBtn = btns.find(b => {
+                                const text = (b.innerText || b.textContent || "").trim().toLowerCase();
+                                return text === "tiếp tục" || text === "xác nhận" || text === "next" || text.includes("tiếp tục") || text.includes("xác nhận");
+                            });
+                        }
+
+                        if (submitBtn) {
+                            submitBtn.disabled = false;
+                            submitBtn.removeAttribute('disabled');
+                            submitBtn.focus();
+                            submitBtn.click();
+                            
+                            const events = ['mouseover', 'mousedown', 'mouseup', 'click'];
+                            events.forEach(evt => {
+                                submitBtn.dispatchEvent(new MouseEvent(evt, {
+                                    view: window,
+                                    bubbles: true,
+                                    cancelable: true,
+                                    buttons: 1
+                                }));
+                            });
                             return "CLICKED";
                         }
+                        
+                        const form = document.querySelector('form');
+                        if (form) {
+                            form.dispatchEvent(new Event('submit', {bubbles: true, cancelable: true}));
+                            return "FORM_SUBMITTED";
+                        }
+                        
                         return "NOT_FOUND";
                     """)
-                    
-                    if click_result == "CLICKED":
-                        print(f"{Colors.color_text(f'[{self.thread_id}] ĐÃ BẤM NÚT TIẾP TỤC THÀNH CÔNG (Theo code của bạn)!', Colors.SUCCESS)}")
+                    if click_result in ["CLICKED", "FORM_SUBMITTED"]:
+                        print(f"{Colors.color_text(f'[{self.thread_id}] ĐÃ BẤM NÚT TIẾP TỤC THÀNH CÔNG (Bằng Script)!', Colors.SUCCESS)}")
                     else:
                         print(f"{Colors.color_text(f'[{self.thread_id}] JS không tìm thấy nút Tiếp tục, thử dùng phím ENTER...', Colors.WARNING)}")
-                        try:
-                            target_input.send_keys(Keys.ENTER)
-                            print(f"{Colors.color_text(f'[{self.thread_id}] Đã bấm ENTER thành công!', Colors.SUCCESS)}")
-                        except Exception as e: 
-                            pass
                 except Exception as ex:
-                    print(f"{Colors.color_text(f'[{self.thread_id}] Lỗi khi chạy Script click nút Tiếp tục: {ex}', Colors.WARNING)}")
+                    print(f"{Colors.color_text(f'[{self.thread_id}] Lỗi click JS: {ex}', Colors.WARNING)}")
 
-                # ==================== ĐỢI 60s ĐỂ LẤY COOKIE ====================
+                # Phương án cực mạnh: Luôn bồi thêm phím ENTER vào chính ô nhập OTP
+                try:
+                    target_input.send_keys(Keys.ENTER)
+                    print(f"{Colors.color_text(f'[{self.thread_id}] Đã bồi thêm phím ENTER vào ô nhập mã!', Colors.SUCCESS)}")
+                except:
+                    pass
+
+                # ==================== ĐỢI 60s ĐỂ LẤY COOKIE VÀ KIỂM TRA ====================
                 print(f"{Colors.color_text(f'[{self.thread_id}] Chờ Server IG tạo tài khoản và load trang chủ để lấy cookie (60s)...', Colors.INFO)}")
                 time.sleep(60)
                 
                 # Lấy danh sách cookies từ trình duyệt
                 cookies_list = driver.get_cookies()
-                
-                # Chuyển thành dạng từ điển (dictionary) để dễ lọc
                 cookie_dict = {c['name']: c['value'] for c in cookies_list}
+                
+                # BƯỚC KIỂM TRA QUAN TRỌNG: NẾU KHÔNG CÓ SESSION ID TỨC LÀ TẠO XỊT
+                if not cookie_dict.get('sessionid') or not cookie_dict.get('ds_user_id'):
+                    print(f"\n{Colors.color_text('─'*70, Colors.LINE)}")
+                    print(f"{Colors.color_text(f'[{self.thread_id}] LỖI: Tài khoản chưa được tạo (Bị chặn form / sai mã / nút không phản hồi).', Colors.ERROR)}")
+                    print(f"{Colors.color_text('─'*70, Colors.LINE)}\n")
+                    ask_before_close(driver, self.thread_id)
+                    return False
                 
                 # Ép chuẩn định dạng chuỗi theo đúng thứ tự yêu cầu
                 cookie_str = (
