@@ -77,15 +77,30 @@ except ImportError:
     from selenium.webdriver.common.keys import Keys
     import requests
 
-# BIẾN TOÀN CỤC
+# BIẾN TOÀN CỤC & CÁC KHÓA (LOCK)
 STOP_EVENT = threading.Event()
 OTP_LOCK = threading.Lock() 
 DATA_LOCK = threading.Lock()
 BROWSER_LOCK = threading.Lock()  
 INPUT_LOCK = threading.Lock()    
-TYPE_LOCK = threading.Lock()     
+TYPE_LOCK = threading.Lock() 
+SUBMIT_LOCK = threading.Lock() # Khóa xếp hàng giãn cách khi bấm Gửi
 CONFIG_FILE = "config_gmail.json"
 BASE_YEAR = random.randint(1995, 2005)
+
+# --- CƠ CHẾ ĐÓNG BĂNG MÀN HÌNH CHỐNG TRÔI LỆNH TRONG ĐA LUỒNG ---
+built_in_print = print
+PRINT_LOCK = threading.Lock()
+PAUSE_FOR_INPUT = threading.Event()
+PAUSE_FOR_INPUT.set() # Bật trạng thái cho phép in
+
+def thread_safe_print(*args, **kwargs):
+    PAUSE_FOR_INPUT.wait() # Chờ nếu có luồng đang đòi nhập OTP
+    with PRINT_LOCK:
+        built_in_print(*args, **kwargs)
+
+# Ghi đè hàm print gốc của hệ thống bằng hàm đã nâng cấp
+print = thread_safe_print 
 
 # ========== BẢNG MÀU ==========
 class Colors:
@@ -111,7 +126,7 @@ class Colors:
 # ========== HÀM CƠ BẢN ==========
 def banner():
     os.system('clear' if os.name == 'posix' else 'cls')
-    print(f"""{Colors.PRIMARY}
+    built_in_print(f"""{Colors.PRIMARY}
  ██████╗ ██╗  ██╗██████╗  ██████╗ ███╗   ███╗███████╗
 ██╔════╝ ██║  ██║██╔══██╗██╔═══██╗████╗ ████║██╔════╝
 ██║  ███╗███████║██████╔╝██║   ██║██╔████╔██║█████╗  
@@ -119,8 +134,8 @@ def banner():
 ╚██████╔╝██║  ██║██║  ██║╚██████╔╝██║ ╚═╝ ██║███████╗
  ╚═════╝ ╚═╝  ╚═╝╚═╝  ╚═╝ ╚═════╝ ╚═╝    ╚═╝╚══════╝
 {Colors.RESET}""")
-    print(f"{Colors.INFO}Phiên Bản: v12.35 (CẬP NHẬT HÀM TẠO USERNAME ĐỘC NHẤT){Colors.RESET}")
-    print(f"{Colors.LINE}{'─'*70}{Colors.RESET}\n")
+    built_in_print(f"{Colors.INFO}Phiên Bản: v12.36 (ĐÓNG BĂNG MÀN HÌNH NHẬP OTP & XẾP HÀNG GỬI){Colors.RESET}")
+    built_in_print(f"{Colors.LINE}{'─'*70}{Colors.RESET}\n")
 
 def load_config():
     if os.path.exists(CONFIG_FILE):
@@ -169,7 +184,6 @@ def VietnameseNameGenerator():
     full_name = f"{first} {middle} {last}"
     cleaned = re.sub(r'[^a-zA-Z0-9]', '', full_name.lower())
     
-    # Bơm thêm 2 chữ cái ngẫu nhiên và dải số to hơn để tỷ lệ trùng Username = 0%
     extra_chars = "".join(random.choices("abcdefghijklmnopqrstuvwxyz", k=2))
     username = f"{cleaned}{extra_chars}{random.randint(10000, 999999)}"
     
@@ -463,19 +477,22 @@ def generate_dot_variants(gmail):
 def ask_before_close(driver, thread_id):
     if driver:
         with INPUT_LOCK:
+            PAUSE_FOR_INPUT.clear() # Đóng băng màn hình console
             while True:
-                choice = input(f"{Colors.WARNING}[{thread_id}] Bạn có muốn đóng Chrome của luồng này không? (y/n): {Colors.RESET}").strip().lower()
+                built_in_print(f"{Colors.WARNING}[{thread_id}] Bạn có muốn đóng Chrome của luồng này không? (y/n): {Colors.RESET}", end="")
+                choice = input().strip().lower()
                 if choice == 'y':
                     try: 
                         driver.quit()
-                        print(f"{Colors.SUCCESS}[{thread_id}] Đã đóng trình duyệt và giải phóng RAM.{Colors.RESET}")
+                        built_in_print(f"{Colors.SUCCESS}[{thread_id}] Đã đóng trình duyệt và giải phóng RAM.{Colors.RESET}")
                     except: pass
                     break
                 elif choice == 'n':
-                    print(f"{Colors.INFO}[{thread_id}] Đã giữ lại trình duyệt để bạn kiểm tra.{Colors.RESET}")
+                    built_in_print(f"{Colors.INFO}[{thread_id}] Đã giữ lại trình duyệt để bạn kiểm tra.{Colors.RESET}")
                     break
                 else:
-                    print(f"{Colors.ERROR}Vui lòng chỉ nhập y hoặc n!{Colors.RESET}")
+                    built_in_print(f"{Colors.ERROR}Vui lòng chỉ nhập y hoặc n!{Colors.RESET}")
+            PAUSE_FOR_INPUT.set() # Nhả băng console
 
 # ==================== HÀM QUẢN LÝ NHẬP FILE VÀ CHỌN DÒNG ====================
 def process_file_input(config_key, default_prompt):
@@ -484,7 +501,7 @@ def process_file_input(config_key, default_prompt):
     file_path = ""
 
     if saved_file and os.path.isfile(saved_file):
-        print(f"{Colors.INFO}Phát hiện tệp danh sách cũ: {Colors.VALUE}{saved_file}{Colors.RESET}")
+        built_in_print(f"{Colors.INFO}Phát hiện tệp danh sách cũ: {Colors.VALUE}{saved_file}{Colors.RESET}")
         use_old = input(f"{Colors.KEY}Bạn có muốn sử dụng lại tệp này không? (y/n): {Colors.RESET}").strip().lower()
         if use_old == 'y':
             file_path = saved_file
@@ -501,10 +518,10 @@ def process_file_input(config_key, default_prompt):
 
         total = len(lines)
         if total == 0:
-            print(f"{Colors.ERROR}File trống!{Colors.RESET}")
+            built_in_print(f"{Colors.ERROR}File trống!{Colors.RESET}")
             return []
             
-        print(f"{Colors.SUCCESS}Đã tải {total} dòng từ tệp.{Colors.RESET}")
+        built_in_print(f"{Colors.SUCCESS}Đã tải {total} dòng từ tệp.{Colors.RESET}")
 
         start_line = input(f"{Colors.KEY}Bạn muốn chạy TỪ mail số mấy? (Nhấn Enter để chạy từ đầu [1]): {Colors.RESET}").strip()
         end_line = input(f"{Colors.KEY}Bạn muốn chạy ĐẾN mail số mấy? (Nhấn Enter để chạy đến cuối [{total}]): {Colors.RESET}").strip()
@@ -516,11 +533,11 @@ def process_file_input(config_key, default_prompt):
         end_idx = min(total, end_idx)
 
         if start_idx > end_idx:
-            print(f"{Colors.WARNING}Số thứ tự không hợp lệ, sẽ tự động chạy tất cả!{Colors.RESET}")
+            built_in_print(f"{Colors.WARNING}Số thứ tự không hợp lệ, sẽ tự động chạy tất cả!{Colors.RESET}")
             return lines
         else:
             selected_lines = lines[start_idx-1:end_idx]
-            print(f"{Colors.INFO}=> Đã chọn {len(selected_lines)} mail (Từ số {start_idx} đến {end_idx}){Colors.RESET}")
+            built_in_print(f"{Colors.INFO}=> Đã chọn {len(selected_lines)} mail (Từ số {start_idx} đến {end_idx}){Colors.RESET}")
             return selected_lines
     else:
         return [e.strip() for e in file_path.split(",") if e.strip()]
@@ -840,83 +857,86 @@ class starts(threading.Thread):
                     print(f"{Colors.color_text(f'[{self.thread_id}] Chờ form validate (Check Username)... (5s)', Colors.WARNING)}")
                     time.sleep(5)
                     
-                    print(f"{Colors.color_text(f'[{self.thread_id}] Đang tìm và nhấn nút Gửi/Đăng Ký (Sign up)...', Colors.INFO)}")
-                    try:
-                        click_result = driver.execute_script("""
-                            let submitBtn = document.querySelector('button[type="submit"]');
+                    # --- ÁP DỤNG SUBMIT_LOCK ĐỂ CÁC TAB XẾP HÀNG KHI GỬI (CHỐNG SPAM) ---
+                    with SUBMIT_LOCK:
+                        print(f"{Colors.color_text(f'[{self.thread_id}] Đang tìm và nhấn nút Gửi/Đăng Ký (Sign up)...', Colors.INFO)}")
+                        try:
+                            click_result = driver.execute_script("""
+                                let submitBtn = document.querySelector('button[type="submit"]');
 
-                            if (!submitBtn) {
-                                const allClickables = Array.from(document.querySelectorAll('button, div[role="button"]'));
-                                submitBtn = allClickables.find(b => {
-                                    const text = (b.innerText || b.textContent || "").trim().toLowerCase();
-                                    return text === "submit" || text === "sign up" || text === "đăng ký" || text === "gửi" || text === "next" 
-                                        || text.includes("submit") || text.includes("sign up") || text.includes("đăng ký");
-                                });
-                            }
-
-                            if (!submitBtn) {
-                                const spans = Array.from(document.querySelectorAll('span')).filter(s => {
-                                    const t = s.innerText?.trim().toLowerCase() || "";
-                                    return t === "submit" || t === "sign up" || t === "đăng ký" || t === "gửi" || t === "next";
-                                });
-                                if (spans.length > 0) {
-                                    let p = spans[0].closest('button, div[role="button"]');
-                                    if (p) submitBtn = p;
-                                }
-                            }
-
-                            if (submitBtn) {
-                                submitBtn.disabled = false;
-                                submitBtn.removeAttribute('disabled');
-                                submitBtn.style.pointerEvents = 'auto';
-                                submitBtn.scrollIntoView({ block: 'center' });
-                                
-                                submitBtn.focus();
-                                submitBtn.click(); 
-
-                                ['mousedown', 'mouseup', 'click'].forEach(eventType => {
-                                    var evt = new MouseEvent(eventType, {
-                                        view: window,
-                                        bubbles: true,
-                                        cancelable: true,
-                                        clientX: submitBtn.getBoundingClientRect().x + 20,
-                                        clientY: submitBtn.getBoundingClientRect().y + 10
+                                if (!submitBtn) {
+                                    const allClickables = Array.from(document.querySelectorAll('button, div[role="button"]'));
+                                    submitBtn = allClickables.find(b => {
+                                        const text = (b.innerText || b.textContent || "").trim().toLowerCase();
+                                        return text === "submit" || text === "sign up" || text === "đăng ký" || text === "gửi" || text === "next" 
+                                            || text.includes("submit") || text.includes("sign up") || text.includes("đăng ký");
                                     });
-                                    submitBtn.dispatchEvent(evt);
-                                });
+                                }
+
+                                if (!submitBtn) {
+                                    const spans = Array.from(document.querySelectorAll('span')).filter(s => {
+                                        const t = s.innerText?.trim().toLowerCase() || "";
+                                        return t === "submit" || t === "sign up" || t === "đăng ký" || t === "gửi" || t === "next";
+                                    });
+                                    if (spans.length > 0) {
+                                        let p = spans[0].closest('button, div[role="button"]');
+                                        if (p) submitBtn = p;
+                                    }
+                                }
+
+                                if (submitBtn) {
+                                    submitBtn.disabled = false;
+                                    submitBtn.removeAttribute('disabled');
+                                    submitBtn.style.pointerEvents = 'auto';
+                                    submitBtn.scrollIntoView({ block: 'center' });
+                                    
+                                    submitBtn.focus();
+                                    submitBtn.click(); 
+
+                                    ['mousedown', 'mouseup', 'click'].forEach(eventType => {
+                                        var evt = new MouseEvent(eventType, {
+                                            view: window,
+                                            bubbles: true,
+                                            cancelable: true,
+                                            clientX: submitBtn.getBoundingClientRect().x + 20,
+                                            clientY: submitBtn.getBoundingClientRect().y + 10
+                                        });
+                                        submitBtn.dispatchEvent(evt);
+                                    });
+                                    
+                                    return "CLICKED";
+                                }
                                 
-                                return "CLICKED";
-                            }
+                                const form = document.querySelector('form');
+                                if (form) {
+                                    form.submit();
+                                    return "FORM_SUBMITTED";
+                                }
+
+                                return "NOT_FOUND";
+                            """)
                             
-                            const form = document.querySelector('form');
-                            if (form) {
-                                form.submit();
-                                return "FORM_SUBMITTED";
-                            }
-
-                            return "NOT_FOUND";
-                        """)
-                        
-                        if click_result in ["CLICKED", "FORM_SUBMITTED"]:
-                            print(f"{Colors.color_text(f'[{self.thread_id}] ĐÃ BẤM NÚT SUBMIT/GỬI THÀNH CÔNG (Bằng Script)!', Colors.SUCCESS)}")
-                        else:
-                            print(f"{Colors.color_text(f'[{self.thread_id}] JS không tìm thấy, thử click qua Selenium button[type=submit]...', Colors.WARNING)}")
-                            try:
-                                btn_selenium = driver.find_element(By.CSS_SELECTOR, "button[type='submit']")
-                                driver.execute_script("arguments[0].click();", btn_selenium)
-                                print(f"{Colors.color_text(f'[{self.thread_id}] Đã click nút Submit qua Selenium thành công!', Colors.SUCCESS)}")
-                            except:
-                                print(f"{Colors.color_text(f'[{self.thread_id}] Không tìm thấy nút qua Selenium, fallback phím ENTER...', Colors.WARNING)}")
+                            if click_result in ["CLICKED", "FORM_SUBMITTED"]:
+                                print(f"{Colors.color_text(f'[{self.thread_id}] ĐÃ BẤM NÚT SUBMIT/GỬI THÀNH CÔNG (Bằng Script)!', Colors.SUCCESS)}")
+                            else:
+                                print(f"{Colors.color_text(f'[{self.thread_id}] JS không tìm thấy, thử click qua Selenium button[type=submit]...', Colors.WARNING)}")
                                 try:
-                                    inputs[3].send_keys(Keys.ENTER)
-                                    print(f"{Colors.color_text(f'[{self.thread_id}] Đã bấm ENTER thành công!', Colors.SUCCESS)}")
-                                except: pass
+                                    btn_selenium = driver.find_element(By.CSS_SELECTOR, "button[type='submit']")
+                                    driver.execute_script("arguments[0].click();", btn_selenium)
+                                    print(f"{Colors.color_text(f'[{self.thread_id}] Đã click nút Submit qua Selenium thành công!', Colors.SUCCESS)}")
+                                except:
+                                    print(f"{Colors.color_text(f'[{self.thread_id}] Không tìm thấy nút qua Selenium, fallback phím ENTER...', Colors.WARNING)}")
+                                    try:
+                                        inputs[3].send_keys(Keys.ENTER)
+                                        print(f"{Colors.color_text(f'[{self.thread_id}] Đã bấm ENTER thành công!', Colors.SUCCESS)}")
+                                    except: pass
 
-                    except Exception as ex:
-                        print(f"{Colors.color_text(f'[{self.thread_id}] Lỗi khi chạy Script click nút: {ex}', Colors.WARNING)}")
+                        except Exception as ex:
+                            print(f"{Colors.color_text(f'[{self.thread_id}] Lỗi khi chạy Script click nút: {ex}', Colors.WARNING)}")
+                        
+                        print(f"{Colors.color_text(f'[{self.thread_id}] Đã bấm gửi form, chờ load OTP (15s)...', Colors.SUCCESS)}")
+                        time.sleep(15) # Giãn cách 15s giữa các tab theo ý bạn
                     
-                    print(f"{Colors.color_text(f'[{self.thread_id}] Đã bấm gửi form, chờ load OTP (15s)...', Colors.SUCCESS)}")
-                    time.sleep(15)
                 except Exception as e:
                     print(f"{Colors.color_text(f'[{self.thread_id}] Lỗi quá trình điền form: {e}', Colors.ERROR)}")
                     time.sleep(5)
@@ -962,8 +982,11 @@ class starts(threading.Thread):
                 
                 if self.mode == "2" and not (mail_service and mail_service.token):
                     with OTP_LOCK:
-                        print(f"\n{Colors.color_text(f'[{self.thread_id}] MỜI SẾP NHẬP OTP CHO [{used_email}] TỪ BÀN PHÍM:', Colors.SUCCESS)}")
-                        otp_code = input(">> ").strip()
+                        # ĐÓNG BĂNG MÀN HÌNH ĐỂ LUỒNG NÀY ĐƯỢC NHẬP OTP THOẢI MÁI
+                        PAUSE_FOR_INPUT.clear()
+                        built_in_print(f"\n{Colors.color_text(f'[{self.thread_id}] MỜI SẾP NHẬP OTP CHO [{used_email}] TỪ BÀN PHÍM: ', Colors.SUCCESS)}", end="")
+                        otp_code = input().strip()
+                        PAUSE_FOR_INPUT.set()
                 else:
                     target_wait = 60 if self.mode in ["3", "4", "5"] else 0
                     if target_wait > 0:
@@ -1038,7 +1061,6 @@ class starts(threading.Thread):
                     
                 time.sleep(1.5)
                 
-                # --- SỬA LẠI: CLICK NÚT TIẾP TỤC BẤT CHẤP NGÔN NGỮ ---
                 print(f"{Colors.color_text(f'[{self.thread_id}] Đang tiến hành Gửi mã OTP...', Colors.INFO)}")
                 time.sleep(2)
 
@@ -1201,13 +1223,14 @@ class starts(threading.Thread):
 
 # ==================== MENU CHÍNH ====================
 def select_mode():
-    print(f"{Colors.NUMBER}1. {Colors.VALUE}TỰ ĐỘNG HOÀN TOÀN   \033[97m[ Dùng email Mail.tm ]{Colors.RESET}")
-    print(f"{Colors.NUMBER}2. {Colors.VALUE}NHẬP TAY/FILE EMAIL \033[97m[ Dùng list thường (Có Mail.tm thì Tự động) ]{Colors.RESET}")
-    print(f"{Colors.NUMBER}3. {Colors.VALUE}NHIỀU GMAIL (IMAP)  \033[97m[ Dùng file txt: email|pass ]{Colors.RESET}")
-    print(f"{Colors.NUMBER}4. {Colors.VALUE}GMAIL DOT TRICK     \033[97m[ 1 Gmail gốc -> Biến thể ]{Colors.RESET}")
-    print(f"{Colors.NUMBER}5. {Colors.VALUE}HOTMAIL/OUTLOOK     \033[97m[ Dùng API Smail1s.com ]{Colors.RESET}")
+    built_in_print(f"{Colors.NUMBER}1. {Colors.VALUE}TỰ ĐỘNG HOÀN TOÀN   \033[97m[ Dùng email Mail.tm ]{Colors.RESET}")
+    built_in_print(f"{Colors.NUMBER}2. {Colors.VALUE}NHẬP TAY/FILE EMAIL \033[97m[ Dùng list thường (Có Mail.tm thì Tự động) ]{Colors.RESET}")
+    built_in_print(f"{Colors.NUMBER}3. {Colors.VALUE}NHIỀU GMAIL (IMAP)  \033[97m[ Dùng file txt: email|pass ]{Colors.RESET}")
+    built_in_print(f"{Colors.NUMBER}4. {Colors.VALUE}GMAIL DOT TRICK     \033[97m[ 1 Gmail gốc -> Biến thể ]{Colors.RESET}")
+    built_in_print(f"{Colors.NUMBER}5. {Colors.VALUE}HOTMAIL/OUTLOOK     \033[97m[ Dùng API Smail1s.com ]{Colors.RESET}")
     while True:
-        choice = input(f"{Colors.KEY}Nhập lựa chọn [1-5]: {Colors.RESET}").strip()
+        built_in_print(f"{Colors.KEY}Nhập lựa chọn [1-5]: {Colors.RESET}", end="")
+        choice = input().strip()
         if choice in ["1", "2", "3", "4", "5"]: return choice
 
 if __name__ == "__main__":
@@ -1225,13 +1248,16 @@ if __name__ == "__main__":
         pass 
         
     elif mode == "2":
-        prompt_txt = f"{Colors.KEY}Nhập list email (cách nhau dấu phẩy) HOẶC đường dẫn file .txt: {Colors.RESET}"
+        built_in_print(f"{Colors.KEY}Nhập list email (cách nhau dấu phẩy) HOẶC đường dẫn file .txt: {Colors.RESET}", end="")
+        prompt_txt = "" # Đã dùng built_in_print ở trên thay cho prompt trong process_file_input
         data_source = process_file_input("last_file_mode2", prompt_txt)
         if any("mail.tm" in e.lower() for e in data_source):
-            manual_password = input(f"{Colors.KEY}Nhập mật khẩu chung cho Mail.tm (Để trống dùng TempPass123!): {Colors.RESET}").strip()
+            built_in_print(f"{Colors.KEY}Nhập mật khẩu chung cho Mail.tm (Để trống dùng TempPass123!): {Colors.RESET}", end="")
+            manual_password = input().strip()
             
     elif mode == "3":
-        prompt_txt = f"{Colors.KEY}Nhập đường dẫn file txt (Định dạng: email|app_password): {Colors.RESET}"
+        built_in_print(f"{Colors.KEY}Nhập đường dẫn file txt (Định dạng: email|app_password): {Colors.RESET}", end="")
+        prompt_txt = ""
         raw_list = process_file_input("last_file_mode3", prompt_txt)
         for line in raw_list:
             parts = re.split(r'[|:]', line.strip())
@@ -1239,26 +1265,29 @@ if __name__ == "__main__":
         if not data_source: sys.exit()
 
     elif mode == "4":
-        base_gmail = input(f"{Colors.KEY}Nhập Gmail gốc (VD: test@gmail.com): {Colors.RESET}").strip()
-        app_password = input(f"{Colors.KEY}Nhập App Password: {Colors.RESET}").strip()
+        built_in_print(f"{Colors.KEY}Nhập Gmail gốc (VD: test@gmail.com): {Colors.RESET}", end="")
+        base_gmail = input().strip()
+        built_in_print(f"{Colors.KEY}Nhập App Password: {Colors.RESET}", end="")
+        app_password = input().strip()
         data_source = generate_dot_variants(base_gmail)
 
     elif mode == "5":
-        print("1. OAuth | 2. Graph API | 3. Roundcube")
-        c = input(">> ").strip()
+        built_in_print("1. OAuth | 2. Graph API | 3. Roundcube\n>> ", end="")
+        c = input().strip()
         api_mode = "oauth" if c=="1" else "graph" if c=="2" else "roundcube"
-        prompt_txt = f"{Colors.KEY}Nhập đường dẫn file/list Hotmail: {Colors.RESET}"
+        built_in_print(f"{Colors.KEY}Nhập đường dẫn file/list Hotmail: {Colors.RESET}", end="")
+        prompt_txt = ""
         data_source = process_file_input("last_file_mode5", prompt_txt)
 
     if not data_source and mode != "1" and mode != "4":
-        print(f"{Colors.ERROR}Danh sách đầu vào trống! Thoát chương trình.{Colors.RESET}")
+        built_in_print(f"{Colors.ERROR}Danh sách đầu vào trống! Thoát chương trình.{Colors.RESET}")
         sys.exit()
 
-    print(f"\n{Colors.KEY}Nhập số luồng (số tab Chrome chạy cùng lúc): {Colors.RESET}")
-    threads_count = int(input(">> ").strip())
+    built_in_print(f"\n{Colors.KEY}Nhập số luồng (số tab Chrome chạy cùng lúc): {Colors.RESET}", end="")
+    threads_count = int(input().strip())
     
-    print(f"{Colors.KEY}Nhập số tài khoản cần tạo MỖI LUỒNG: {Colors.RESET}")
-    accs_per_thread = int(input(">> ").strip())
+    built_in_print(f"{Colors.KEY}Nhập số tài khoản cần tạo MỖI LUỒNG: {Colors.RESET}", end="")
+    accs_per_thread = int(input().strip())
     
     threads = []
     for i in range(threads_count):
@@ -1269,9 +1298,10 @@ if __name__ == "__main__":
     
     try:
         for t in threads: t.join()
-        print(f"\n{Colors.color_text('AUTO HOÀN THÀNH TOÀN BỘ CÁC LUỒNG!', Colors.SUCCESS)}")
-        input(f"{Colors.KEY}Nhấn Enter để thoát chương trình...{Colors.RESET}")
+        built_in_print(f"\n{Colors.color_text('AUTO HOÀN THÀNH TOÀN BỘ CÁC LUỒNG!', Colors.SUCCESS)}")
+        built_in_print(f"{Colors.KEY}Nhấn Enter để thoát chương trình...{Colors.RESET}", end="")
+        input()
     except KeyboardInterrupt:
         STOP_EVENT.set() 
-        print(f"\n{Colors.color_text('Đang đóng các luồng an toàn...', Colors.WARNING)}")
+        built_in_print(f"\n{Colors.color_text('Đang đóng các luồng an toàn...', Colors.WARNING)}")
         sys.exit(0)
