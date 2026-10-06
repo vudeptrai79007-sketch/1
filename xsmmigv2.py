@@ -74,7 +74,7 @@ def banner():
 ╚██████╔╝██║  ██║██║  ██║╚██████╔╝██║ ╚═╝ ██║███████╗
  ╚═════╝ ╚═╝  ╚═╝╚═╝  ╚═╝ ╚═════╝ ╚═╝    ╚═╝╚══════╝
 {Colors.RESET}""")
-    print(f"{Colors.INFO}Phiên Bản: v12.27 (KHÓA GÕ PHÍM & VƯỢT REACT OTP ĐA LUỒNG){Colors.RESET}")
+    print(f"{Colors.INFO}Phiên Bản: v12.28 (FIX CLICK OTP BẰNG PHÍM ENTER & CHECK SESSION){Colors.RESET}")
     print(f"{Colors.LINE}{'─'*70}{Colors.RESET}\n")
 
 def load_config():
@@ -609,7 +609,6 @@ class starts(threading.Thread):
                         time.sleep(0.5)
                     except: pass
 
-                # Thêm TYPE_LOCK vào hàm gõ phím để giải quyết triệt để lỗi mất chữ khi chạy đa luồng
                 def human_type(element, text, is_username=False):
                     with TYPE_LOCK:
                         slow_scroll_to_element(element)
@@ -882,59 +881,74 @@ class starts(threading.Thread):
                     try:
                         human_type(target_input, otp_code)
                     except Exception:
-                        # Nâng cấp Bypass ReactJS 16+
-                        print(f"{Colors.color_text(f'[{self.thread_id}] Dùng hàm JS tiêu chuẩn React để bơm OTP...', Colors.WARNING)}")
-                        driver.execute_script("""
+                        print(f"{Colors.color_text(f'[{self.thread_id}] Selenium bị chặn, đang ép điền mã bằng JavaScript...', Colors.WARNING)}")
+                        driver.execute_script(f"""
                             let input = arguments[0];
                             let value = arguments[1];
                             let nativeInputValueSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value").set;
                             nativeInputValueSetter.call(input, value);
-                            input.dispatchEvent(new Event('input', { bubbles: true }));
-                            input.dispatchEvent(new Event('change', { bubbles: true }));
+                            input.dispatchEvent(new Event('input', {{ bubbles: true }}));
                         """, target_input, otp_code)
                 except Exception as ex:
                     print(f"{Colors.color_text(f'[{self.thread_id}] Lỗi nghiêm trọng lúc điền ({ex}), dùng JS quét toàn cục...', Colors.WARNING)}")
-                    driver.execute_script("""
-                        let input = document.querySelector('input[type="text"], input[name*="code"]');
-                        if(input) {
-                            let value = arguments[0];
-                            let nativeInputValueSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value").set;
-                            nativeInputValueSetter.call(input, value);
-                            input.dispatchEvent(new Event('input', { bubbles: true }));
-                        }
-                    """, otp_code)
                     
                 time.sleep(1.5)
                 
-                # ==================== CLICK NÚT TIẾP TỤC ====================
-                print(f"{Colors.color_text(f'[{self.thread_id}] Đang tìm và nhấn nút Tiếp tục...', Colors.INFO)}")
+                # ==================== CLICK NÚT TIẾP TỤC (SIÊU CẤP V3) ====================
+                print(f"{Colors.color_text(f'[{self.thread_id}] Đang tiến hành Gửi mã OTP...', Colors.INFO)}")
                 time.sleep(2)
+
+                click_success = False
+
+                # CÁCH 1: Bấm phím ENTER trực tiếp vào ô nhập mã (Hiệu quả nhất với ReactJS)
                 try:
-                    click_result = driver.execute_script("""
-                        const continueBtn = Array.from(document.querySelectorAll('button, div[role="button"]')).find(b => {
-                            const text = (b.innerText || b.textContent || "").trim().toLowerCase();
-                            return text === "tiếp tục" || text === "confirm" || text === "next";
-                        });
-                        if (continueBtn) {
-                            continueBtn.disabled = false;
-                            continueBtn.removeAttribute('disabled');
-                            continueBtn.click();
-                            return "CLICKED";
-                        }
-                        return "NOT_FOUND";
-                    """)
-                    
-                    if click_result == "CLICKED":
-                        print(f"{Colors.color_text(f'[{self.thread_id}] ĐÃ BẤM NÚT TIẾP TỤC THÀNH CÔNG (Theo code của bạn)!', Colors.SUCCESS)}")
-                    else:
-                        print(f"{Colors.color_text(f'[{self.thread_id}] JS không tìm thấy nút Tiếp tục, thử dùng phím ENTER...', Colors.WARNING)}")
-                        try:
-                            target_input.send_keys(Keys.ENTER)
-                            print(f"{Colors.color_text(f'[{self.thread_id}] Đã bấm ENTER thành công!', Colors.SUCCESS)}")
-                        except Exception as e: 
-                            pass
-                except Exception as ex:
-                    print(f"{Colors.color_text(f'[{self.thread_id}] Lỗi khi chạy Script click nút Tiếp tục: {ex}', Colors.WARNING)}")
+                    print(f"{Colors.color_text(f'[{self.thread_id}] Thử submit bằng phím ENTER...', Colors.INFO)}")
+                    target_input.send_keys(Keys.ENTER)
+                    click_success = True
+                    time.sleep(1)
+                except Exception as e:
+                    pass
+
+                # CÁCH 2: Dùng Selenium click nút Tiếp tục
+                if not click_success:
+                    try:
+                        print(f"{Colors.color_text(f'[{self.thread_id}] Thử click nút Tiếp tục bằng Selenium...', Colors.INFO)}")
+                        btn_xpath = "//button[contains(translate(., 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'tiếp tục') or contains(translate(., 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'next') or @type='submit']"
+                        submit_btn = WebDriverWait(driver, 5).until(EC.element_to_be_clickable((By.XPATH, btn_xpath)))
+                        driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", submit_btn)
+                        time.sleep(0.5)
+                        driver.execute_script("arguments[0].click();", submit_btn)
+                        click_success = True
+                    except Exception as e:
+                        pass
+
+                # CÁCH 3: Dùng JS dò tìm toàn bộ trang (Fallback)
+                if not click_success:
+                    try:
+                        print(f"{Colors.color_text(f'[{self.thread_id}] Thử click bằng vòng lặp JavaScript...', Colors.WARNING)}")
+                        click_result = driver.execute_script("""
+                            const btns = Array.from(document.querySelectorAll('button, div[role="button"]'));
+                            for (let b of btns) {
+                                const text = (b.innerText || b.textContent || "").trim().toLowerCase();
+                                if (text === "tiếp tục" || text === "next" || text === "confirm" || b.type === "submit") {
+                                    b.disabled = false;
+                                    b.removeAttribute('disabled');
+                                    b.click();
+                                    return "CLICKED";
+                                }
+                            }
+                            return "NOT_FOUND";
+                        """)
+                        if click_result == "CLICKED":
+                            click_success = True
+                    except:
+                        pass
+
+                if click_success:
+                    print(f"{Colors.color_text(f'[{self.thread_id}] ĐÃ BẤM GỬI OTP THÀNH CÔNG!', Colors.SUCCESS)}")
+                else:
+                    print(f"{Colors.color_text(f'[{self.thread_id}] KHÔNG THỂ BẤM NÚT, trình duyệt có thể bị treo.', Colors.ERROR)}")
+
 
                 # ==================== ĐỢI 60s ĐỂ LẤY COOKIE ====================
                 print(f"{Colors.color_text(f'[{self.thread_id}] Chờ Server IG tạo tài khoản và load trang chủ để lấy cookie (60s)...', Colors.INFO)}")
@@ -942,9 +956,15 @@ class starts(threading.Thread):
                 
                 # Lấy danh sách cookies từ trình duyệt
                 cookies_list = driver.get_cookies()
-                
-                # Chuyển thành dạng từ điển (dictionary) để dễ lọc
                 cookie_dict = {c['name']: c['value'] for c in cookies_list}
+                
+                # BƯỚC KIỂM TRA QUAN TRỌNG: NẾU KHÔNG CÓ SESSION ID TỨC LÀ TẠO XỊT
+                if not cookie_dict.get('sessionid') or not cookie_dict.get('ds_user_id'):
+                    print(f"\n{Colors.color_text('─'*70, Colors.LINE)}")
+                    print(f"{Colors.color_text(f'[{self.thread_id}] LỖI: Tài khoản chưa được tạo (Bị chặn form / sai mã).', Colors.ERROR)}")
+                    print(f"{Colors.color_text('─'*70, Colors.LINE)}\n")
+                    ask_before_close(driver, self.thread_id)
+                    return False
                 
                 # Ép chuẩn định dạng chuỗi theo đúng thứ tự yêu cầu
                 cookie_str = (
