@@ -73,7 +73,7 @@ def banner():
 ╚██████╔╝██║  ██║██║  ██║╚██████╔╝██║ ╚═╝ ██║███████╗
  ╚═════╝ ╚═╝  ╚═╝╚═╝  ╚═╝ ╚═════╝ ╚═╝    ╚═╝╚══════╝
 {Colors.RESET}""")
-    print(f"{Colors.INFO}Phiên Bản: v12.21 (FIX CLICK TIẾP TỤC & ĐA LUỒNG){Colors.RESET}")
+    print(f"{Colors.INFO}Phiên Bản: v12.22 (ĐỢI 60S LẤY COOKIE){Colors.RESET}")
     print(f"{Colors.LINE}{'─'*70}{Colors.RESET}\n")
 
 def load_config():
@@ -882,8 +882,9 @@ class starts(threading.Thread):
                 except Exception as ex:
                     print(f"{Colors.color_text(f'[{self.thread_id}] Lỗi khi chạy Script click nút Tiếp tục: {ex}', Colors.WARNING)}")
 
-                print(f"{Colors.color_text(f'[{self.thread_id}] Chờ Server IG xử lý và tạo tài khoản (20s)...', Colors.INFO)}")
-                time.sleep(20)
+                # ==================== ĐỢI 60s ĐỂ LẤY COOKIE ====================
+                print(f"{Colors.color_text(f'[{self.thread_id}] Chờ Server IG tạo tài khoản và load trang chủ để lấy cookie (60s)...', Colors.INFO)}")
+                time.sleep(60)
                 
                 cookies_list = driver.get_cookies()
                 cookie_str = "; ".join([f"{c['name']}={c['value']}" for c in cookies_list])
