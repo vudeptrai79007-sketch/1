@@ -73,7 +73,7 @@ def banner():
 ╚██████╔╝██║  ██║██║  ██║╚██████╔╝██║ ╚═╝ ██║███████╗
  ╚═════╝ ╚═╝  ╚═╝╚═╝  ╚═╝ ╚═════╝ ╚═╝    ╚═╝╚══════╝
 {Colors.RESET}""")
-    print(f"{Colors.INFO}Phiên Bản: v12.20 (FIX ĐA LUỒNG & HỎI ĐÓNG LUỒNG){Colors.RESET}")
+    print(f"{Colors.INFO}Phiên Bản: v12.21 (FIX CLICK TIẾP TỤC & ĐA LUỒNG){Colors.RESET}")
     print(f"{Colors.LINE}{'─'*70}{Colors.RESET}\n")
 
 def load_config():
@@ -851,47 +851,27 @@ class starts(threading.Thread):
                     
                 time.sleep(1.5)
                 
-                # ==================== CLICK NÚT TIẾP TỤC (MẠNH MẼ) ====================
-                print(f"{Colors.color_text(f'[{self.thread_id}] Đang tìm và nhấn nút Tiếp tục/Xác nhận...', Colors.INFO)}")
+                # ==================== CLICK NÚT TIẾP TỤC (ĐÃ SỬA THEO YÊU CẦU) ====================
+                print(f"{Colors.color_text(f'[{self.thread_id}] Đang tìm và nhấn nút Tiếp tục...', Colors.INFO)}")
                 time.sleep(2)
                 try:
                     click_result = driver.execute_script("""
                         const submitBtn = Array.from(document.querySelectorAll('button, div[role="button"]')).find(b => {
                             const text = (b.innerText || b.textContent || "").trim().toLowerCase();
-                            return text.includes("tiếp") || text.includes("next") || text.includes("xác nhận") || text.includes("confirm") || text.includes("gửi") || b.type === 'submit';
+                            return text === "tiếp tục" || text === "next";
                         });
 
                         if (submitBtn) {
                             submitBtn.disabled = false;
                             submitBtn.removeAttribute('disabled');
-                            submitBtn.style.pointerEvents = 'auto';
                             submitBtn.click(); 
-
-                            var event = new MouseEvent('click', {
-                                view: window,
-                                bubbles: true,
-                                cancelable: true
-                            });
-                            submitBtn.dispatchEvent(event);
-                            
                             return "CLICKED";
                         }
-                        
-                        const form = document.querySelector('form');
-                        if (form) {
-                            const hiddenBtn = document.createElement('button');
-                            hiddenBtn.type = 'submit';
-                            hiddenBtn.style.display = 'none';
-                            form.appendChild(hiddenBtn);
-                            hiddenBtn.click();
-                            return "CLICKED";
-                        }
-
                         return "NOT_FOUND";
                     """)
                     
                     if click_result == "CLICKED":
-                        print(f"{Colors.color_text(f'[{self.thread_id}] ĐÃ BẤM NÚT TIẾP TỤC THÀNH CÔNG (Bằng Script)!', Colors.SUCCESS)}")
+                        print(f"{Colors.color_text(f'[{self.thread_id}] ĐÃ BẤM NÚT TIẾP TỤC THÀNH CÔNG (Bằng Script mới)!', Colors.SUCCESS)}")
                     else:
                         print(f"{Colors.color_text(f'[{self.thread_id}] JS không tìm thấy nút Tiếp tục, thử dùng phím ENTER...', Colors.WARNING)}")
                         try:
