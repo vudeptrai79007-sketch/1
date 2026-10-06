@@ -55,6 +55,7 @@ import email
 from email.header import decode_header
 import json
 import traceback
+import string
 
 # ===== THƯ VIỆN CHROME CHO PC =====
 try:
@@ -118,7 +119,7 @@ def banner():
 ╚██████╔╝██║  ██║██║  ██║╚██████╔╝██║ ╚═╝ ██║███████╗
  ╚═════╝ ╚═╝  ╚═╝╚═╝  ╚═╝ ╚═════╝ ╚═╝    ╚═╝╚══════╝
 {Colors.RESET}""")
-    print(f"{Colors.INFO}Phiên Bản: v12.33 (ÉP BUỘC THU NHỎ CHROME THÀNH ĐIỆN THOẠI){Colors.RESET}")
+    print(f"{Colors.INFO}Phiên Bản: v12.35 (CẬP NHẬT HÀM TẠO USERNAME ĐỘC NHẤT){Colors.RESET}")
     print(f"{Colors.LINE}{'─'*70}{Colors.RESET}\n")
 
 def load_config():
@@ -162,12 +163,17 @@ Cookie:   {cookie}
     except Exception: pass
 
 def VietnameseNameGenerator():
-    first = random.choice(["Nguyễn", "Trần", "Lê", "Phạm", "Hoàng", "Huỳnh", "Vũ", "Đặng", "Bùi", "Đỗ"])
-    middle = random.choice(["Văn", "Thị", "Minh", "Hoàng", "Anh", "Bảo", "Gia", "Khánh", "Ngọc", "Phương"])
-    last = random.choice(["An", "Bình", "Cường", "Dũng", "Anh", "Bích", "Chi", "Diệp", "Dung", "Hải", "Hùng"])
+    first = random.choice(["Nguyen", "Tran", "Le", "Pham", "Hoang", "Huynh", "Vu", "Dang", "Bui", "Do"])
+    middle = random.choice(["Van", "Thi", "Minh", "Hoang", "Anh", "Bao", "Gia", "Khanh", "Ngoc", "Phuong"])
+    last = random.choice(["An", "Binh", "Cuong", "Dung", "Anh", "Bich", "Chi", "Diep", "Dung", "Hai", "Hung"])
     full_name = f"{first} {middle} {last}"
     cleaned = re.sub(r'[^a-zA-Z0-9]', '', full_name.lower())
-    return full_name, f"{cleaned}{random.randint(100, 99999)}"
+    
+    # Bơm thêm 2 chữ cái ngẫu nhiên và dải số to hơn để tỷ lệ trùng Username = 0%
+    extra_chars = "".join(random.choices("abcdefghijklmnopqrstuvwxyz", k=2))
+    username = f"{cleaned}{extra_chars}{random.randint(10000, 999999)}"
+    
+    return full_name, username
 
 # ==================== CÁC CLASS XỬ LÝ EMAIL ====================
 class MailService:
@@ -623,8 +629,6 @@ class starts(threading.Thread):
                 with BROWSER_LOCK:
                     driver = uc.Chrome(options=options)
                     
-                    # --- BƯỚC QUAN TRỌNG NHẤT ĐỂ SỬA LỖI ĐÈ CỬA SỔ ---
-                    # Ép buộc WebDriver tự động thu nhỏ và xếp lại cửa sổ ngay sau khi mở
                     try:
                         driver.set_window_size(win_width, win_height)
                         driver.set_window_position(x_pos, y_pos)
@@ -1086,9 +1090,63 @@ class starts(threading.Thread):
                 else:
                     print(f"{Colors.color_text(f'[{self.thread_id}] KHÔNG THỂ BẤM NÚT, trình duyệt có thể bị treo.', Colors.ERROR)}")
 
-                # ==================== ĐỢI 60s ĐỂ LẤY COOKIE VÀ KIỂM TRA ====================
-                print(f"{Colors.color_text(f'[{self.thread_id}] Chờ Server IG tạo tài khoản và load trang chủ để lấy cookie (60s)...', Colors.INFO)}")
-                time.sleep(60)
+                # ==================== CHỜ CHUYỂN TRANG VÀ UP AVATAR ====================
+                print(f"{Colors.color_text(f'[{self.thread_id}] Chờ IG xử lý OTP (20s)...', Colors.INFO)}")
+                time.sleep(20)
+
+                # KIỂM TRA THƯ MỤC AVATAR
+                avatar_dir = "avatars"
+                if not os.path.exists(avatar_dir):
+                    os.makedirs(avatar_dir)
+                
+                images = [f for f in os.listdir(avatar_dir) if f.lower().endswith(('.png', '.jpg', '.jpeg', '.webp'))]
+                if images:
+                    print(f"{Colors.color_text(f'[{self.thread_id}] Đang cố gắng up Avatar...', Colors.INFO)}")
+                    try:
+                        image_path = os.path.abspath(os.path.join(avatar_dir, random.choice(images)))
+                        # Thử quét thẻ input file ẩn
+                        file_inputs = driver.find_elements(By.XPATH, "//input[@type='file']")
+                        
+                        if not file_inputs:
+                            # Nếu chưa thấy, thử click vào nút "Thêm ảnh"
+                            driver.execute_script("""
+                                const btns = Array.from(document.querySelectorAll('button, div[role="button"]'));
+                                const addPicBtn = btns.find(b => {
+                                    const t = (b.innerText || "").trim().toLowerCase();
+                                    return t.includes("thêm ảnh") || t.includes("add a photo") || t.includes("add photo") || t.includes("thêm ảnh đại diện");
+                                });
+                                if(addPicBtn) addPicBtn.click();
+                            """)
+                            time.sleep(2)
+                            file_inputs = driver.find_elements(By.XPATH, "//input[@type='file']")
+
+                        if file_inputs:
+                            # Hiện input lên để tránh lỗi ElementNotInteractable
+                            driver.execute_script("arguments[0].style.display = 'block'; arguments[0].style.opacity = 1; arguments[0].style.visibility = 'visible';", file_inputs[0])
+                            time.sleep(0.5)
+                            file_inputs[0].send_keys(image_path)
+                            print(f"{Colors.color_text(f'[{self.thread_id}] Đã chèn file ảnh avatar thành công! Chờ 5s để lưu...', Colors.SUCCESS)}")
+                            time.sleep(5)
+                            
+                            # Bấm tiếp tục/lưu
+                            driver.execute_script("""
+                                const btns = Array.from(document.querySelectorAll('button, div[role="button"]'));
+                                const nextBtn = btns.find(b => {
+                                    const t = (b.innerText || "").trim().toLowerCase();
+                                    return t === "tiếp" || t === "next" || t === "xong" || t === "done" || t === "lưu" || t === "save";
+                                });
+                                if(nextBtn) nextBtn.click();
+                            """)
+                            time.sleep(3)
+                        else:
+                            print(f"{Colors.color_text(f'[{self.thread_id}] IG không hiện form up avatar, bỏ qua bước này.', Colors.WARNING)}")
+                    except Exception as e:
+                        print(f"{Colors.color_text(f'[{self.thread_id}] Lỗi trong quá trình up avatar: {e}', Colors.WARNING)}")
+                else:
+                    print(f"{Colors.color_text(f'[{self.thread_id}] Thư mục avatars trống, hãy cho ảnh vào để tự up. Bỏ qua!', Colors.WARNING)}")
+
+                print(f"{Colors.color_text(f'[{self.thread_id}] Tiếp tục ngâm 40s để load trang chủ và lấy Cookie...', Colors.INFO)}")
+                time.sleep(40)
                 
                 # Lấy danh sách cookies từ trình duyệt
                 cookies_list = driver.get_cookies()
