@@ -348,7 +348,7 @@ class GmailIMAPService:
             time.sleep(5) 
         return None
 
-# ==================== DỊCH VỤ HOTMAIL/OUTLOOK API ====================
+# ==================== DỊCH VỤ HOTMAIL/OUTLOOK API (ĐÃ TỐI ƯU ĐA LUỒNG) ====================
 class HotmailAPIService:
     def __init__(self, data_line, api_mode):
         self.url = "https://smail1s.com/get_messages"
@@ -356,12 +356,20 @@ class HotmailAPIService:
         self.api_mode = api_mode.strip()
         self.email = self.data_line.split('|')[0] if '|' in self.data_line else self.data_line
         self.seen_codes = set()
+        
+        # SỬ DỤNG SESSION ĐỂ TÁI SỬ DỤNG KẾT NỐI (RẤT QUAN TRỌNG KHI CHẠY ĐA LUỒNG)
+        self.session = requests.Session()
+        self.session.headers.update({
+            'Content-Type': 'application/json',
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+        })
 
     def init_baseline(self):
         try:
             payload = {"mode": self.api_mode, "data": self.data_line}
-            headers = {'Content-Type': 'application/json', 'User-Agent': 'Mozilla/5.0'}
-            response = requests.post(self.url, json=payload, headers=headers, timeout=15)
+            # Thêm ngẫu nhiên 1-3s để giãn cách các luồng lúc bắt đầu
+            time.sleep(random.uniform(1.0, 3.0)) 
+            response = self.session.post(self.url, json=payload, timeout=15)
             if response.status_code == 200:
                 data_array = response.json().get("data", [])
                 if data_array and len(data_array) > 0:
@@ -377,7 +385,7 @@ class HotmailAPIService:
                                 self.seen_codes.add(match_subj.group(1))
         except Exception: pass
 
-    def get_otp_code(self, timeout=120):
+    def get_otp_code(self, timeout=180): # Tăng timeout tổng lên 180s
         start_time = time.time()
         print(f"{Colors.color_text(f'[API Smail1s] Đang check hộp thư {self.email} (Mode: {self.api_mode})...', Colors.INFO)}")
         
@@ -385,17 +393,17 @@ class HotmailAPIService:
             "mode": self.api_mode,
             "data": self.data_line
         }
-        headers = {
-            'Content-Type': 'application/json',
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-        }
         
         last_logged = ""
         while time.time() - start_time < timeout:
             if STOP_EVENT.is_set():
                 return None
             try:
-                response = requests.post(self.url, json=payload, headers=headers, timeout=20)
+                # Giãn cách các luồng trong vòng lặp để tránh Spam Server API
+                time.sleep(random.uniform(0.5, 2.0))
+                
+                # Giảm timeout requests xuống 10s để lặp lại nhanh hơn nếu bị nghẽn
+                response = self.session.post(self.url, json=payload, timeout=10)
                 if response.status_code == 200:
                     res_json = response.json()
                     data_array = res_json.get("data", [])
@@ -999,10 +1007,11 @@ class starts(threading.Thread):
                     elif self.mode in ["3", "4"]:
                         otp_code = imap_service.get_otp_code(target_email=used_email, since_uid=uid_moc, timeout=120)
                     elif self.mode == "5":
-                        otp_code = hotmail_service.get_otp_code(timeout=120)
+                        # ĐÃ ĐIỀU CHỈNH TIMEOUT TĂNG LÊN 180s CHO MODE 5
+                        otp_code = hotmail_service.get_otp_code(timeout=180) 
                 
                 if not otp_code:
-                    print(f"{Colors.color_text(f'[{self.thread_id}] Lỗi: Quá 120s không lấy được mã OTP. Bỏ qua acc!', Colors.ERROR)}")
+                    print(f"{Colors.color_text(f'[{self.thread_id}] Lỗi: Không lấy được mã OTP trong thời gian chờ. Bỏ qua acc!', Colors.ERROR)}")
                     time.sleep(5)
                     ask_before_close(driver, self.thread_id)
                     return False
