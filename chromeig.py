@@ -80,9 +80,9 @@ except ImportError:
 STOP_EVENT = threading.Event()
 OTP_LOCK = threading.Lock() 
 DATA_LOCK = threading.Lock()
-BROWSER_LOCK = threading.Lock()  # Khóa chống tranh chấp file khi mở đa luồng Chrome
-INPUT_LOCK = threading.Lock()    # Khóa chống loạn Terminal khi hỏi y/n
-TYPE_LOCK = threading.Lock()     # Khóa gõ phím (chống giật focus làm rớt ký tự khi chạy đa luồng)
+BROWSER_LOCK = threading.Lock()  
+INPUT_LOCK = threading.Lock()    
+TYPE_LOCK = threading.Lock()     
 CONFIG_FILE = "config_gmail.json"
 BASE_YEAR = random.randint(1995, 2005)
 
@@ -118,7 +118,7 @@ def banner():
 ╚██████╔╝██║  ██║██║  ██║╚██████╔╝██║ ╚═╝ ██║███████╗
  ╚═════╝ ╚═╝  ╚═╝╚═╝  ╚═╝ ╚═════╝ ╚═╝    ╚═╝╚══════╝
 {Colors.RESET}""")
-    print(f"{Colors.INFO}Phiên Bản: v12.32 (FIX CHỌN THÁNG TUYỆT ĐỐI CHO MỌI NGÔN NGỮ){Colors.RESET}")
+    print(f"{Colors.INFO}Phiên Bản: v12.33 (ÉP BUỘC THU NHỎ CHROME THÀNH ĐIỆN THOẠI){Colors.RESET}")
     print(f"{Colors.LINE}{'─'*70}{Colors.RESET}\n")
 
 def load_config():
@@ -590,7 +590,7 @@ class starts(threading.Thread):
             driver = None
             try:
                 # ========================================================
-                # CÁCH 1: XẾP GẠCH CỬA SỔ & THU NHỎ HIỂN THỊ (SCALE FACTOR)
+                # CÁCH 1: XẾP GẠCH CỬA SỔ DẠNG MOBILE THEO TỌA ĐỘ
                 # ========================================================
                 
                 thread_idx = int(self.thread_id.split("-")[1]) - 1 
@@ -610,10 +610,11 @@ class starts(threading.Thread):
                 options.add_argument('--mute-audio')
                 options.add_argument('--disable-notifications')
                 
+                # Cài đặt kích thước mặc định qua options
                 options.add_argument(f'--window-size={win_width},{win_height}')
                 options.add_argument(f'--window-position={x_pos},{y_pos}')
                 
-                options.add_argument('--force-device-scale-factor=0.7')
+                options.add_argument('--force-device-scale-factor=0.8')
                 
                 options.add_argument('--disable-gpu')
                 options.add_argument('--disable-software-rasterizer')
@@ -621,6 +622,15 @@ class starts(threading.Thread):
                 
                 with BROWSER_LOCK:
                     driver = uc.Chrome(options=options)
+                    
+                    # --- BƯỚC QUAN TRỌNG NHẤT ĐỂ SỬA LỖI ĐÈ CỬA SỔ ---
+                    # Ép buộc WebDriver tự động thu nhỏ và xếp lại cửa sổ ngay sau khi mở
+                    try:
+                        driver.set_window_size(win_width, win_height)
+                        driver.set_window_position(x_pos, y_pos)
+                    except:
+                        pass
+                    
                     time.sleep(1) 
                 # ========================================================
                     
@@ -707,7 +717,6 @@ class starts(threading.Thread):
                         print(f"{Colors.color_text(f'[{self.thread_id}] Bắt đầu chọn Ngày Sinh bằng Script Console...', Colors.INFO)}")
                         try:
                             driver.set_script_timeout(15)
-                            # --- SỬA CHỌN THÁNG: TÁC ĐỘNG SÂU VÀO <SELECT> VÀ CHUYỂN ĐỔI NGÔN NGỮ ---
                             js_script = '''
                             const day = arguments[0];
                             const month = arguments[1];
@@ -716,7 +725,6 @@ class starts(threading.Thread):
 
                             (async function() {
                                 try {
-                                    // CÁCH 1: Tìm đúng thẻ <select> nguyên thủy của IG (Cách này mượt 100%)
                                     const selects = Array.from(document.querySelectorAll('select'));
                                     if (selects.length >= 3) {
                                         function setSelectVal(el, val) {
@@ -739,7 +747,6 @@ class starts(threading.Thread):
                                         return callback("SUCCESS");
                                     }
 
-                                    // CÁCH 2: Fallback (Click ảo) tự động nhận diện ngôn ngữ
                                     const comboboxes = Array.from(document.querySelectorAll('[role="combobox"]'));
                                     if (comboboxes.length < 3) return callback("ERROR: Không tìm thấy 3 ô combobox!");
 
@@ -773,15 +780,12 @@ class starts(threading.Thread):
                                         return false;
                                     }
 
-                                    // Tự phát hiện giao diện đang là Tiếng Việt hay Tiếng Anh
                                     const htmlLang = document.documentElement.lang.toLowerCase();
                                     if (htmlLang.includes('vi')) {
-                                        // Tiếng Việt thì box đầu là Ngày, giữa là Tháng
                                         await clickOption(comboboxes[0], [String(day), "0" + day]);
                                         await clickOption(comboboxes[1], possibleMonths);
                                         await clickOption(comboboxes[2], [String(year)]);
                                     } else {
-                                        // Tiếng Anh thì box đầu là Tháng, giữa là Ngày
                                         await clickOption(comboboxes[0], possibleMonths);
                                         await clickOption(comboboxes[1], [String(day), "0" + day]);
                                         await clickOption(comboboxes[2], [String(year)]);
