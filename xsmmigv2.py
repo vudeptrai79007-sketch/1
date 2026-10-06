@@ -71,7 +71,7 @@ def banner():
 ╚██████╔╝██║  ██║██║  ██║╚██████╔╝██║ ╚═╝ ██║███████╗
  ╚═════╝ ╚═╝  ╚═╝╚═╝  ╚═╝ ╚═════╝ ╚═╝    ╚═╝╚══════╝
 {Colors.RESET}""")
-    print(f"{Colors.INFO}Phiên Bản: v12.19 (CHẶN LẤY MÃ CŨ & FIX NÚT TIẾP TỤC){Colors.RESET}")
+    print(f"{Colors.INFO}Phiên Bản: v12.19 (CHẶN LẤY MÃ CŨ & FIX NÚT TIẾP TỤC & ĐA LUỒNG XẾP GẠCH){Colors.RESET}")
     print(f"{Colors.LINE}{'─'*70}{Colors.RESET}\n")
 
 def load_config():
@@ -407,19 +407,13 @@ def generate_dot_variants(gmail):
     random.shuffle(variants)
     return variants
 
-# ==================== HÀM HỎI TRƯỚC KHI ĐÓNG ====================
+# ==================== HÀM ĐÓNG TRÌNH DUYỆT (ĐÃ SỬA ĐỂ TỰ ĐỘNG KHÔNG HỎI) ====================
 def ask_before_close(driver, thread_id):
     if driver:
-        with OTP_LOCK:
-            print(f"\n{Colors.color_text(f'[{thread_id}] Bạn có muốn đóng trình duyệt không? (y/n): ', Colors.WARNING)}", end="")
-            choice = input().strip().lower()
-            if choice == 'y':
-                try: 
-                    driver.quit()
-                    print(f"{Colors.color_text(f'[{thread_id}] Đã đóng trình duyệt an toàn.', Colors.SUCCESS)}")
-                except: pass
-            else:
-                print(f"{Colors.color_text(f'[{thread_id}] Đã giữ trình duyệt mở (Bạn cần tự tắt thủ công sau).', Colors.INFO)}")
+        try: 
+            driver.quit()
+            print(f"{Colors.color_text(f'[{thread_id}] Đã đóng trình duyệt tự động và giải phóng RAM.', Colors.SUCCESS)}")
+        except: pass
 
 # ==================== MAIN THREAD ====================
 class starts(threading.Thread):
@@ -490,15 +484,42 @@ class starts(threading.Thread):
 
             driver = None
             try:
+                # ========================================================
+                # CÁCH 1: XẾP GẠCH CỬA SỔ & THU NHỎ HIỂN THỊ (SCALE FACTOR)
+                # ========================================================
+                
+                # 1. Tính toán vị trí xếp cửa sổ không đè nhau
+                thread_idx = int(self.thread_id.split("-")[1]) - 1 
+                
+                win_width = 960  
+                win_height = 540 
+                
+                columns = 2 # Nếu màn hình bạn siêu to (2K/4K) có thể đổi thành 3 hoặc 4
+                col = thread_idx % columns
+                row = thread_idx // columns
+                
+                x_pos = col * win_width
+                y_pos = row * win_height
+                
                 options = uc.ChromeOptions()
                 options.add_argument('--incognito')
                 options.add_argument('--mute-audio')
                 options.add_argument('--disable-notifications')
-                options.add_argument('--window-size=1920,1080')
+                
+                # Set kích thước và vị trí theo công thức đã tính
+                options.add_argument(f'--window-size={win_width},{win_height}')
+                options.add_argument(f'--window-position={x_pos},{y_pos}')
+                
+                # TRICK CỐT LÕI: Thu nhỏ giao diện web còn 50%
+                options.add_argument('--force-device-scale-factor=0.5')
+                
+                # Tối ưu RAM & CPU để chạy nhiều luồng không giật lag
+                options.add_argument('--disable-gpu')
+                options.add_argument('--disable-software-rasterizer')
+                options.add_argument('--disable-dev-shm-usage')
                 
                 driver = uc.Chrome(options=options)
-                try: driver.maximize_window()
-                except: pass
+                # ========================================================
                     
                 wait = WebDriverWait(driver, 15)
                 
@@ -536,6 +557,9 @@ class starts(threading.Thread):
                     except: driver.execute_script("arguments[0].click();", element) 
                     time.sleep(0.5)
                     
+                    # === ĐÃ THÊM: ÉP FOCUS ĐỂ GÕ NGẦM KHÔNG BỊ TRƯỢT ===
+                    driver.execute_script("arguments[0].focus();", element)
+                    
                     if is_username:
                         print(f"{Colors.color_text(f'[{self.thread_id}] Chờ IG gợi ý Username để tiến hành xóa...', Colors.WARNING)}")
                         time.sleep(2) 
@@ -558,6 +582,8 @@ class starts(threading.Thread):
                         time.sleep(0.3)
                     
                     for char in text:
+                        # Ép lại focus mỗi ký tự phòng khi luồng khác nhảy lên
+                        driver.execute_script("arguments[0].focus();", element)
                         element.send_keys(char)
                         time.sleep(random.uniform(0.05, 0.15)) 
                     time.sleep(random.uniform(0.5, 1.0))
