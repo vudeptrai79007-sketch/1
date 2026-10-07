@@ -133,7 +133,7 @@ def banner():
 ╚██████╔╝██║  ██║██║  ██║╚██████╔╝██║ ╚═╝ ██║███████╗
  ╚═════╝ ╚═╝  ╚═╝╚═╝  ╚═╝ ╚═════╝ ╚═╝    ╚═╝╚══════╝
 {Colors.RESET}""")
-    built_in_print(f"{Colors.INFO}Phiên Bản: v14.3 (FIX LỖI CỬA SỔ WINDOWS & CHỌN CHUẨN ICON AVATAR){Colors.RESET}")
+    built_in_print(f"{Colors.INFO}Phiên Bản: v14.4 (LƯU THƯ MỤC AVATAR - HỎI DÙNG LẠI (y/n)){Colors.RESET}")
     built_in_print(f"{Colors.LINE}{'─'*70}{Colors.RESET}\n")
 
 def load_config():
@@ -1331,10 +1331,24 @@ if __name__ == "__main__":
         built_in_print(f"{Colors.ERROR}Danh sách đầu vào trống! Thoát chương trình.{Colors.RESET}")
         sys.exit()
         
-    # --- YÊU CẦU ĐƯỜNG DẪN ẢNH AVATAR Ở MENU ---
-    built_in_print(f"\n{Colors.KEY}Nhập đường dẫn thư mục chứa ảnh làm Avatar (Bỏ trống nếu không muốn up): {Colors.RESET}", end="")
-    avatar_folder_input = input().strip()
-    avatar_folder_input = avatar_folder_input.strip('"').strip("'")
+    # --- YÊU CẦU ĐƯỜNG DẪN ẢNH AVATAR (LƯU VÀO CONFIG) ---
+    saved_avatar_folder = config_data.get("last_avatar_folder", "")
+    avatar_folder_input = ""
+
+    if saved_avatar_folder and os.path.isdir(saved_avatar_folder):
+        built_in_print(f"\n{Colors.INFO}Phát hiện thư mục Avatar cũ: {Colors.VALUE}{saved_avatar_folder}{Colors.RESET}")
+        use_old_avatar = input(f"{Colors.KEY}Bạn có muốn dùng lại thư mục này không? (y/n): {Colors.RESET}").strip().lower()
+        if use_old_avatar == 'y':
+            avatar_folder_input = saved_avatar_folder
+
+    if not avatar_folder_input:
+        built_in_print(f"\n{Colors.KEY}Nhập đường dẫn thư mục chứa ảnh làm Avatar (Bỏ trống nếu không muốn up): {Colors.RESET}", end="")
+        avatar_folder_input = input().strip()
+        avatar_folder_input = avatar_folder_input.strip('"').strip("'")
+        
+        if avatar_folder_input and os.path.isdir(avatar_folder_input):
+            config_data["last_avatar_folder"] = avatar_folder_input
+            save_config(config_data)
 
     built_in_print(f"\n{Colors.KEY}Nhập số luồng (số tab Chrome chạy cùng lúc): {Colors.RESET}", end="")
     threads_count = int(input().strip())
