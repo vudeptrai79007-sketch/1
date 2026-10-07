@@ -84,7 +84,7 @@ DATA_LOCK = threading.Lock()
 BROWSER_LOCK = threading.Lock()  
 INPUT_LOCK = threading.Lock()    
 TYPE_LOCK = threading.Lock() 
-SUBMIT_LOCK = threading.Lock() # Khóa xếp hàng giãn cách khi bấm Gửi
+SUBMIT_LOCK = threading.Lock() 
 CONFIG_FILE = "config_gmail.json"
 BASE_YEAR = random.randint(1995, 2005)
 
@@ -92,14 +92,13 @@ BASE_YEAR = random.randint(1995, 2005)
 built_in_print = print
 PRINT_LOCK = threading.Lock()
 PAUSE_FOR_INPUT = threading.Event()
-PAUSE_FOR_INPUT.set() # Bật trạng thái cho phép in
+PAUSE_FOR_INPUT.set() 
 
 def thread_safe_print(*args, **kwargs):
-    PAUSE_FOR_INPUT.wait() # Chờ nếu có luồng đang đòi nhập OTP
+    PAUSE_FOR_INPUT.wait() 
     with PRINT_LOCK:
         built_in_print(*args, **kwargs)
 
-# Ghi đè hàm print gốc của hệ thống bằng hàm đã nâng cấp
 print = thread_safe_print 
 
 # ========== BẢNG MÀU ==========
@@ -134,7 +133,7 @@ def banner():
 ╚██████╔╝██║  ██║██║  ██║╚██████╔╝██║ ╚═╝ ██║███████╗
  ╚═════╝ ╚═╝  ╚═╝╚═╝  ╚═╝ ╚═════╝ ╚═╝    ╚═╝╚══════╝
 {Colors.RESET}""")
-    built_in_print(f"{Colors.INFO}Phiên Bản: v12.36 (ĐÓNG BĂNG MÀN HÌNH NHẬP OTP & XẾP HÀNG GỬI){Colors.RESET}")
+    built_in_print(f"{Colors.INFO}Phiên Bản: v14.1 (TỐI ƯU DESKTOP - AUTO CHECK DIE - BẢO TOÀN MAIL - DELAY 40S){Colors.RESET}")
     built_in_print(f"{Colors.LINE}{'─'*70}{Colors.RESET}\n")
 
 def load_config():
@@ -357,7 +356,6 @@ class HotmailAPIService:
         self.email = self.data_line.split('|')[0] if '|' in self.data_line else self.data_line
         self.seen_codes = set()
         
-        # SỬ DỤNG SESSION ĐỂ TÁI SỬ DỤNG KẾT NỐI (RẤT QUAN TRỌNG KHI CHẠY ĐA LUỒNG)
         self.session = requests.Session()
         self.session.headers.update({
             'Content-Type': 'application/json',
@@ -367,7 +365,6 @@ class HotmailAPIService:
     def init_baseline(self):
         try:
             payload = {"mode": self.api_mode, "data": self.data_line}
-            # Thêm ngẫu nhiên 1-3s để giãn cách các luồng lúc bắt đầu
             time.sleep(random.uniform(1.0, 3.0)) 
             response = self.session.post(self.url, json=payload, timeout=15)
             if response.status_code == 200:
@@ -385,7 +382,7 @@ class HotmailAPIService:
                                 self.seen_codes.add(match_subj.group(1))
         except Exception: pass
 
-    def get_otp_code(self, timeout=180): # Tăng timeout tổng lên 180s
+    def get_otp_code(self, timeout=180): 
         start_time = time.time()
         print(f"{Colors.color_text(f'[API Smail1s] Đang check hộp thư {self.email} (Mode: {self.api_mode})...', Colors.INFO)}")
         
@@ -399,10 +396,7 @@ class HotmailAPIService:
             if STOP_EVENT.is_set():
                 return None
             try:
-                # Giãn cách các luồng trong vòng lặp để tránh Spam Server API
                 time.sleep(random.uniform(0.5, 2.0))
-                
-                # Giảm timeout requests xuống 10s để lặp lại nhanh hơn nếu bị nghẽn
                 response = self.session.post(self.url, json=payload, timeout=10)
                 if response.status_code == 200:
                     res_json = response.json()
@@ -485,7 +479,7 @@ def generate_dot_variants(gmail):
 def ask_before_close(driver, thread_id):
     if driver:
         with INPUT_LOCK:
-            PAUSE_FOR_INPUT.clear() # Đóng băng màn hình console
+            PAUSE_FOR_INPUT.clear() 
             while True:
                 built_in_print(f"{Colors.WARNING}[{thread_id}] Bạn có muốn đóng Chrome của luồng này không? (y/n): {Colors.RESET}", end="")
                 choice = input().strip().lower()
@@ -500,7 +494,7 @@ def ask_before_close(driver, thread_id):
                     break
                 else:
                     built_in_print(f"{Colors.ERROR}Vui lòng chỉ nhập y hoặc n!{Colors.RESET}")
-            PAUSE_FOR_INPUT.set() # Nhả băng console
+            PAUSE_FOR_INPUT.set() 
 
 # ==================== HÀM QUẢN LÝ NHẬP FILE VÀ CHỌN DÒNG ====================
 def process_file_input(config_key, default_prompt):
@@ -553,7 +547,7 @@ def process_file_input(config_key, default_prompt):
 
 # ==================== MAIN THREAD ====================
 class starts(threading.Thread):
-    def __init__(self, thread_id, mode, account_count, data_source, manual_password=None, base_gmail=None, app_password=None, api_mode=None):
+    def __init__(self, thread_id, mode, account_count, data_source, manual_password=None, base_gmail=None, app_password=None, api_mode=None, avatar_folder=""):
         super().__init__()
         self.thread_id = f"Tab-{thread_id}"
         self.mode = mode
@@ -563,6 +557,7 @@ class starts(threading.Thread):
         self.base_gmail = base_gmail
         self.app_password = app_password
         self.api_mode = api_mode
+        self.avatar_folder = avatar_folder
     
     def run(self):
         global BASE_YEAR
@@ -621,31 +616,28 @@ class starts(threading.Thread):
             driver = None
             try:
                 # ========================================================
-                # CÁCH 1: XẾP GẠCH CỬA SỔ DẠNG MOBILE THEO TỌA ĐỘ
+                # MỞ CỬA SỔ DẠNG DESKTOP ĐỂ HIỆN AVATAR GÓC TRÊN
                 # ========================================================
                 
                 thread_idx = int(self.thread_id.split("-")[1]) - 1 
                 
-                win_width = 380   
-                win_height = 700  
+                win_width = 1050   
+                win_height = 800  
                 
-                columns = 5       
+                columns = 2       
                 col = thread_idx % columns
                 row = thread_idx // columns
                 
                 x_pos = col * win_width
-                y_pos = row * win_height
+                y_pos = row * 50
                 
                 options = uc.ChromeOptions()
                 options.add_argument('--incognito')
                 options.add_argument('--mute-audio')
                 options.add_argument('--disable-notifications')
                 
-                # Cài đặt kích thước mặc định qua options
                 options.add_argument(f'--window-size={win_width},{win_height}')
                 options.add_argument(f'--window-position={x_pos},{y_pos}')
-                
-                options.add_argument('--force-device-scale-factor=0.8')
                 
                 options.add_argument('--disable-gpu')
                 options.add_argument('--disable-software-rasterizer')
@@ -653,13 +645,11 @@ class starts(threading.Thread):
                 
                 with BROWSER_LOCK:
                     driver = uc.Chrome(options=options)
-                    
                     try:
                         driver.set_window_size(win_width, win_height)
                         driver.set_window_position(x_pos, y_pos)
                     except:
                         pass
-                    
                     time.sleep(1) 
                 # ========================================================
                     
@@ -865,7 +855,6 @@ class starts(threading.Thread):
                     print(f"{Colors.color_text(f'[{self.thread_id}] Chờ form validate (Check Username)... (5s)', Colors.WARNING)}")
                     time.sleep(5)
                     
-                    # --- ÁP DỤNG SUBMIT_LOCK ĐỂ CÁC TAB XẾP HÀNG KHI GỬI (CHỐNG SPAM) ---
                     with SUBMIT_LOCK:
                         print(f"{Colors.color_text(f'[{self.thread_id}] Đang tìm và nhấn nút Gửi/Đăng Ký (Sign up)...', Colors.INFO)}")
                         try:
@@ -943,7 +932,7 @@ class starts(threading.Thread):
                             print(f"{Colors.color_text(f'[{self.thread_id}] Lỗi khi chạy Script click nút: {ex}', Colors.WARNING)}")
                         
                         print(f"{Colors.color_text(f'[{self.thread_id}] Đã bấm gửi form, chờ load OTP (15s)...', Colors.SUCCESS)}")
-                        time.sleep(15) # Giãn cách 15s giữa các tab theo ý bạn
+                        time.sleep(15) 
                     
                 except Exception as e:
                     print(f"{Colors.color_text(f'[{self.thread_id}] Lỗi quá trình điền form: {e}', Colors.ERROR)}")
@@ -990,7 +979,6 @@ class starts(threading.Thread):
                 
                 if self.mode == "2" and not (mail_service and mail_service.token):
                     with OTP_LOCK:
-                        # ĐÓNG BĂNG MÀN HÌNH ĐỂ LUỒNG NÀY ĐƯỢC NHẬP OTP THOẢI MÁI
                         PAUSE_FOR_INPUT.clear()
                         built_in_print(f"\n{Colors.color_text(f'[{self.thread_id}] MỜI SẾP NHẬP OTP CHO [{used_email}] TỪ BÀN PHÍM: ', Colors.SUCCESS)}", end="")
                         otp_code = input().strip()
@@ -1007,7 +995,6 @@ class starts(threading.Thread):
                     elif self.mode in ["3", "4"]:
                         otp_code = imap_service.get_otp_code(target_email=used_email, since_uid=uid_moc, timeout=120)
                     elif self.mode == "5":
-                        # ĐÃ ĐIỀU CHỈNH TIMEOUT TĂNG LÊN 180s CHO MODE 5
                         otp_code = hotmail_service.get_otp_code(timeout=180) 
                 
                 if not otp_code:
@@ -1121,77 +1108,100 @@ class starts(threading.Thread):
                 else:
                     print(f"{Colors.color_text(f'[{self.thread_id}] KHÔNG THỂ BẤM NÚT, trình duyệt có thể bị treo.', Colors.ERROR)}")
 
-                # ==================== CHỜ CHUYỂN TRANG VÀ UP AVATAR ====================
-                print(f"{Colors.color_text(f'[{self.thread_id}] Chờ IG xử lý OTP (20s)...', Colors.INFO)}")
-                time.sleep(20)
-
-                # KIỂM TRA THƯ MỤC AVATAR
-                avatar_dir = "avatars"
-                if not os.path.exists(avatar_dir):
-                    os.makedirs(avatar_dir)
-                
-                images = [f for f in os.listdir(avatar_dir) if f.lower().endswith(('.png', '.jpg', '.jpeg', '.webp'))]
-                if images:
-                    print(f"{Colors.color_text(f'[{self.thread_id}] Đang cố gắng up Avatar...', Colors.INFO)}")
-                    try:
-                        image_path = os.path.abspath(os.path.join(avatar_dir, random.choice(images)))
-                        # Thử quét thẻ input file ẩn
-                        file_inputs = driver.find_elements(By.XPATH, "//input[@type='file']")
-                        
-                        if not file_inputs:
-                            # Nếu chưa thấy, thử click vào nút "Thêm ảnh"
-                            driver.execute_script("""
-                                const btns = Array.from(document.querySelectorAll('button, div[role="button"]'));
-                                const addPicBtn = btns.find(b => {
-                                    const t = (b.innerText || "").trim().toLowerCase();
-                                    return t.includes("thêm ảnh") || t.includes("add a photo") || t.includes("add photo") || t.includes("thêm ảnh đại diện");
-                                });
-                                if(addPicBtn) addPicBtn.click();
-                            """)
-                            time.sleep(2)
-                            file_inputs = driver.find_elements(By.XPATH, "//input[@type='file']")
-
-                        if file_inputs:
-                            # Hiện input lên để tránh lỗi ElementNotInteractable
-                            driver.execute_script("arguments[0].style.display = 'block'; arguments[0].style.opacity = 1; arguments[0].style.visibility = 'visible';", file_inputs[0])
-                            time.sleep(0.5)
-                            file_inputs[0].send_keys(image_path)
-                            print(f"{Colors.color_text(f'[{self.thread_id}] Đã chèn file ảnh avatar thành công! Chờ 5s để lưu...', Colors.SUCCESS)}")
-                            time.sleep(5)
-                            
-                            # Bấm tiếp tục/lưu
-                            driver.execute_script("""
-                                const btns = Array.from(document.querySelectorAll('button, div[role="button"]'));
-                                const nextBtn = btns.find(b => {
-                                    const t = (b.innerText || "").trim().toLowerCase();
-                                    return t === "tiếp" || t === "next" || t === "xong" || t === "done" || t === "lưu" || t === "save";
-                                });
-                                if(nextBtn) nextBtn.click();
-                            """)
-                            time.sleep(3)
-                        else:
-                            print(f"{Colors.color_text(f'[{self.thread_id}] IG không hiện form up avatar, bỏ qua bước này.', Colors.WARNING)}")
-                    except Exception as e:
-                        print(f"{Colors.color_text(f'[{self.thread_id}] Lỗi trong quá trình up avatar: {e}', Colors.WARNING)}")
-                else:
-                    print(f"{Colors.color_text(f'[{self.thread_id}] Thư mục avatars trống, hãy cho ảnh vào để tự up. Bỏ qua!', Colors.WARNING)}")
-
-                print(f"{Colors.color_text(f'[{self.thread_id}] Tiếp tục ngâm 40s để load trang chủ và lấy Cookie...', Colors.INFO)}")
+                # ==================== CHỜ TẢI TRANG CHỦ & KIỂM TRA ACC DIE ====================
+                # --- [CẬP NHẬT CHỜ 40 GIÂY THAY VÌ 25 GIÂY] ---
+                print(f"{Colors.color_text(f'[{self.thread_id}] Chờ IG xử lý OTP và load trang chủ Desktop (40s để tránh lag mạng)...', Colors.INFO)}")
                 time.sleep(40)
                 
-                # Lấy danh sách cookies từ trình duyệt
+                # 1. KIỂM TRA SỚM ĐỂ XÁC ĐỊNH ACC SỐNG/CHẾT TRƯỚC KHI UP AVATAR
+                print(f"{Colors.color_text(f'[{self.thread_id}] Đang kiểm tra xem acc có bị Checkpoint/Die không...', Colors.INFO)}")
                 cookies_list = driver.get_cookies()
                 cookie_dict = {c['name']: c['value'] for c in cookies_list}
                 
-                # BƯỚC KIỂM TRA QUAN TRỌNG: NẾU KHÔNG CÓ SESSION ID TỨC LÀ TẠO XỊT
-                if not cookie_dict.get('sessionid') or not cookie_dict.get('ds_user_id'):
+                current_url = driver.current_url.lower()
+                page_source = driver.page_source.lower()
+                
+                is_dead = False
+                if "challenge" in current_url or "suspended" in current_url:
+                    is_dead = True
+                elif "tài khoản của bạn đã bị tạm ngưng" in page_source or "we suspended your account" in page_source:
+                    is_dead = True
+                elif not cookie_dict.get('sessionid') or not cookie_dict.get('ds_user_id'):
+                    is_dead = True
+                    
+                if is_dead:
                     print(f"\n{Colors.color_text('─'*70, Colors.LINE)}")
-                    print(f"{Colors.color_text(f'[{self.thread_id}] LỖI: Tài khoản chưa được tạo (Bị chặn form / sai mã / nút không phản hồi).', Colors.ERROR)}")
+                    print(f"{Colors.color_text(f'[{self.thread_id}] LỖI: TÀI KHOẢN ĐÃ DIE / CHECKPOINT!', Colors.ERROR)}")
                     print(f"{Colors.color_text('─'*70, Colors.LINE)}\n")
                     ask_before_close(driver, self.thread_id)
-                    return False
+                    return "DEAD" 
+
+                print(f"{Colors.color_text(f'[{self.thread_id}] TÀI KHOẢN SỐNG! Chuẩn bị up Avatar...', Colors.SUCCESS)}")
+
+                # --- 2. LOGIC UP AVATAR DESKTOP ---
+                if self.avatar_folder and os.path.exists(self.avatar_folder):
+                    images = [f for f in os.listdir(self.avatar_folder) if f.lower().endswith(('.png', '.jpg', '.jpeg', '.webp'))]
+                    if images:
+                        print(f"{Colors.color_text(f'[{self.thread_id}] Bắt đầu quy trình up Avatar từ URL trang cá nhân...', Colors.INFO)}")
+                        try:
+                            image_path = os.path.abspath(os.path.join(self.avatar_folder, random.choice(images)))
+                            
+                            # Chuyển hướng trực tiếp vào link profile cá nhân
+                            driver.get(f"https://www.instagram.com/{username}/")
+                            time.sleep(8)
+                            
+                            # Kiểm tra lại lần nữa xem vào profile có bị văng checkpoint không
+                            if "challenge" in driver.current_url.lower() or "suspended" in driver.current_url.lower():
+                                print(f"{Colors.color_text(f'[{self.thread_id}] Acc vừa die (Checkpoint) khi truy cập profile! Bỏ qua up avatar.', Colors.ERROR)}")
+                            else:
+                                # Tìm thẻ input file ẩn để up ảnh
+                                file_inputs = driver.find_elements(By.XPATH, "//input[@type='file']")
+                                
+                                if not file_inputs:
+                                    # Cố gắng click vào icon máy ảnh hoặc vùng avatar đại diện
+                                    driver.execute_script("""
+                                        let svgs = document.querySelectorAll('svg[aria-label="Thêm ảnh đại diện"], svg[aria-label="Add profile photo"]');
+                                        if (svgs.length > 0) {
+                                            let btn = svgs[0].closest('button, div[role="button"]');
+                                            if (btn) btn.click();
+                                        } else {
+                                            let avatarBtns = document.querySelectorAll('button, div[role="button"]');
+                                            for(let b of avatarBtns) {
+                                                let title = b.getAttribute('title') || "";
+                                                if(title.toLowerCase().includes('profile') || title.toLowerCase().includes('đại diện')) {
+                                                    b.click();
+                                                    break;
+                                                }
+                                            }
+                                        }
+                                    """)
+                                    time.sleep(3)
+                                    file_inputs = driver.find_elements(By.XPATH, "//input[@type='file']")
+                                
+                                if file_inputs:
+                                    # Hiện input ẩn lên và gửi file ảnh
+                                    driver.execute_script("arguments[0].style.display = 'block'; arguments[0].style.opacity = 1; arguments[0].style.visibility = 'visible';", file_inputs[0])
+                                    time.sleep(1)
+                                    file_inputs[0].send_keys(image_path)
+                                    print(f"{Colors.color_text(f'[{self.thread_id}] Đã chèn file ảnh avatar thành công! Chờ 10s để IG lưu ảnh...', Colors.SUCCESS)}")
+                                    time.sleep(10) 
+                                else:
+                                    print(f"{Colors.color_text(f'[{self.thread_id}] Không tìm thấy khung upload ảnh trên trang cá nhân.', Colors.WARNING)}")
+                                    
+                        except Exception as e:
+                            print(f"{Colors.color_text(f'[{self.thread_id}] Lỗi trong quá trình up avatar: {e}', Colors.WARNING)}")
+                    else:
+                        print(f"{Colors.color_text(f'[{self.thread_id}] Thư mục avatar trống, không có ảnh nào để up.', Colors.WARNING)}")
+                else:
+                    print(f"{Colors.color_text(f'[{self.thread_id}] Không cấu hình Up Avatar, bỏ qua bước này.', Colors.INFO)}")
+
+                # ==================== LẤY LẠI COOKIE LẦN CUỐI & LƯU ACC ====================
+                print(f"{Colors.color_text(f'[{self.thread_id}] Đang tiến hành lấy Cookie lưu tài khoản...', Colors.INFO)}")
                 
-                # Ép chuẩn định dạng chuỗi theo đúng thứ tự yêu cầu
+                # Cập nhật lại cookie (Vì khi up avatar có thể IG sinh thêm session mới)
+                cookies_list = driver.get_cookies()
+                cookie_dict = {c['name']: c['value'] for c in cookies_list}
+                
                 cookie_str = (
                     f"datr={cookie_dict.get('datr', '')}; "
                     f"ig_did={cookie_dict.get('ig_did', '')}; "
@@ -1204,6 +1214,7 @@ class starts(threading.Thread):
                     f"rur={cookie_dict.get('rur', '')}"
                 )
                 
+                # --- IN RA THÔNG TIN VÀ COOKIE ĐẦY ĐỦ CỦA TÀI KHOẢN SAU KHI UP AVATAR ---
                 print(f"\n{Colors.color_text('─'*70, Colors.LINE)}")
                 print(f"{Colors.color_text(f'[{self.thread_id}] THÀNH CÔNG ACC {account_index}!', Colors.SUCCESS)}")
                 print(f"{Colors.KEY}Mail: {Colors.EMAIL}{used_email}{Colors.RESET}")
@@ -1222,10 +1233,24 @@ class starts(threading.Thread):
                 ask_before_close(driver, self.thread_id)
                 return False
         
+        # --- VÒNG LẶP ĐÃ ĐƯỢC CHẶN LẤY THÊM MAIL (DỪNG LUỒNG NẾU ACC DIE HOẶC LỖI) ---
         success_count = 0
         for i in range(1, self.account_count + 1):
             if STOP_EVENT.is_set(): break
-            if create_one_account(i): success_count += 1
+            
+            status = create_one_account(i)
+            
+            if status == True:
+                success_count += 1
+            elif status == "DEAD":
+                # Nếu acc die, hiển thị xong thì dừng luồng luôn để giữ nguyên list mail
+                print(f"{Colors.color_text(f'[{self.thread_id}] Dừng luồng này vì acc đã Die, bảo toàn các Mail còn lại!', Colors.WARNING)}")
+                break
+            else:
+                # Nếu lỗi mạng, chặn form... cũng cho dừng luồng để không hao mail
+                print(f"{Colors.color_text(f'[{self.thread_id}] Dừng luồng do lỗi quá trình tạo, bảo toàn Mail!', Colors.WARNING)}")
+                break
+                
             time.sleep(random.uniform(5, 10))
         
         print(f"\n{Colors.color_text(f'[{self.thread_id}] TỔNG KẾT TAB: {success_count}/{self.account_count} THÀNH CÔNG', Colors.TITLE)}")
@@ -1258,7 +1283,7 @@ if __name__ == "__main__":
         
     elif mode == "2":
         built_in_print(f"{Colors.KEY}Nhập list email (cách nhau dấu phẩy) HOẶC đường dẫn file .txt: {Colors.RESET}", end="")
-        prompt_txt = "" # Đã dùng built_in_print ở trên thay cho prompt trong process_file_input
+        prompt_txt = "" 
         data_source = process_file_input("last_file_mode2", prompt_txt)
         if any("mail.tm" in e.lower() for e in data_source):
             built_in_print(f"{Colors.KEY}Nhập mật khẩu chung cho Mail.tm (Để trống dùng TempPass123!): {Colors.RESET}", end="")
@@ -1291,6 +1316,11 @@ if __name__ == "__main__":
     if not data_source and mode != "1" and mode != "4":
         built_in_print(f"{Colors.ERROR}Danh sách đầu vào trống! Thoát chương trình.{Colors.RESET}")
         sys.exit()
+        
+    # --- YÊU CẦU ĐƯỜNG DẪN ẢNH AVATAR Ở MENU ---
+    built_in_print(f"\n{Colors.KEY}Nhập đường dẫn thư mục chứa ảnh làm Avatar (Bỏ trống nếu không muốn up): {Colors.RESET}", end="")
+    avatar_folder_input = input().strip()
+    avatar_folder_input = avatar_folder_input.strip('"').strip("'")
 
     built_in_print(f"\n{Colors.KEY}Nhập số luồng (số tab Chrome chạy cùng lúc): {Colors.RESET}", end="")
     threads_count = int(input().strip())
@@ -1300,7 +1330,7 @@ if __name__ == "__main__":
     
     threads = []
     for i in range(threads_count):
-        t = starts(i+1, mode, accs_per_thread, data_source, manual_password, base_gmail, app_password, api_mode)
+        t = starts(i+1, mode, accs_per_thread, data_source, manual_password, base_gmail, app_password, api_mode, avatar_folder_input)
         threads.append(t)
         
     for t in threads: t.start()
