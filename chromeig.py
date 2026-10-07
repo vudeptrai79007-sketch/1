@@ -133,7 +133,7 @@ def banner():
 ╚██████╔╝██║  ██║██║  ██║╚██████╔╝██║ ╚═╝ ██║███████╗
  ╚═════╝ ╚═╝  ╚═╝╚═╝  ╚═╝ ╚═════╝ ╚═╝    ╚═╝╚══════╝
 {Colors.RESET}""")
-    built_in_print(f"{Colors.INFO}Phiên Bản: v14.1 (TỐI ƯU DESKTOP - AUTO CHECK DIE - BẢO TOÀN MAIL - DELAY 40S){Colors.RESET}")
+    built_in_print(f"{Colors.INFO}Phiên Bản: v14.3 (FIX LỖI CỬA SỔ WINDOWS & CHỌN CHUẨN ICON AVATAR){Colors.RESET}")
     built_in_print(f"{Colors.LINE}{'─'*70}{Colors.RESET}\n")
 
 def load_config():
@@ -616,20 +616,22 @@ class starts(threading.Thread):
             driver = None
             try:
                 # ========================================================
-                # MỞ CỬA SỔ DẠNG DESKTOP ĐỂ HIỆN AVATAR GÓC TRÊN
+                # MỞ CỬA SỔ DẠNG HÌNH CHỮ NHẬT DỌC ĐỂ XẾP 8 Ô
                 # ========================================================
                 
                 thread_idx = int(self.thread_id.split("-")[1]) - 1 
                 
-                win_width = 1050   
-                win_height = 800  
+                # CHỈNH KÍCH THƯỚC Ô THÀNH HÌNH CHỮ NHẬT DỌC
+                win_width = 460   
+                win_height = 520  
                 
-                columns = 2       
+                # XẾP THÀNH 4 CỘT, 2 HÀNG (TỔNG 8 Ô TRÊN MÀN HÌNH LAPTOP 1920x1080)
+                columns = 4       
                 col = thread_idx % columns
                 row = thread_idx // columns
                 
                 x_pos = col * win_width
-                y_pos = row * 50
+                y_pos = row * win_height
                 
                 options = uc.ChromeOptions()
                 options.add_argument('--incognito')
@@ -638,6 +640,9 @@ class starts(threading.Thread):
                 
                 options.add_argument(f'--window-size={win_width},{win_height}')
                 options.add_argument(f'--window-position={x_pos},{y_pos}')
+                
+                # THU NHỎ NỘI DUNG FORM (ZOOM OUT 65%) ĐỂ HIỂN THỊ ĐẦY ĐỦ TRONG Ô NHỎ
+                options.add_argument('--force-device-scale-factor=0.65')
                 
                 options.add_argument('--disable-gpu')
                 options.add_argument('--disable-software-rasterizer')
@@ -1109,8 +1114,7 @@ class starts(threading.Thread):
                     print(f"{Colors.color_text(f'[{self.thread_id}] KHÔNG THỂ BẤM NÚT, trình duyệt có thể bị treo.', Colors.ERROR)}")
 
                 # ==================== CHỜ TẢI TRANG CHỦ & KIỂM TRA ACC DIE ====================
-                # --- [CẬP NHẬT CHỜ 40 GIÂY THAY VÌ 25 GIÂY] ---
-                print(f"{Colors.color_text(f'[{self.thread_id}] Chờ IG xử lý OTP và load trang chủ Desktop (40s để tránh lag mạng)...', Colors.INFO)}")
+                print(f"{Colors.color_text(f'[{self.thread_id}] Chờ IG xử lý OTP và load trang chủ (40s để tránh lag mạng)...', Colors.INFO)}")
                 time.sleep(40)
                 
                 # 1. KIỂM TRA SỚM ĐỂ XÁC ĐỊNH ACC SỐNG/CHẾT TRƯỚC KHI UP AVATAR
@@ -1154,35 +1158,45 @@ class starts(threading.Thread):
                             if "challenge" in driver.current_url.lower() or "suspended" in driver.current_url.lower():
                                 print(f"{Colors.color_text(f'[{self.thread_id}] Acc vừa die (Checkpoint) khi truy cập profile! Bỏ qua up avatar.', Colors.ERROR)}")
                             else:
-                                # Tìm thẻ input file ẩn để up ảnh
+                                # Dùng Javascript nhắm CHÍNH XÁC vào phần Header (chứa avatar khoanh đỏ)
+                                # ĐỒNG THỜI: Chặn cửa sổ thư mục Windows hiện lên gây đơ tool
+                                driver.execute_script("""
+                                    // 1. Chặn cửa sổ Windows hiện ra
+                                    if (!window.hookedFileClick) {
+                                        window.originalClick = window.HTMLInputElement.prototype.click;
+                                        window.HTMLInputElement.prototype.click = function() {
+                                            if (this.type === 'file') {
+                                                this.style.display = 'block';
+                                                this.style.opacity = '1';
+                                                this.style.visibility = 'visible';
+                                                this.style.position = 'fixed';
+                                                this.style.top = '0';
+                                                this.style.left = '0';
+                                                this.style.zIndex = '99999';
+                                            } else {
+                                                window.originalClick.call(this);
+                                            }
+                                        };
+                                        window.hookedFileClick = true;
+                                    }
+
+                                    // 2. Chỉ khoanh vùng trong phần thông tin cá nhân (Header)
+                                    let header = document.querySelector('header');
+                                    if (header) {
+                                        // Tìm nút chứa icon máy ảnh khoanh đỏ
+                                        let btns = header.querySelectorAll('button, div[role="button"]');
+                                        if (btns.length > 0) {
+                                            btns[0].click(); // Click chuẩn xác vào ô máy ảnh
+                                        }
+                                    }
+                                """)
+                                time.sleep(3)
+                                
+                                # Tìm thẻ file đã được moi ra và nhét ảnh vào bằng Selenium (Không qua cửa sổ Windows)
                                 file_inputs = driver.find_elements(By.XPATH, "//input[@type='file']")
                                 
-                                if not file_inputs:
-                                    # Cố gắng click vào icon máy ảnh hoặc vùng avatar đại diện
-                                    driver.execute_script("""
-                                        let svgs = document.querySelectorAll('svg[aria-label="Thêm ảnh đại diện"], svg[aria-label="Add profile photo"]');
-                                        if (svgs.length > 0) {
-                                            let btn = svgs[0].closest('button, div[role="button"]');
-                                            if (btn) btn.click();
-                                        } else {
-                                            let avatarBtns = document.querySelectorAll('button, div[role="button"]');
-                                            for(let b of avatarBtns) {
-                                                let title = b.getAttribute('title') || "";
-                                                if(title.toLowerCase().includes('profile') || title.toLowerCase().includes('đại diện')) {
-                                                    b.click();
-                                                    break;
-                                                }
-                                            }
-                                        }
-                                    """)
-                                    time.sleep(3)
-                                    file_inputs = driver.find_elements(By.XPATH, "//input[@type='file']")
-                                
                                 if file_inputs:
-                                    # Hiện input ẩn lên và gửi file ảnh
-                                    driver.execute_script("arguments[0].style.display = 'block'; arguments[0].style.opacity = 1; arguments[0].style.visibility = 'visible';", file_inputs[0])
-                                    time.sleep(1)
-                                    file_inputs[0].send_keys(image_path)
+                                    file_inputs[-1].send_keys(image_path) # Lấy thẻ input mới nhất
                                     print(f"{Colors.color_text(f'[{self.thread_id}] Đã chèn file ảnh avatar thành công! Chờ 10s để IG lưu ảnh...', Colors.SUCCESS)}")
                                     time.sleep(10) 
                                 else:
