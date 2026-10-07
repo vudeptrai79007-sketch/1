@@ -135,7 +135,7 @@ def banner():
 ╚██████╔╝██║  ██║██║  ██║╚██████╔╝██║ ╚═╝ ██║███████╗
  ╚═════╝ ╚═╝  ╚═╝╚═╝  ╚═╝ ╚═════╝ ╚═╝    ╚═╝╚══════╝
 {Colors.RESET}""")
-    built_in_print(f"{Colors.INFO}Phiên Bản: v15.3 (FIX CÚ PHÁP JS - FIX NHẬP ĐƯỜNG DẪN ẢNH){Colors.RESET}")
+    built_in_print(f"{Colors.INFO}Phiên Bản: v15.5 (GOM TOÀN BỘ FIX - 8 SỐ OTP, CUỘN MÃ 32 KÝ TỰ){Colors.RESET}")
     built_in_print(f"{Colors.LINE}{'─'*70}{Colors.RESET}\n")
 
 def load_config():
@@ -198,7 +198,7 @@ class MailService:
         self.token = None
         self.domain = None
         self.email_address = None
-        self.seen_codes = set()
+        self.seen_codes = set() 
         
     def get_domain(self):
         try:
@@ -245,7 +245,7 @@ class MailService:
                                 last_id = msg['id']
                                 detail = requests.get(f"{self.base_url}/messages/{last_id}", headers=headers, timeout=10).json()
                                 text = detail.get('text', '') or re.sub('<[^<]+?>', '', str(detail.get('html', '')))
-                                match = re.search(r'(?<!\d)(\d{6})(?!\d)', text)
+                                match = re.search(r'(?<!\d)(\d{6}|\d{8})(?!\d)', text)
                                 if match: 
                                     code = match.group(1)
                                     if code not in self.seen_codes:
@@ -349,7 +349,7 @@ class GmailIMAPService:
                                 if "instagram" in subject or "instagram" in from_addr:
                                     self.seen_uids.add(uid_bytes) 
                                     body = self.get_text(msg)
-                                    match = re.search(r'(?<!\d)(\d{6})(?!\d)', body)
+                                    match = re.search(r'(?<!\d)(\d{6}|\d{8})(?!\d)', body)
                                     if match: return match.group(1)
             except Exception: pass
             time.sleep(5) 
@@ -381,11 +381,11 @@ class HotmailAPIService:
                     messages = data_array[0].get("messages", [])
                     for msg in messages:
                         code_field = str(msg.get("code", "")).strip()
-                        if code_field and code_field.isdigit() and len(code_field) == 6:
+                        if code_field and code_field.isdigit() and len(code_field) in [6, 8]:
                             self.seen_codes.add(code_field)
                         else:
                             subject = str(msg.get("subject", "")).lower()
-                            match_subj = re.search(r'\b(\d{6})\b', subject)
+                            match_subj = re.search(r'\b(\d{6}|\d{8})\b', subject)
                             if match_subj: 
                                 self.seen_codes.add(match_subj.group(1))
         except Exception: pass
@@ -435,12 +435,12 @@ class HotmailAPIService:
                                 is_ig = ("instagram" in subject) or ("instagram" in from_sender) or ("instagram" in raw_msg.lower())
                                 
                                 if is_ig:
-                                    if code_field and code_field.isdigit() and len(code_field) == 6:
+                                    if code_field and code_field.isdigit() and len(code_field) in [6, 8]:
                                         if code_field not in self.seen_codes:
                                             print(f"{Colors.color_text(f'[API Smail1s] Đã tìm thấy mã MỚI: {code_field}', Colors.SUCCESS)}")
                                             return code_field
                                     
-                                    match_subj = re.search(r'\b(\d{6})\b', subject)
+                                    match_subj = re.search(r'\b(\d{6}|\d{8})\b', subject)
                                     if match_subj:
                                         code = match_subj.group(1)
                                         if code not in self.seen_codes:
@@ -448,7 +448,7 @@ class HotmailAPIService:
                                             return code
                                             
                                     clean_text = re.sub(r'<[^>]+>', ' ', raw_msg)
-                                    match_body = re.search(r'\b(\d{6})\b', clean_text)
+                                    match_body = re.search(r'\b(\d{6}|\d{8})\b', clean_text)
                                     if match_body:
                                         code = match_body.group(1)
                                         if code not in self.seen_codes:
@@ -517,7 +517,6 @@ def process_file_input(config_key, default_prompt):
             file_path = saved_file
 
     if not file_path:
-        # Nếu không có hoặc chọn N -> In ra yêu cầu nhập và chờ lấy dữ liệu
         built_in_print(default_prompt, end="")
         file_path = input().strip().strip('"')
         if os.path.isfile(file_path):
@@ -1218,7 +1217,6 @@ class starts(threading.Thread):
                     print(f"{Colors.color_text(f'[{self.thread_id}] Đang xử lý các màn hình đệm của Meta...', Colors.INFO)}")
                     for _ in range(4):
                         try:
-                            # --- SỬA CÚ PHÁP JAVASCRIPT TRÁNH LỖI SYNTAXError TRONG PYTHON ---
                             driver.execute_script("""
                                 let targetUser = arguments[0].toLowerCase();
                                 let allElements = document.querySelectorAll('*');
@@ -1295,59 +1293,66 @@ class starts(threading.Thread):
                     except:
                         print(f"{Colors.color_text(f'[{self.thread_id}] Không tìm thấy lựa chọn Ứng dụng xác thực hoặc nút Tiếp tục.', Colors.WARNING)}")
                         
+                    # 5. Cào mã Secret Key & Sinh OTP nhập vào (ĐÃ FIX: Cuộn hộp thoại & Xóa khoảng trắng)
                     try:
+                        driver.execute_script("""
+                            let dialogs = document.querySelectorAll('div[role="dialog"]');
+                            if (dialogs.length > 0) {
+                                let scrollContainers = dialogs[0].querySelectorAll('div[style*="overflow-y: auto"], div[style*="overflow: hidden auto"]');
+                                for (let sc of scrollContainers) {
+                                    sc.scrollTop = sc.scrollHeight;
+                                }
+                            }
+                            let allElements = document.querySelectorAll('*');
+                            for(let el of allElements) {
+                                let txt = el.innerText ? el.innerText.trim().toLowerCase() : '';
+                                if(txt === 'nhập mã' || txt === 'enter code') {
+                                    el.scrollIntoView({block: "end", inline: "nearest"});
+                                    break;
+                                }
+                            }
+                        """)
+                        time.sleep(2)
+
                         page_text = driver.find_element(By.TAG_NAME, "body").text
-                        match = re.search(r'([A-Z2-7]{4}\s[A-Z2-7]{4}\s[A-Z2-7]{4}\s[A-Z2-7]{4}\s?[A-Z2-7]{0,4}\s?[A-Z2-7]{0,4})', page_text)
+                        
+                        clean_text = re.sub(r'[\s\n\r]', '', page_text)
+                        
+                        match = re.search(r'([A-Z2-7]{32})', clean_text)
                         if not match:
-                            match = re.search(r'([A-Z2-7\s]{19,40})', page_text)
+                            match = re.search(r'([A-Z2-7]{16,40})', clean_text)
                             
                         if match:
-                            raw_secret = match.group(1).strip()
-                            clean_secret = raw_secret.replace(" ", "") 
+                            two_fa_secret = match.group(1)
+                            print(f"{Colors.color_text(f'[{self.thread_id}] Đã sao chép chuẩn Secret Key: {two_fa_secret}', Colors.SUCCESS)}")
                             
-                            if len(clean_secret) >= 16 and clean_secret.isalnum():
-                                two_fa_secret = clean_secret
-                                print(f"{Colors.color_text(f'[{self.thread_id}] Đã lấy được Secret Key: {two_fa_secret}', Colors.SUCCESS)}")
-                                
-                                driver.execute_script("""
-                                    let allElements = document.querySelectorAll('*');
-                                    let clicked = false;
-                                    for(let el of allElements) {
-                                        let txt = el.innerText ? el.innerText.trim().toLowerCase() : '';
-                                        if(txt === 'tiếp' || txt === 'next' || txt === 'tiếp tục') {
-                                            let btn = el.closest('button, [role="button"]');
-                                            if(btn && !btn.disabled) { btn.click(); clicked = true; break; }
-                                        }
+                            driver.execute_script("""
+                                let allElements = document.querySelectorAll('*');
+                                for(let el of allElements) {
+                                    let txt = el.innerText ? el.innerText.trim().toLowerCase() : '';
+                                    if(txt === 'nhập mã' || txt === 'enter code') {
+                                        let btn = el.closest('button, [role="button"]');
+                                        if(btn && !btn.disabled) { btn.click(); return; }
                                     }
-                                    if(!clicked){
-                                        for(let el of allElements) {
-                                            let txt = el.innerText ? el.innerText.trim().toLowerCase() : '';
-                                            if(txt === 'nhập mã' || txt === 'enter code') {
-                                                let btn = el.closest('button, [role="button"]');
-                                                if(btn && !btn.disabled) { btn.click(); break; }
-                                            }
-                                        }
-                                    }
-                                """)
-                                time.sleep(3)
-                                
-                                totp = pyotp.TOTP(two_fa_secret)
-                                current_otp = totp.now()
-                                print(f"{Colors.color_text(f'[{self.thread_id}] Đã sinh mã OTP ({current_otp}) từ Key. Đang điền...', Colors.INFO)}")
-                                
-                                inputs = driver.find_elements(By.TAG_NAME, "input")
-                                for inp in inputs:
-                                    if inp.is_displayed():
-                                        inp.send_keys(current_otp)
-                                        time.sleep(1)
-                                        inp.send_keys(Keys.ENTER)
-                                        break
-                                time.sleep(5)
-                                print(f"{Colors.color_text(f'[{self.thread_id}] LÊN 2FA THÀNH CÔNG RỰC RỠ!', Colors.SUCCESS)}")
-                            else:
-                                print(f"{Colors.color_text(f'[{self.thread_id}] Key cào được không hợp lệ: {clean_secret}', Colors.WARNING)}")
+                                }
+                            """)
+                            time.sleep(3)
+                            
+                            totp = pyotp.TOTP(two_fa_secret)
+                            current_otp = totp.now()
+                            print(f"{Colors.color_text(f'[{self.thread_id}] Đã xử lý Key ra mã OTP ({current_otp}). Đang điền...', Colors.INFO)}")
+                            
+                            inputs = driver.find_elements(By.TAG_NAME, "input")
+                            for inp in inputs:
+                                if inp.is_displayed():
+                                    inp.send_keys(current_otp)
+                                    time.sleep(1)
+                                    inp.send_keys(Keys.ENTER)
+                                    break
+                            time.sleep(5)
+                            print(f"{Colors.color_text(f'[{self.thread_id}] LÊN 2FA THÀNH CÔNG RỰC RỠ!', Colors.SUCCESS)}")
                         else:
-                            print(f"{Colors.color_text(f'[{self.thread_id}] Không quét được Secret Key từ giao diện.', Colors.WARNING)}")
+                            print(f"{Colors.color_text(f'[{self.thread_id}] Không nhận diện được Secret Key trên giao diện.', Colors.WARNING)}")
                     except Exception as e:
                         print(f"{Colors.color_text(f'[{self.thread_id}] Lỗi lúc lấy/điền 2FA: {e}', Colors.WARNING)}")
                         
@@ -1434,7 +1439,6 @@ def process_file_input(config_key, default_prompt):
             file_path = saved_file
 
     if not file_path:
-        # --- FIX LỖI "ĐƠ TOOL" DO MẤT DÒNG NHẬP (Thêm thông báo rõ ràng) ---
         built_in_print(default_prompt, end="")
         file_path = input().strip().strip('"')
         if os.path.isfile(file_path):
