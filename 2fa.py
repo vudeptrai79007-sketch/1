@@ -135,7 +135,7 @@ def banner():
 ╚██████╔╝██║  ██║██║  ██║╚██████╔╝██║ ╚═╝ ██║███████╗
  ╚═════╝ ╚═╝  ╚═╝╚═╝  ╚═╝ ╚═════╝ ╚═╝    ╚═╝╚══════╝
 {Colors.RESET}""")
-    built_in_print(f"{Colors.INFO}Phiên Bản: v15.0 (TÍCH HỢP TỰ ĐỘNG BẬT 2FA AUTHENTICATOR){Colors.RESET}")
+    built_in_print(f"{Colors.INFO}Phiên Bản: v15.1 (VÒNG LẶP QUÉT ĐỘNG - VƯỢT GIAO DIỆN META THÔNG MINH){Colors.RESET}")
     built_in_print(f"{Colors.LINE}{'─'*70}{Colors.RESET}\n")
 
 def load_config():
@@ -150,7 +150,6 @@ def save_config(data):
         with open(CONFIG_FILE, 'w', encoding='utf-8') as f: json.dump(data, f, indent=4)
     except Exception: pass
 
-# Đã cập nhật hàm lưu Account có thêm trường 2FA
 def save_account(thread_id, email_str, password, username, full_name, mode="auto", cookie="", two_fa=""):
     folder_name = "Instagram_reg_PC"
     if not os.path.exists(folder_name): os.makedirs(folder_name)
@@ -351,7 +350,7 @@ class GmailIMAPService:
             time.sleep(5) 
         return None
 
-# ==================== DỊCH VỤ HOTMAIL/OUTLOOK API (ĐÃ TỐI ƯU ĐA LUỒNG) ====================
+# ==================== DỊCH VỤ HOTMAIL/OUTLOOK API ====================
 class HotmailAPIService:
     def __init__(self, data_line, api_mode):
         self.url = "https://smail1s.com/get_messages"
@@ -625,11 +624,9 @@ class starts(threading.Thread):
                 
                 thread_idx = int(self.thread_id.split("-")[1]) - 1 
                 
-                # CHỈNH KÍCH THƯỚC Ô THÀNH HÌNH CHỮ NHẬT DỌC
                 win_width = 460   
                 win_height = 520  
                 
-                # XẾP THÀNH 4 CỘT, 2 HÀNG (TỔNG 8 Ô TRÊN MÀN HÌNH LAPTOP 1920x1080)
                 columns = 4       
                 col = thread_idx % columns
                 row = thread_idx // columns
@@ -645,7 +642,6 @@ class starts(threading.Thread):
                 options.add_argument(f'--window-size={win_width},{win_height}')
                 options.add_argument(f'--window-position={x_pos},{y_pos}')
                 
-                # THU NHỎ NỘI DUNG FORM (ZOOM OUT 65%) ĐỂ HIỂN THỊ ĐẦY ĐỦ TRONG Ô NHỎ
                 options.add_argument('--force-device-scale-factor=0.65')
                 
                 options.add_argument('--disable-gpu')
@@ -1213,13 +1209,37 @@ class starts(threading.Thread):
                     driver.get("https://accountscenter.instagram.com/password_and_security/two_factor/")
                     time.sleep(8)
                     
-                    # 2. Nếu nó hiện danh sách tài khoản, click vào tài khoản vừa tạo
-                    try:
-                        acc_btn = driver.find_element(By.XPATH, f"//div[contains(translate(., 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), '{username.lower()}')]")
-                        driver.execute_script("arguments[0].click();", acc_btn)
-                        time.sleep(5)
-                    except:
-                        pass
+                    # --- AUTO VƯỢT RÀO CHẮN ĐỘNG (BẮT ĐẦU / CHỌN TÀI KHOẢN) ---
+                    # Quét màn hình 4 lần, mỗi lần cách nhau 3s. Thấy gì bấm nấy, không thấy thì đi tiếp bth.
+                    print(f"{Colors.color_text(f'[{self.thread_id}] Đang xử lý các màn hình đệm của Meta...', Colors.INFO)}")
+                    for _ in range(4):
+                        try:
+                            driver.execute_script(f"""
+                                let allElements = document.querySelectorAll('*');
+                                
+                                // Ưu tiên 1: Tìm nút Bắt đầu
+                                for(let el of allElements) {
+                                    let txt = el.innerText ? el.innerText.trim().toLowerCase() : '';
+                                    if(txt === 'bắt đầu' || txt === 'get started') {
+                                        let btn = el.closest('button, [role="button"]');
+                                        if(btn) { btn.click(); return; }
+                                    }
+                                }
+                                
+                                // Ưu tiên 2: Tìm Tên tài khoản
+                                let targetUser = '{username}'.toLowerCase();
+                                for(let el of allElements) {
+                                    let txt = el.innerText ? el.innerText.trim().toLowerCase() : '';
+                                    if(txt.includes(targetUser) && txt.length < 50) {
+                                         let clickable = el.closest('div[role="button"], a[role="link"]');
+                                         if(clickable) { clickable.click(); return; }
+                                    }
+                                }
+                            """)
+                            time.sleep(3)
+                        except:
+                            pass
+                    # -------------------------------------------------------------------------
                         
                     # 3. Vượt ải xác minh Email (Trường hợp IG bắt Verify Email lại)
                     try:
@@ -1251,7 +1271,7 @@ class starts(threading.Thread):
                     except:
                         pass
                     
-                    # 4. Click chọn "Ứng dụng xác thực"
+                    # 4. Click chọn "Ứng dụng xác thực" và nút "Tiếp tục"
                     try:
                         auth_app_btn = WebDriverWait(driver, 10).until(
                             EC.presence_of_element_located((By.XPATH, "//*[contains(text(), 'Ứng dụng xác thực') or contains(text(), 'Authentication app')]"))
@@ -1259,12 +1279,22 @@ class starts(threading.Thread):
                         driver.execute_script("arguments[0].click();", auth_app_btn)
                         time.sleep(2)
                         
-                        next_btns = driver.find_elements(By.XPATH, "//button[.//span[contains(text(), 'Tiếp tục') or contains(text(), 'Next')]] | //div[@role='button' and contains(., 'Tiếp tục')]")
-                        if next_btns:
-                            driver.execute_script("arguments[0].click();", next_btns[0])
+                        # Sử dụng JS để quét TẤT CẢ nút trên trang và bấm "Tiếp tục"
+                        driver.execute_script("""
+                            let allElements = document.querySelectorAll('*');
+                            for(let el of allElements) {
+                                if(el.innerText && (el.innerText.trim().toLowerCase() === 'tiếp tục' || el.innerText.trim().toLowerCase() === 'next')) {
+                                    let clickable = el.closest('button, [role="button"]');
+                                    if(clickable && !clickable.disabled) { 
+                                        clickable.click(); 
+                                        return; 
+                                    }
+                                }
+                            }
+                        """)
                         time.sleep(5)
                     except:
-                        print(f"{Colors.color_text(f'[{self.thread_id}] Không tìm thấy lựa chọn Ứng dụng xác thực.', Colors.WARNING)}")
+                        print(f"{Colors.color_text(f'[{self.thread_id}] Không tìm thấy lựa chọn Ứng dụng xác thực hoặc nút Tiếp tục.', Colors.WARNING)}")
                         
                     # 5. Cào mã Secret Key & Sinh OTP nhập vào
                     try:
@@ -1285,9 +1315,26 @@ class starts(threading.Thread):
                                 print(f"{Colors.color_text(f'[{self.thread_id}] Đã lấy được Secret Key: {two_fa_secret}', Colors.SUCCESS)}")
                                 
                                 # Click Tiếp tục
-                                next_btns = driver.find_elements(By.XPATH, "//button[contains(., 'Tiếp') or contains(., 'Next') or contains(., 'Nhập mã')]")
-                                if next_btns:
-                                    driver.execute_script("arguments[0].click();", next_btns[-1])
+                                driver.execute_script("""
+                                    let allElements = document.querySelectorAll('*');
+                                    let clicked = false;
+                                    for(let el of allElements) {
+                                        let txt = el.innerText ? el.innerText.trim().toLowerCase() : '';
+                                        if(txt === 'tiếp' || txt === 'next' || txt === 'tiếp tục') {
+                                            let btn = el.closest('button, [role="button"]');
+                                            if(btn && !btn.disabled) { btn.click(); clicked = true; break; }
+                                        }
+                                    }
+                                    if(!clicked){
+                                        for(let el of allElements) {
+                                            let txt = el.innerText ? el.innerText.trim().toLowerCase() : '';
+                                            if(txt === 'nhập mã' || txt === 'enter code') {
+                                                let btn = el.closest('button, [role="button"]');
+                                                if(btn && !btn.disabled) { btn.click(); break; }
+                                            }
+                                        }
+                                    }
+                                """)
                                 time.sleep(3)
                                 
                                 # Dùng pyotp sinh mã 6 số
