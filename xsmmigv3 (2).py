@@ -466,7 +466,7 @@ class MMOApp(ctk.CTk):
         self.lbl_xsmm_balance = ctk.CTkLabel(self.status_bar, text="💰 TỔNG XU KIẾM ĐƯỢC: 0 XU", font=ctk.CTkFont(size=11, weight="bold"), text_color="#059669")
         self.lbl_xsmm_balance.grid(row=0, column=1, padx=16, pady=6, sticky="w")
 
-        self.lbl_status_uptime = ctk.CTkLabel(self.status_bar, text="⏱️ UPTIME: 00:00:00 | Phím tắt: Ctrl+F5 (Start All), Ctrl+F6 (Kill Switch)", font=ctk.CTkFont(size=10, weight="bold"), text_color="#64748b")
+        self.lbl_status_uptime = ctk.CTkLabel(self.status_bar, text="⏱️ UPTIME: 00:00:00 | Phím tắt: Ctrl+F5 (Start), Ctrl+F6 (Kill)", font=ctk.CTkFont(size=10, weight="bold"), text_color="#64748b")
         self.lbl_status_uptime.grid(row=0, column=3, padx=16, pady=6, sticky="e")
 
         self.ent_token = ctk.CTkEntry(self)
@@ -496,7 +496,6 @@ class MMOApp(ctk.CTk):
     def switch_tab(self, tab_name):
         for frame in [self.frame_acc_tab, self.frame_page_tab, self.frame_dash_tab]:
             frame.grid_forget()
-        
         for btn in [self.btn_tab_fb, self.btn_tab_page, self.btn_tab_coin]:
             btn.configure(fg_color="#f1f5f9", text_color="#475569")
 
@@ -521,8 +520,7 @@ class MMOApp(ctk.CTk):
         ent_t = ctk.CTkEntry(modal, placeholder_text="Nhập Bearer Token...", height=38, font=ctk.CTkFont(size=11), fg_color="#f8fafc", border_color="#cbd5e1")
         ent_t.pack(fill="x", padx=24, pady=(0, 12))
         try:
-            current_t = self.ent_token.get()
-            if current_t: ent_t.insert(0, current_t)
+            if current_t := self.ent_token.get(): ent_t.insert(0, current_t)
         except: pass
 
         ctk.CTkLabel(modal, text="🎯 TỰ CHỌN LOẠI JOB INSTAGRAM", font=ctk.CTkFont(size=11, weight="bold"), text_color="#2563eb").pack(anchor="w", padx=24, pady=(6, 4))
@@ -593,7 +591,7 @@ class MMOApp(ctk.CTk):
         top_bar.grid(row=0, column=0, sticky="ew", padx=12, pady=12)
         top_bar.grid_columnconfigure(0, weight=1)
 
-        self.ent_quick_cookie = ctk.CTkEntry(top_bar, placeholder_text="Nhập Cookie Instagram | Proxy...", height=36, font=ctk.CTkFont(family="Consolas", size=10), fg_color="#ffffff", border_color="#cbd5e1")
+        self.ent_quick_cookie = ctk.CTkEntry(top_bar, placeholder_text="Nhập Cookie IG | Proxy...", height=36, font=ctk.CTkFont(family="Consolas", size=10), fg_color="#ffffff", border_color="#cbd5e1")
         self.ent_quick_cookie.grid(row=0, column=0, padx=(12, 6), pady=10, sticky="ew")
 
         self.max_jobs_entry = ctk.CTkEntry(top_bar, placeholder_text="Max Job (Mặc định vô hạn)", width=130, height=36, font=ctk.CTkFont(size=10), fg_color="#ffffff", border_color="#cbd5e1")
@@ -605,11 +603,12 @@ class MMOApp(ctk.CTk):
 
         tool_tbl = ctk.CTkFrame(self.frame_acc_tab, fg_color="transparent", height=42)
         tool_tbl.grid(row=1, column=0, sticky="ew", padx=12, pady=4)
-        tool_tbl.grid_columnconfigure(4, weight=1)
+        tool_tbl.grid_columnconfigure(5, weight=1)
 
         ctk.CTkButton(tool_tbl, text="✓ Chọn Tất Cả", width=100, height=28, fg_color="#059669", hover_color="#047857", font=ctk.CTkFont(size=10, weight="bold"), corner_radius=6, command=lambda: self.toggle_all_accounts(True)).grid(row=0, column=0, padx=2)
         ctk.CTkButton(tool_tbl, text="✗ Bỏ Chọn", width=85, height=28, fg_color="#d97706", hover_color="#b45309", font=ctk.CTkFont(size=10, weight="bold"), corner_radius=6, command=lambda: self.toggle_all_accounts(False)).grid(row=0, column=1, padx=2)
         ctk.CTkButton(tool_tbl, text="🗑️ Xóa Đã Chọn", width=110, height=28, fg_color="#dc2626", hover_color="#b91c1c", font=ctk.CTkFont(size=10, weight="bold"), corner_radius=6, command=self.delete_selected_accounts).grid(row=0, column=2, padx=2)
+        ctk.CTkButton(tool_tbl, text="🔄 Check Live/Die", width=110, height=28, fg_color="#0284c7", hover_color="#0369a1", font=ctk.CTkFont(size=10, weight="bold"), corner_radius=6, command=self.check_selected_ig_live).grid(row=0, column=3, padx=2)
 
         tbl_head = ctk.CTkFrame(self.frame_acc_tab, fg_color="#f1f5f9", height=36, corner_radius=6)
         tbl_head.grid(row=2, column=0, sticky="ew", padx=12, pady=(2, 6))
@@ -621,7 +620,7 @@ class MMOApp(ctk.CTk):
         ctk.CTkLabel(tbl_head, text="MODE", font=ctk.CTkFont(size=11, weight="bold"), text_color="#334155", width=70).grid(row=0, column=2, sticky="w")
         ctk.CTkLabel(tbl_head, text="UID / INSTAGRAM ID", font=ctk.CTkFont(size=11, weight="bold"), text_color="#334155").grid(row=0, column=3, sticky="w", padx=6)
         ctk.CTkLabel(tbl_head, text="TÊN USERNAME", font=ctk.CTkFont(size=11, weight="bold"), text_color="#334155").grid(row=0, column=4, sticky="w", padx=6)
-        ctk.CTkLabel(tbl_head, text="SỐ XU KIẾM ĐƯỢC", font=ctk.CTkFont(size=11, weight="bold"), text_color="#059669", width=120, anchor="w").grid(row=0, column=5, sticky="w", padx=6)
+        ctk.CTkLabel(tbl_head, text="SỐ XU", font=ctk.CTkFont(size=11, weight="bold"), text_color="#059669", width=90, anchor="w").grid(row=0, column=5, sticky="w", padx=6)
         ctk.CTkLabel(tbl_head, text="TRẠNG THÁI", font=ctk.CTkFont(size=11, weight="bold"), text_color="#334155", width=240, anchor="w").grid(row=0, column=6, sticky="w", padx=6)
         ctk.CTkLabel(tbl_head, text="ACTION", font=ctk.CTkFont(size=11, weight="bold"), text_color="#334155", width=90, anchor="e").grid(row=0, column=7, sticky="e", padx=12)
 
@@ -641,7 +640,7 @@ class MMOApp(ctk.CTk):
         self.txt_fb_cookies = ctk.CTkEntry(top_bar, placeholder_text="Nhập Cookie FB để quét | Proxy...", height=36, font=ctk.CTkFont(family="Consolas", size=10), fg_color="#ffffff", border_color="#cbd5e1")
         self.txt_fb_cookies.grid(row=0, column=0, padx=(12, 6), pady=10, sticky="ew")
 
-        self.max_jobs_fb_entry = ctk.CTkEntry(top_bar, placeholder_text="Max Job FB (Mặc định vô hạn)", width=130, height=36, font=ctk.CTkFont(size=10), fg_color="#ffffff", border_color="#cbd5e1")
+        self.max_jobs_fb_entry = ctk.CTkEntry(top_bar, placeholder_text="Max Job (Mặc định vô hạn)", width=130, height=36, font=ctk.CTkFont(size=10), fg_color="#ffffff", border_color="#cbd5e1")
         self.max_jobs_fb_entry.grid(row=0, column=1, padx=6, pady=10)
         self.max_jobs_fb_entry.insert(0, "999999")
 
@@ -649,11 +648,12 @@ class MMOApp(ctk.CTk):
 
         tool_tbl = ctk.CTkFrame(self.frame_page_tab, fg_color="transparent", height=42)
         tool_tbl.grid(row=1, column=0, sticky="ew", padx=12, pady=4)
-        tool_tbl.grid_columnconfigure(4, weight=1)
+        tool_tbl.grid_columnconfigure(5, weight=1)
 
         ctk.CTkButton(tool_tbl, text="✓ Chọn Tất Cả", width=100, height=28, fg_color="#059669", hover_color="#047857", font=ctk.CTkFont(size=10, weight="bold"), corner_radius=6, command=lambda: self.toggle_all_pages(True)).grid(row=0, column=0, padx=2)
         ctk.CTkButton(tool_tbl, text="✗ Bỏ Chọn", width=85, height=28, fg_color="#d97706", hover_color="#b45309", font=ctk.CTkFont(size=10, weight="bold"), corner_radius=6, command=lambda: self.toggle_all_pages(False)).grid(row=0, column=1, padx=2)
         ctk.CTkButton(tool_tbl, text="🗑️ Xóa Đã Chọn", width=110, height=28, fg_color="#dc2626", hover_color="#b91c1c", font=ctk.CTkFont(size=10, weight="bold"), corner_radius=6, command=self.delete_selected_pages).grid(row=0, column=2, padx=2)
+        ctk.CTkButton(tool_tbl, text="🔄 Check Live/Die", width=110, height=28, fg_color="#0284c7", hover_color="#0369a1", font=ctk.CTkFont(size=10, weight="bold"), corner_radius=6, command=self.check_selected_fb_live).grid(row=0, column=3, padx=2)
 
         tbl_head = ctk.CTkFrame(self.frame_page_tab, fg_color="#f1f5f9", height=36, corner_radius=6)
         tbl_head.grid(row=2, column=0, sticky="ew", padx=12, pady=(2, 6))
@@ -664,7 +664,7 @@ class MMOApp(ctk.CTk):
         ctk.CTkLabel(tbl_head, text="STT", font=ctk.CTkFont(size=11, weight="bold"), text_color="#334155", width=45).grid(row=0, column=1, sticky="w")
         ctk.CTkLabel(tbl_head, text="TÊN FACEBOOK PAGE", font=ctk.CTkFont(size=11, weight="bold"), text_color="#334155").grid(row=0, column=2, sticky="w", padx=6)
         ctk.CTkLabel(tbl_head, text="PAGE ID", font=ctk.CTkFont(size=11, weight="bold"), text_color="#334155").grid(row=0, column=3, sticky="w", padx=6)
-        ctk.CTkLabel(tbl_head, text="SỐ XU KIẾM ĐƯỢC", font=ctk.CTkFont(size=11, weight="bold"), text_color="#059669", width=120, anchor="w").grid(row=0, column=4, sticky="w", padx=6)
+        ctk.CTkLabel(tbl_head, text="SỐ XU", font=ctk.CTkFont(size=11, weight="bold"), text_color="#059669", width=90, anchor="w").grid(row=0, column=4, sticky="w", padx=6)
         ctk.CTkLabel(tbl_head, text="TRẠNG THÁI", font=ctk.CTkFont(size=11, weight="bold"), text_color="#334155", width=240, anchor="w").grid(row=0, column=5, sticky="w", padx=6)
         ctk.CTkLabel(tbl_head, text="ACTION", font=ctk.CTkFont(size=11, weight="bold"), text_color="#334155", width=90, anchor="e").grid(row=0, column=6, sticky="e", padx=12)
 
@@ -784,10 +784,10 @@ class MMOApp(ctk.CTk):
         self.btn_toggle.configure(text="🚀 START ALL (CHẠY TẤT CẢ ACC)", fg_color="#059669")
         self.lbl_status_conn.configure(text="● SYSTEM: EMERGENCY STOP", text_color="#dc2626")
         for u, info in self.acc_rows.items():
-            info["action_btn"].configure(text="Bắt đầu", fg_color="#2563eb", hover_color="#1d4ed8")
+            info["action_btn"].configure(text="Bắt đầu", fg_color="#2563eb")
             info["status_label"].configure(text="Đã dừng", text_color="#d97706")
         for p, info in self.page_rows.items():
-            info["action_btn"].configure(text="Bắt đầu", fg_color="#0284c7", hover_color="#0369a1")
+            info["action_btn"].configure(text="Bắt đầu", fg_color="#0284c7")
             info["status_label"].configure(text="Đã dừng", text_color="#d97706")
         self.log("🛡️ KÍCH HOẠT KILL SWITCH (Ctrl+F6): Đã ngắt toàn bộ luồng hệ thống!")
 
@@ -820,7 +820,7 @@ class MMOApp(ctk.CTk):
                 self.add_page_row_to_ui(page_data, status)
         except Exception as e: pass
 
-    def add_account_row_to_ui(self, acc_data, status="Active"):
+    def add_account_row_to_ui(self, acc_data, status="Sẵn sàng"):
         ig_user = acc_data["username"]
         if ig_user in self.acc_rows: return
 
@@ -847,10 +847,11 @@ class MMOApp(ctk.CTk):
         lbl_user.grid(row=0, column=4, padx=6, pady=6, sticky="w")
 
         init_c = acc_data.get("coins", 0)
-        lbl_coin = ctk.CTkLabel(row_frame, text=f"+{init_c} xu", font=ctk.CTkFont(size=11, weight="bold"), text_color="#059669", width=120, anchor="w")
+        lbl_coin = ctk.CTkLabel(row_frame, text=f"+{init_c} xu", font=ctk.CTkFont(size=11, weight="bold"), text_color="#059669", width=90, anchor="w")
         lbl_coin.grid(row=0, column=5, padx=6, pady=6, sticky="w")
 
-        lbl_status = ctk.CTkLabel(row_frame, text="Sẵn sàng", font=ctk.CTkFont(size=10, weight="bold"), text_color="#334155", width=240, anchor="w")
+        text_color_st = "#334155" if status == "Sẵn sàng" else ("#dc2626" if "Die" in status else "#059669")
+        lbl_status = ctk.CTkLabel(row_frame, text=status, font=ctk.CTkFont(size=10, weight="bold"), text_color=text_color_st, width=240, anchor="w")
         lbl_status.grid(row=0, column=6, padx=6, pady=6, sticky="w")
 
         def toggle_single_acc():
@@ -858,7 +859,7 @@ class MMOApp(ctk.CTk):
             if not is_currently_running:
                 token = self.ent_token.get().strip()
                 if not token:
-                    self.log("✖ Vui lòng nhập XSMM Access Token trong Cấu hình chung!")
+                    self.log("✖ Vui lòng nhập XSMM Access Token!")
                     return
                 try: delay_val = int(self.ent_delay.get().strip())
                 except: delay_val = 2
@@ -869,7 +870,7 @@ class MMOApp(ctk.CTk):
                 if self.chk_ig_cmt.get(): chosen_ig_jobs.append('instagram_comment')
 
                 if not chosen_ig_jobs:
-                    self.log(f"✖ [IG - @{ig_user}] Bạn chưa chọn loại job nào để chạy! Vào 'Cấu hình chung' để chọn.")
+                    self.log(f"✖ [IG - @{ig_user}] Chưa chọn loại job Instagram!")
                     return
 
                 self.single_running_threads[ig_user] = True
@@ -880,14 +881,13 @@ class MMOApp(ctk.CTk):
                 self.single_running_threads[ig_user] = False
                 btn_action.configure(text="Bắt đầu", fg_color="#2563eb", hover_color="#1d4ed8")
                 lbl_status.configure(text="Đã dừng", text_color="#d97706")
-                self.log(f"⏹ Đã dừng luồng tài khoản IG: @{ig_user}")
 
         btn_action = ctk.CTkButton(row_frame, text="Bắt đầu", width=80, height=26, fg_color="#2563eb", hover_color="#1d4ed8", font=ctk.CTkFont(size=10, weight="bold"), corner_radius=6, command=toggle_single_acc)
         btn_action.grid(row=0, column=7, padx=10, pady=6, sticky="e")
 
         self.acc_rows[ig_user] = {"frame": row_frame, "var": var, "status_label": lbl_status, "coin_label": lbl_coin, "action_btn": btn_action, "coins": init_c, "data": acc_data}
 
-    def add_page_row_to_ui(self, page_data, status="Active"):
+    def add_page_row_to_ui(self, page_data, status="Sẵn sàng"):
         pid = page_data["page_id"]
         if pid in self.page_rows: return
 
@@ -911,10 +911,11 @@ class MMOApp(ctk.CTk):
         lbl_id.grid(row=0, column=3, padx=6, pady=6, sticky="w")
 
         init_c = page_data.get("coins", 0)
-        lbl_coin = ctk.CTkLabel(row_frame, text=f"+{init_c} xu", font=ctk.CTkFont(size=11, weight="bold"), text_color="#059669", width=120, anchor="w")
+        lbl_coin = ctk.CTkLabel(row_frame, text=f"+{init_c} xu", font=ctk.CTkFont(size=11, weight="bold"), text_color="#059669", width=90, anchor="w")
         lbl_coin.grid(row=0, column=4, padx=6, pady=6, sticky="w")
 
-        lbl_status = ctk.CTkLabel(row_frame, text="Sẵn sàng", font=ctk.CTkFont(size=10, weight="bold"), text_color="#334155", width=240, anchor="w")
+        text_color_st = "#334155" if status == "Sẵn sàng" else ("#dc2626" if "Die" in status else "#059669")
+        lbl_status = ctk.CTkLabel(row_frame, text=status, font=ctk.CTkFont(size=10, weight="bold"), text_color=text_color_st, width=240, anchor="w")
         lbl_status.grid(row=0, column=5, padx=6, pady=6, sticky="w")
 
         def toggle_single_page():
@@ -979,6 +980,80 @@ class MMOApp(ctk.CTk):
         conn.close()
         self.log(f"🗑️ Đã xóa {len(to_delete)} Page Facebook.")
 
+    def check_selected_ig_live(self):
+        selected = [u for u, info in self.acc_rows.items() if info["var"].get()]
+        if not selected:
+            self.log("💡 Vui lòng chọn ít nhất 1 tài khoản IG để check Live/Die.")
+            return
+
+        def _do_check():
+            self.log(f"🔄 Đang tiến hành check Live/Die cho {len(selected)} tài khoản IG...")
+            conn = sqlite3.connect(DB_FILE)
+            cursor = conn.cursor()
+            live_count = 0
+            die_count = 0
+            for ig_user in selected:
+                info = self.acc_rows[ig_user]
+                ck, proxy = info["data"]["cookie"], info["data"]["proxy"]
+                self.after(0, lambda l=info["status_label"]: l.configure(text="Đang check...", text_color="#d97706"))
+                try:
+                    res_json_str = check_cookie_ig(ck, proxy)
+                    p_data = json.loads(res_json_str)
+                    if p_data and 'form_data' in p_data and p_data['form_data'].get('username'):
+                        self.after(0, lambda l=info["status_label"]: l.configure(text="Live ✅ (Sẵn sàng)", text_color="#059669"))
+                        cursor.execute("UPDATE accounts SET status = ? WHERE username = ?", ("Live ✅ (Sẵn sàng)", ig_user))
+                        live_count += 1
+                    else:
+                        self.after(0, lambda l=info["status_label"]: l.configure(text="Die / Checkpoint ❌", text_color="#dc2626"))
+                        cursor.execute("UPDATE accounts SET status = ? WHERE username = ?", ("Die / Checkpoint ❌", ig_user))
+                        die_count += 1
+                except Exception:
+                    self.after(0, lambda l=info["status_label"]: l.configure(text="Lỗi kết nối ❌", text_color="#dc2626"))
+                    die_count += 1
+            conn.commit()
+            conn.close()
+            self.log(f"✨ Hoàn tất check IG: {live_count} Live ✅ | {die_count} Die ❌")
+
+        threading.Thread(target=_do_check, daemon=True).start()
+
+    def check_selected_fb_live(self):
+        selected = [pid for pid, info in self.page_rows.items() if info["var"].get()]
+        if not selected:
+            self.log("💡 Vui lòng chọn ít nhất 1 Page FB để check Live/Die.")
+            return
+
+        def _do_check():
+            self.log(f"🔄 Đang tiến hành check Live/Die cho {len(selected)} Page FB...")
+            conn = sqlite3.connect(DB_FILE)
+            cursor = conn.cursor()
+            live_count = 0
+            die_count = 0
+            for pid in selected:
+                info = self.page_rows[pid]
+                ptok, proxy = info["data"]["page_token"], info["data"]["proxy"]
+                self.after(0, lambda l=info["status_label"]: l.configure(text="Đang check...", text_color="#d97706"))
+                is_live = False
+                try:
+                    session = c_requests.Session()
+                    if proxies := format_proxy(proxy): session.proxies = proxies
+                    res = session.get(f"https://graph.facebook.com/v18.0/me?access_token={ptok}", timeout=8)
+                    if "id" in res.json(): is_live = True
+                except: pass
+
+                if is_live:
+                    self.after(0, lambda l=info["status_label"]: l.configure(text="Live ✅ (Sẵn sàng)", text_color="#059669"))
+                    cursor.execute("UPDATE fb_pages SET status = ? WHERE page_id = ?", ("Live ✅ (Sẵn sàng)", pid))
+                    live_count += 1
+                else:
+                    self.after(0, lambda l=info["status_label"]: l.configure(text="Die / Token Hết Hạn ❌", text_color="#dc2626"))
+                    cursor.execute("UPDATE fb_pages SET status = ? WHERE page_id = ?", ("Die / Token Hết Hạn ❌", pid))
+                    die_count += 1
+            conn.commit()
+            conn.close()
+            self.log(f"✨ Hoàn tất check FB Page: {live_count} Live ✅ | {die_count} Die ❌")
+
+        threading.Thread(target=_do_check, daemon=True).start()
+
     def quick_add_single_account(self):
         line = self.ent_quick_cookie.get().strip()
         if not line: return
@@ -998,7 +1073,7 @@ class MMOApp(ctk.CTk):
                     
                     conn = sqlite3.connect(DB_FILE)
                     cursor = conn.cursor()
-                    cursor.execute("INSERT OR REPLACE INTO accounts (username, cookie, proxy, status, coins, max_jobs) VALUES (?, ?, ?, ?, ?, ?)", (ig_user, ck, proxy, "Active", 0, max_jobs_val))
+                    cursor.execute("INSERT OR REPLACE INTO accounts (username, cookie, proxy, status, coins, max_jobs) VALUES (?, ?, ?, ?, ?, ?)", (ig_user, ck, proxy, "Sẵn sàng", 0, max_jobs_val))
                     conn.commit()
                     conn.close()
 
@@ -1047,7 +1122,7 @@ class MMOApp(ctk.CTk):
                             ig_user = p_data['form_data']['username']
                             if idfb == "0": idfb = str(p_data['form_data'].get('id', '0'))
                             
-                            cursor.execute("INSERT OR REPLACE INTO accounts (username, cookie, proxy, status, coins, max_jobs) VALUES (?, ?, ?, ?, ?, ?)", (ig_user, ck, proxy, "Active", 0, max_jobs_val))
+                            cursor.execute("INSERT OR REPLACE INTO accounts (username, cookie, proxy, status, coins, max_jobs) VALUES (?, ?, ?, ?, ?, ?)", (ig_user, ck, proxy, "Sẵn sàng", 0, max_jobs_val))
                             conn.commit()
 
                             acc_data = {"cookie": ck, "id": idfb, "username": ig_user, "proxy": proxy, "coins": 0, "max_jobs": max_jobs_val}
@@ -1101,7 +1176,7 @@ class MMOApp(ctk.CTk):
                         parent_id = (re.search(r'c_user=(\d+)', ck) or [None, "Main"])[1]
                         
                         cursor.execute("INSERT OR REPLACE INTO fb_pages (parent_username, page_id, page_name, page_token, proxy, status, coins, max_jobs) VALUES (?, ?, ?, ?, ?, ?, ?, ?)", 
-                                       (parent_id, pid, pname, ptok, proxy, "Active", 0, max_jobs_val))
+                                       (parent_id, pid, pname, ptok, proxy, "Sẵn sàng", 0, max_jobs_val))
                         conn.commit()
                         
                         page_data = {"parent": parent_id, "page_id": pid, "page_name": pname, "page_token": ptok, "proxy": proxy, "coins": 0, "max_jobs": max_jobs_val}
@@ -1360,4 +1435,4 @@ class MMOApp(ctk.CTk):
 
 if __name__ == "__main__":
     app = MMOApp()
-    app.mainloop()v
+    app.mainloop()
