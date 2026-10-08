@@ -140,7 +140,7 @@ def banner():
 ╚██████╔╝██║  ██║██║  ██║╚██████╔╝██║ ╚═╝ ██║███████╗
  ╚═════╝ ╚═╝  ╚═╝╚═╝  ╚═╝ ╚═════╝ ╚═╝    ╚═╝╚══════╝
 {Colors.RESET}""")
-    built_in_print(f"{Colors.INFO}Phiên Bản: v16.4 (FIX BẤM NÚT 'TIẾP' Ở GIAO DIỆN NHẬP OTP 2FA){Colors.RESET}")
+    built_in_print(f"{Colors.INFO}Phiên Bản: v16.5 (TỐI ƯU CỰC ĐẠI: FIX LỆCH PHA API TRÁNH TREO OTP MẠNG){Colors.RESET}")
     built_in_print(f"{Colors.LINE}{'─'*70}{Colors.RESET}\n")
 
 def load_config():
@@ -216,6 +216,7 @@ class MailService:
     def create_account(self, address=None):
         if not self.domain and not self.get_domain(): return None
         name = address if address else f"user_{uuid.uuid4().hex[:8]}"
+        time.sleep(random.uniform(0.5, 2.0)) # Lệch pha API khởi tạo
         try:
             r = requests.post(f"{self.base_url}/accounts", json={"address": f"{name}@{self.domain}", "password": "TempPass123!"}, timeout=10)
             if r.status_code == 201: 
@@ -225,6 +226,7 @@ class MailService:
             
     def authenticate(self, email=None, password="TempPass123!"):
         if email: self.email_address = email
+        time.sleep(random.uniform(0.5, 2.0)) # Lệch pha API đăng nhập
         try:
             r = requests.post(f"{self.base_url}/token", json={"address": self.email_address, "password": password}, timeout=10)
             if r.status_code == 200: 
@@ -237,6 +239,10 @@ class MailService:
         headers = {"Authorization": f"Bearer {self.token}", "Accept": "application/json"}
         start_time = time.time()
         last_id = None
+        
+        # Lệch pha ban đầu để tránh dội bom Server
+        time.sleep(random.uniform(1.0, 5.0))
+        
         while time.time() - start_time < timeout:
             if STOP_EVENT.is_set(): return None
             try:
@@ -257,7 +263,9 @@ class MailService:
                                         self.seen_codes.add(code)
                                         return code
             except Exception: pass
-            time.sleep(5)
+            
+            # GIÃN CÁCH REQUEST LÊN 8-15 GIÂY CHỐNG BỊ BLOCK (LỖI ĐƠ TÊ LIỆT)
+            time.sleep(random.uniform(8.0, 15.0))
         return None
 
 class GmailIMAPService:
@@ -328,6 +336,10 @@ class GmailIMAPService:
         if not self.mail:
             if not self.connect(): return None
         start_time = time.time()
+        
+        # Lệch pha IMAP Connection
+        time.sleep(random.uniform(1.0, 5.0))
+        
         while time.time() - start_time < timeout:
             if STOP_EVENT.is_set(): return None
             try:
@@ -357,7 +369,9 @@ class GmailIMAPService:
                                     match = re.search(r'(?<!\d)(\d{6}|\d{8})(?!\d)', body)
                                     if match: return match.group(1)
             except Exception: pass
-            time.sleep(5) 
+            
+            # Tăng độ trễ tránh Spam quá giới hạn Google
+            time.sleep(random.uniform(8.0, 15.0)) 
         return None
 
 # ==================== DỊCH VỤ HOTMAIL/OUTLOOK API ====================
@@ -404,12 +418,14 @@ class HotmailAPIService:
             "data": self.data_line
         }
         
+        # Lệch pha API 
+        time.sleep(random.uniform(1.0, 5.0))
+        
         last_logged = ""
         while time.time() - start_time < timeout:
             if STOP_EVENT.is_set():
                 return None
             try:
-                time.sleep(random.uniform(0.5, 2.0))
                 response = self.session.post(self.url, json=payload, timeout=10)
                 if response.status_code == 200:
                     res_json = response.json()
@@ -470,7 +486,8 @@ class HotmailAPIService:
                     print(f"{Colors.color_text(f'[API Smail1s] {err_str}', Colors.WARNING)}")
                     last_logged = err_str
             
-            time.sleep(5)
+            # GIÃN CÁCH REQUEST LÊN ĐỂ CHỐNG DDOS/BLOCK
+            time.sleep(random.uniform(8.0, 15.0))
         return None
 
 def generate_dot_variants(gmail):
@@ -1293,6 +1310,7 @@ class starts(threading.Thread):
                         
                     # 5. Cào mã Secret Key & Sinh OTP nhập vào
                     try:
+                        # Cuộn để tìm "Sao chép khóa"
                         driver.execute_script("""
                             let allElements = document.querySelectorAll('span, div');
                             for (let el of allElements) {
@@ -1305,6 +1323,7 @@ class starts(threading.Thread):
                         """)
                         time.sleep(2)
 
+                        # Dùng textContent để lấy trọn vẹn Text
                         page_text = driver.execute_script("return document.body.textContent;")
                         clean_text = re.sub(r'[\s\n\r]', '', page_text)
                         
@@ -1331,7 +1350,7 @@ class starts(threading.Thread):
                             current_otp = totp.now()
                             print(f"{Colors.color_text(f'[{self.thread_id}] Đã xử lý Key ra mã OTP ({current_otp}). Đang điền...', Colors.INFO)}")
                             
-                            # --- FIX LỖI Ở ĐÂY: Gõ từng số và click nút Tiếp ---
+                            # Gõ từng số một để React nhận diện và kích hoạt nút Tiếp
                             inputs = driver.find_elements(By.TAG_NAME, "input")
                             for inp in inputs:
                                 if inp.is_displayed():
@@ -1339,26 +1358,34 @@ class starts(threading.Thread):
                                         inp.send_keys(digit)
                                         time.sleep(0.1)
                                     time.sleep(1)
-                                    driver.execute_script("document.body.click();") # Click ra ngoài để kích hoạt React
+                                    
+                                    # CHỈ BẤM ENTER NHẸ, KHÔNG CUỘN TRANG LÀM MẤT GIAO DIỆN
+                                    try: inp.send_keys(Keys.ENTER)
+                                    except: pass
+                                    
+                                    # CLICK VÀO VÙNG TRỐNG (MẸO ÉP REACTJS MỞ KHÓA NÚT)
+                                    driver.execute_script("document.body.click();")
                                     time.sleep(1)
                                     break
                             
+                            time.sleep(2)
+                            
+                            # TÌM CHÍNH XÁC NÚT "TIẾP" TỪ DƯỚI LÊN ĐỂ CLICK
                             driver.execute_script("""
-                                let btns = document.querySelectorAll('button, div[role="button"]');
-                                for(let b of btns) {
-                                    let txt = (b.innerText || b.textContent || '').trim().toLowerCase();
-                                    if(txt === 'tiếp' || txt === 'tiếp tục' || txt === 'next' || txt === 'xong' || txt === 'done') {
+                                let btns = Array.from(document.querySelectorAll('button, div[role="button"]'));
+                                btns.reverse(); // Quét từ dưới lên vì nút Tiếp luôn nằm dưới đáy
+                                for(let b of btns){
+                                    let t = (b.innerText || b.textContent || "").trim().toLowerCase();
+                                    if(t === 'tiếp' || t === 'tiếp tục' || t === 'next' || t === 'xong' || t === 'done' || t === 'xác nhận'){
                                         let rect = b.getBoundingClientRect();
-                                        if (rect.width > 0 && rect.height > 0) {
-                                            b.disabled = false;
-                                            b.click();
-                                            return;
+                                        if(rect.width > 0 && rect.height > 0 && !b.disabled && b.getAttribute('aria-disabled') !== 'true') {
+                                            b.click(); 
+                                            return; 
                                         }
                                     }
                                 }
                             """)
                             time.sleep(5)
-                            # ----------------------------------------------------
                             print(f"{Colors.color_text(f'[{self.thread_id}] LÊN 2FA THÀNH CÔNG RỰC RỠ!', Colors.SUCCESS)}")
                         else:
                             print(f"{Colors.color_text(f'[{self.thread_id}] Không nhận diện được Secret Key trên giao diện.', Colors.WARNING)}")
