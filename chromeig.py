@@ -140,7 +140,7 @@ def banner():
 ╚██████╔╝██║  ██║██║  ██║╚██████╔╝██║ ╚═╝ ██║███████╗
  ╚═════╝ ╚═╝  ╚═╝╚═╝  ╚═╝ ╚═════╝ ╚═╝    ╚═╝╚══════╝
 {Colors.RESET}""")
-    built_in_print(f"{Colors.INFO}Phiên Bản: v16.0 (FULL CODE 1600 DÒNG - HỎI TẮT TRÌNH DUYỆT TẠI BƯỚC CUỐI){Colors.RESET}")
+    built_in_print(f"{Colors.INFO}Phiên Bản: v16.1 (FIX CHỜ Ô NHẬP OTP BẰNG JS & BẤM GỬI 2FA BẰNG JS){Colors.RESET}")
     built_in_print(f"{Colors.LINE}{'─'*70}{Colors.RESET}\n")
 
 def load_config():
@@ -640,7 +640,7 @@ class starts(threading.Thread):
                 
                 with BROWSER_LOCK:
                     driver = uc.Chrome(options=options)
-                    # LƯU DRIVER VÀO DANH SÁCH TỔNG NGAY KHI TẠO ĐỂ HỎI ĐÓNG SAU
+                    # LƯU DRIVER VÀO DANH SÁCH TỔNG ĐỂ HỎI ĐÓNG SAU
                     with DRIVER_LOCK:
                         ALL_DRIVERS.append((self.thread_id, driver))
                     try:
@@ -1225,12 +1225,21 @@ class starts(threading.Thread):
                         except:
                             pass
                         
+                    # 3. Vượt ải xác minh Email (Chờ thông minh bằng vòng lặp 15s)
                     try:
-                        email_verify_check = driver.find_elements(By.XPATH, "//*[contains(text(), 'Kiểm tra email của bạn') or contains(text(), 'Check your email')]")
-                        if email_verify_check:
+                        email_verify_input = None
+                        # Quét tìm ô nhập mã trong 15 giây
+                        for _ in range(5):
+                            inputs = driver.find_elements(By.TAG_NAME, "input")
+                            for inp in inputs:
+                                if inp.is_displayed():
+                                    email_verify_input = inp
+                                    break
+                            if email_verify_input: break
+                            time.sleep(3)
+
+                        if email_verify_input:
                             print(f"{Colors.color_text(f'[{self.thread_id}] IG yêu cầu xác minh Email để vào 2FA. Đang đợi mã...', Colors.WARNING)}")
-                            time.sleep(10) 
-                            
                             verify_code = None
                             if self.mode == "1" or (self.mode == "2" and mail_service and mail_service.token):
                                 verify_code = mail_service.get_otp_code(timeout=60)
@@ -1241,19 +1250,26 @@ class starts(threading.Thread):
                                 
                             if verify_code:
                                 print(f"{Colors.color_text(f'[{self.thread_id}] Lấy thành công mã verify 2FA: {verify_code}', Colors.SUCCESS)}")
-                                inputs = driver.find_elements(By.TAG_NAME, "input")
-                                for inp in inputs:
-                                    if inp.is_displayed():
-                                        inp.send_keys(verify_code)
-                                        time.sleep(1)
-                                        inp.send_keys(Keys.ENTER)
-                                        break
+                                email_verify_input.send_keys(verify_code)
+                                time.sleep(1)
+                                
+                                # FIX LỖI: Dùng JS ép bấm nút "Tiếp tục" thay vì phím ENTER
+                                driver.execute_script("""
+                                    let btns = document.querySelectorAll('button, [role="button"]');
+                                    for(let b of btns){
+                                        let t = (b.innerText||"").trim().toLowerCase();
+                                        if(t==='tiếp tục' || t==='next' || t==='gửi' || t==='tiếp' || t==='xác nhận'){
+                                            if(!b.disabled) { b.click(); return; }
+                                        }
+                                    }
+                                """)
                                 time.sleep(5)
                             else:
                                 print(f"{Colors.color_text(f'[{self.thread_id}] Quá hạn lấy mã xác minh. Bỏ qua 2FA!', Colors.ERROR)}")
-                    except:
-                        pass
+                    except Exception as e:
+                        print(f"Lỗi khối verify mail 2FA: {e}")
                     
+                    # 4. Click chọn "Ứng dụng xác thực"
                     try:
                         auth_app_btn = WebDriverWait(driver, 10).until(
                             EC.presence_of_element_located((By.XPATH, "//*[contains(text(), 'Ứng dụng xác thực') or contains(text(), 'Authentication app')]"))
@@ -1275,7 +1291,7 @@ class starts(threading.Thread):
                         """)
                         time.sleep(5)
                     except:
-                        print(f"{Colors.color_text(f'[{self.thread_id}] Không tìm thấy lựa chọn Ứng dụng xác thực hoặc nút Tiếp tục.', Colors.WARNING)}")
+                        pass
                         
                     # 5. Cào mã Secret Key & Sinh OTP nhập vào
                     try:
@@ -1283,9 +1299,7 @@ class starts(threading.Thread):
                             let dialogs = document.querySelectorAll('div[role="dialog"]');
                             if (dialogs.length > 0) {
                                 let scrollContainers = dialogs[0].querySelectorAll('div[style*="overflow-y: auto"], div[style*="overflow: hidden auto"]');
-                                for (let sc of scrollContainers) {
-                                    sc.scrollTop = sc.scrollHeight;
-                                }
+                                for (let sc of scrollContainers) { sc.scrollTop = sc.scrollHeight; }
                             }
                             let allElements = document.querySelectorAll('*');
                             for(let el of allElements) {
@@ -1299,7 +1313,6 @@ class starts(threading.Thread):
                         time.sleep(2)
 
                         page_text = driver.find_element(By.TAG_NAME, "body").text
-                        
                         clean_text = re.sub(r'[\s\n\r]', '', page_text)
                         
                         match = re.search(r'([A-Z2-7]{32})', clean_text)
@@ -1331,8 +1344,18 @@ class starts(threading.Thread):
                                 if inp.is_displayed():
                                     inp.send_keys(current_otp)
                                     time.sleep(1)
-                                    inp.send_keys(Keys.ENTER)
                                     break
+                            
+                            # FIX LỖI: Bấm Gửi mã 2FA bằng JS thay vì ENTER
+                            driver.execute_script("""
+                                let btns = document.querySelectorAll('button, [role="button"]');
+                                for(let b of btns){
+                                    let t = (b.innerText||"").trim().toLowerCase();
+                                    if(t==='tiếp tục' || t==='next' || t==='xong' || t==='done' || t==='bật' || t==='turn on' || t==='gửi' || t==='xác nhận'){
+                                        if(!b.disabled) { b.click(); return; }
+                                    }
+                                }
+                            """)
                             time.sleep(5)
                             print(f"{Colors.color_text(f'[{self.thread_id}] LÊN 2FA THÀNH CÔNG RỰC RỠ!', Colors.SUCCESS)}")
                         else:
