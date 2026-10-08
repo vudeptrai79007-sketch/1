@@ -140,7 +140,7 @@ def banner():
 ╚██████╔╝██║  ██║██║  ██║╚██████╔╝██║ ╚═╝ ██║███████╗
  ╚═════╝ ╚═╝  ╚═╝╚═╝  ╚═╝ ╚═════╝ ╚═╝    ╚═╝╚══════╝
 {Colors.RESET}""")
-    built_in_print(f"{Colors.INFO}Phiên Bản: v16.1 (FIX CHỜ Ô NHẬP OTP BẰNG JS & BẤM GỬI 2FA BẰNG JS){Colors.RESET}")
+    built_in_print(f"{Colors.INFO}Phiên Bản: v16.2 (FIX LỖI CUỘN TRANG LẤY 2FA VÀ CLICK NÚT NHẬP MÃ){Colors.RESET}")
     built_in_print(f"{Colors.LINE}{'─'*70}{Colors.RESET}\n")
 
 def load_config():
@@ -1295,50 +1295,51 @@ class starts(threading.Thread):
                         
                     # 5. Cào mã Secret Key & Sinh OTP nhập vào
                     try:
+                        # 1. Ép trình duyệt tìm đúng chữ "Sao chép khóa" để cuộn nội dung lên
                         driver.execute_script("""
-                            let dialogs = document.querySelectorAll('div[role="dialog"]');
-                            if (dialogs.length > 0) {
-                                let scrollContainers = dialogs[0].querySelectorAll('div[style*="overflow-y: auto"], div[style*="overflow: hidden auto"]');
-                                for (let sc of scrollContainers) { sc.scrollTop = sc.scrollHeight; }
-                            }
-                            let allElements = document.querySelectorAll('*');
-                            for(let el of allElements) {
-                                let txt = el.innerText ? el.innerText.trim().toLowerCase() : '';
-                                if(txt === 'nhập mã' || txt === 'enter code') {
-                                    el.scrollIntoView({block: "end", inline: "nearest"});
+                            let allElements = document.querySelectorAll('span, div');
+                            for (let el of allElements) {
+                                let txt = (el.innerText || '').trim().toLowerCase();
+                                if (txt.includes('sao chép khóa') || txt.includes('copy key')) {
+                                    el.scrollIntoView({behavior: 'smooth', block: 'center'});
                                     break;
                                 }
                             }
                         """)
-                        time.sleep(2)
+                        time.sleep(2) # Chờ 2 giây cho thanh cuộn chạy xong
 
-                        page_text = driver.find_element(By.TAG_NAME, "body").text
+                        # 2. Dùng textContent để cào 100% chữ trên trang (bất chấp bị khuất hay gãy dòng)
+                        page_text = driver.execute_script("return document.body.textContent;")
                         clean_text = re.sub(r'[\s\n\r]', '', page_text)
                         
+                        # Quét tìm chuỗi chứa đúng 32 ký tự Base32 liên tiếp
                         match = re.search(r'([A-Z2-7]{32})', clean_text)
                         if not match:
+                            # Dự phòng IG cấp mã 16-24 ký tự
                             match = re.search(r'([A-Z2-7]{16,40})', clean_text)
                             
                         if match:
                             two_fa_secret = match.group(1)
                             print(f"{Colors.color_text(f'[{self.thread_id}] Đã sao chép chuẩn Secret Key: {two_fa_secret}', Colors.SUCCESS)}")
                             
+                            # 3. Bấm nút "Nhập mã" màu xanh
                             driver.execute_script("""
-                                let allElements = document.querySelectorAll('*');
-                                for(let el of allElements) {
-                                    let txt = el.innerText ? el.innerText.trim().toLowerCase() : '';
+                                let btns = document.querySelectorAll('button, [role="button"]');
+                                for(let b of btns) {
+                                    let txt = (b.innerText || '').trim().toLowerCase();
                                     if(txt === 'nhập mã' || txt === 'enter code') {
-                                        let btn = el.closest('button, [role="button"]');
-                                        if(btn && !btn.disabled) { btn.click(); return; }
+                                        if(!b.disabled) { b.click(); return; }
                                     }
                                 }
                             """)
                             time.sleep(3)
                             
+                            # 4. Sinh mã 6 số từ Key
                             totp = pyotp.TOTP(two_fa_secret)
                             current_otp = totp.now()
                             print(f"{Colors.color_text(f'[{self.thread_id}] Đã xử lý Key ra mã OTP ({current_otp}). Đang điền...', Colors.INFO)}")
                             
+                            # 5. Điền mã 6 số vào ô Input
                             inputs = driver.find_elements(By.TAG_NAME, "input")
                             for inp in inputs:
                                 if inp.is_displayed():
@@ -1346,12 +1347,12 @@ class starts(threading.Thread):
                                     time.sleep(1)
                                     break
                             
-                            # FIX LỖI: Bấm Gửi mã 2FA bằng JS thay vì ENTER
+                            # 6. Bấm "Tiếp" / "Xong" để hoàn tất
                             driver.execute_script("""
                                 let btns = document.querySelectorAll('button, [role="button"]');
                                 for(let b of btns){
                                     let t = (b.innerText||"").trim().toLowerCase();
-                                    if(t==='tiếp tục' || t==='next' || t==='xong' || t==='done' || t==='bật' || t==='turn on' || t==='gửi' || t==='xác nhận'){
+                                    if(t==='tiếp tục' || t==='tiếp' || t==='next' || t==='xong' || t==='done' || t==='bật' || t==='gửi' || t==='xác nhận'){
                                         if(!b.disabled) { b.click(); return; }
                                     }
                                 }
