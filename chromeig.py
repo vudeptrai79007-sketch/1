@@ -140,7 +140,7 @@ def banner():
 ╚██████╔╝██║  ██║██║  ██║╚██████╔╝██║ ╚═╝ ██║███████╗
  ╚═════╝ ╚═╝  ╚═╝╚═╝  ╚═╝ ╚═════╝ ╚═╝    ╚═╝╚══════╝
 {Colors.RESET}""")
-    built_in_print(f"{Colors.INFO}Phiên Bản: v16.5 (TỐI ƯU CỰC ĐẠI: FIX LỆCH PHA API TRÁNH TREO OTP MẠNG){Colors.RESET}")
+    built_in_print(f"{Colors.INFO}Phiên Bản: v16.6 (TÍCH HỢP HỖ TRỢ PROXY CHO YÊU CẦU API & CHROME){Colors.RESET}")
     built_in_print(f"{Colors.LINE}{'─'*70}{Colors.RESET}\n")
 
 def load_config():
@@ -196,18 +196,34 @@ def VietnameseNameGenerator():
     
     return full_name, username
 
+# >>> ĐÃ GẮN HÀM format_proxy Ở ĐÂY <<<
+def format_proxy(proxy_str):
+    if not proxy_str: return None
+    proxy_str = proxy_str.strip()
+    if not proxy_str: return None
+    scheme = "http"
+    if "://" in proxy_str: scheme, proxy_str = proxy_str.split("://", 1)
+    parts = proxy_str.split(":")
+    if len(parts) == 4 and "@" not in proxy_str:
+        ip, port, user, pwd = parts
+        formatted = f"{scheme}://{user}:{pwd}@{ip}:{port}"
+    else:
+        formatted = f"{scheme}://{proxy_str}"
+    return {"http": formatted, "https": formatted}
+
 # ==================== CÁC CLASS XỬ LÝ EMAIL ====================
 class MailService:
-    def __init__(self):
+    def __init__(self, proxy=None):
         self.base_url = "https://api.mail.tm"
         self.token = None
         self.domain = None
         self.email_address = None
         self.seen_codes = set() 
+        self.proxy = proxy # Gắn Proxy vào service
         
     def get_domain(self):
         try:
-            r = requests.get(f"{self.base_url}/domains", timeout=10)
+            r = requests.get(f"{self.base_url}/domains", timeout=10, proxies=self.proxy)
             if r.status_code == 200: 
                 self.domain = r.json()['hydra:member'][0]['domain']
                 return self.domain
@@ -216,9 +232,9 @@ class MailService:
     def create_account(self, address=None):
         if not self.domain and not self.get_domain(): return None
         name = address if address else f"user_{uuid.uuid4().hex[:8]}"
-        time.sleep(random.uniform(0.5, 2.0)) # Lệch pha API khởi tạo
+        time.sleep(random.uniform(0.5, 2.0))
         try:
-            r = requests.post(f"{self.base_url}/accounts", json={"address": f"{name}@{self.domain}", "password": "TempPass123!"}, timeout=10)
+            r = requests.post(f"{self.base_url}/accounts", json={"address": f"{name}@{self.domain}", "password": "TempPass123!"}, timeout=10, proxies=self.proxy)
             if r.status_code == 201: 
                 self.email_address = r.json()['address']
                 return self.email_address
@@ -226,9 +242,9 @@ class MailService:
             
     def authenticate(self, email=None, password="TempPass123!"):
         if email: self.email_address = email
-        time.sleep(random.uniform(0.5, 2.0)) # Lệch pha API đăng nhập
+        time.sleep(random.uniform(0.5, 2.0)) 
         try:
-            r = requests.post(f"{self.base_url}/token", json={"address": self.email_address, "password": password}, timeout=10)
+            r = requests.post(f"{self.base_url}/token", json={"address": self.email_address, "password": password}, timeout=10, proxies=self.proxy)
             if r.status_code == 200: 
                 self.token = r.json()['token']
                 return True
@@ -240,13 +256,12 @@ class MailService:
         start_time = time.time()
         last_id = None
         
-        # Lệch pha ban đầu để tránh dội bom Server
         time.sleep(random.uniform(1.0, 5.0))
         
         while time.time() - start_time < timeout:
             if STOP_EVENT.is_set(): return None
             try:
-                r = requests.get(f"{self.base_url}/messages", headers=headers, timeout=10)
+                r = requests.get(f"{self.base_url}/messages", headers=headers, timeout=10, proxies=self.proxy)
                 if r.status_code == 200:
                     for msg in r.json().get('hydra:member', []):
                         sub = str(msg.get('subject', '')).lower()
@@ -254,7 +269,7 @@ class MailService:
                         if 'instagram' in sub or 'instagram' in frm:
                             if msg.get('id') != last_id:
                                 last_id = msg['id']
-                                detail = requests.get(f"{self.base_url}/messages/{last_id}", headers=headers, timeout=10).json()
+                                detail = requests.get(f"{self.base_url}/messages/{last_id}", headers=headers, timeout=10, proxies=self.proxy).json()
                                 text = detail.get('text', '') or re.sub('<[^<]+?>', '', str(detail.get('html', '')))
                                 match = re.search(r'(?<!\d)(\d{6}|\d{8})(?!\d)', text)
                                 if match: 
@@ -263,8 +278,6 @@ class MailService:
                                         self.seen_codes.add(code)
                                         return code
             except Exception: pass
-            
-            # GIÃN CÁCH REQUEST LÊN 8-15 GIÂY CHỐNG BỊ BLOCK (LỖI ĐƠ TÊ LIỆT)
             time.sleep(random.uniform(8.0, 15.0))
         return None
 
@@ -274,6 +287,7 @@ class GmailIMAPService:
         self.app_password = app_password.replace(" ", "")
         self.mail = None
         self.seen_uids = set()
+        # IMAP không hỗ trợ requests proxy nên chạy mạng thật
 
     def connect(self):
         try:
@@ -336,8 +350,6 @@ class GmailIMAPService:
         if not self.mail:
             if not self.connect(): return None
         start_time = time.time()
-        
-        # Lệch pha IMAP Connection
         time.sleep(random.uniform(1.0, 5.0))
         
         while time.time() - start_time < timeout:
@@ -369,14 +381,12 @@ class GmailIMAPService:
                                     match = re.search(r'(?<!\d)(\d{6}|\d{8})(?!\d)', body)
                                     if match: return match.group(1)
             except Exception: pass
-            
-            # Tăng độ trễ tránh Spam quá giới hạn Google
             time.sleep(random.uniform(8.0, 15.0)) 
         return None
 
 # ==================== DỊCH VỤ HOTMAIL/OUTLOOK API ====================
 class HotmailAPIService:
-    def __init__(self, data_line, api_mode):
+    def __init__(self, data_line, api_mode, proxy=None):
         self.url = "https://smail1s.com/get_messages"
         self.data_line = data_line.strip()
         self.api_mode = api_mode.strip()
@@ -384,6 +394,10 @@ class HotmailAPIService:
         self.seen_codes = set()
         
         self.session = requests.Session()
+        # Bổ sung update proxy cho session
+        if proxy:
+            self.session.proxies.update(proxy)
+
         self.session.headers.update({
             'Content-Type': 'application/json',
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
@@ -418,7 +432,6 @@ class HotmailAPIService:
             "data": self.data_line
         }
         
-        # Lệch pha API 
         time.sleep(random.uniform(1.0, 5.0))
         
         last_logged = ""
@@ -486,7 +499,6 @@ class HotmailAPIService:
                     print(f"{Colors.color_text(f'[API Smail1s] {err_str}', Colors.WARNING)}")
                     last_logged = err_str
             
-            # GIÃN CÁCH REQUEST LÊN ĐỂ CHỐNG DDOS/BLOCK
             time.sleep(random.uniform(8.0, 15.0))
         return None
 
@@ -505,59 +517,9 @@ def generate_dot_variants(gmail):
     random.shuffle(variants)
     return variants
 
-# ==================== HÀM QUẢN LÝ NHẬP FILE VÀ CHỌN DÒNG ====================
-def process_file_input(config_key, default_prompt):
-    config_data = load_config()
-    saved_file = config_data.get(config_key)
-    file_path = ""
-
-    if saved_file and os.path.isfile(saved_file):
-        built_in_print(f"{Colors.INFO}Phát hiện tệp danh sách cũ: {Colors.VALUE}{saved_file}{Colors.RESET}")
-        use_old = input(f"{Colors.KEY}Bạn có muốn sử dụng lại tệp này không? (y/n): {Colors.RESET}").strip().lower()
-        if use_old == 'y':
-            file_path = saved_file
-
-    if not file_path:
-        built_in_print(default_prompt, end="")
-        file_path = input().strip().strip('"')
-        if os.path.isfile(file_path):
-            config_data[config_key] = file_path
-            save_config(config_data)
-
-    if os.path.isfile(file_path):
-        with open(file_path, 'r', encoding='utf-8') as f:
-            lines = [line.strip() for line in f if line.strip()]
-
-        total = len(lines)
-        if total == 0:
-            built_in_print(f"{Colors.ERROR}File trống!{Colors.RESET}")
-            return []
-            
-        built_in_print(f"{Colors.SUCCESS}Đã tải {total} dòng từ tệp.{Colors.RESET}")
-
-        start_line = input(f"{Colors.KEY}Bạn muốn chạy TỪ mail số mấy? (Nhấn Enter để chạy từ đầu [1]): {Colors.RESET}").strip()
-        end_line = input(f"{Colors.KEY}Bạn muốn chạy ĐẾN mail số mấy? (Nhấn Enter để chạy đến cuối [{total}]): {Colors.RESET}").strip()
-
-        start_idx = int(start_line) if start_line.isdigit() else 1
-        end_idx = int(end_line) if end_line.isdigit() else total
-
-        start_idx = max(1, start_idx)
-        end_idx = min(total, end_idx)
-
-        if start_idx > end_idx:
-            built_in_print(f"{Colors.WARNING}Số thứ tự không hợp lệ, sẽ tự động chạy tất cả!{Colors.RESET}")
-            return lines
-        else:
-            selected_lines = lines[start_idx-1:end_idx]
-            built_in_print(f"{Colors.INFO}=> Đã chọn {len(selected_lines)} mail (Từ số {start_idx} đến {end_idx}){Colors.RESET}")
-            return selected_lines
-    else:
-        return [e.strip() for e in file_path.split(",") if e.strip()]
-
-
 # ==================== MAIN THREAD ====================
 class starts(threading.Thread):
-    def __init__(self, thread_id, mode, account_count, data_source, manual_password=None, base_gmail=None, app_password=None, api_mode=None, avatar_folder=""):
+    def __init__(self, thread_id, mode, account_count, data_source, manual_password=None, base_gmail=None, app_password=None, api_mode=None, avatar_folder="", proxies_list=None):
         super().__init__()
         self.thread_id = f"Tab-{thread_id}"
         self.mode = mode
@@ -568,9 +530,19 @@ class starts(threading.Thread):
         self.app_password = app_password
         self.api_mode = api_mode
         self.avatar_folder = avatar_folder
+        self.proxies_list = proxies_list or [] # Lưu danh sách proxy
     
     def run(self):
         global BASE_YEAR
+        
+        # --- BỐC PROXY CHO LUỒNG NÀY DỰA VÀO ID ---
+        raw_proxy = None
+        req_proxy = None
+        if self.proxies_list:
+            thread_idx_for_proxy = int(self.thread_id.split("-")[1]) - 1
+            raw_proxy = self.proxies_list[thread_idx_for_proxy % len(self.proxies_list)]
+            req_proxy = format_proxy(raw_proxy)
+            print(f"{Colors.color_text(f'[{self.thread_id}] Đã gán Proxy cho Luồng: {raw_proxy}', Colors.WARNING)}")
         
         def create_one_account(account_index):
             global BASE_YEAR
@@ -588,7 +560,7 @@ class starts(threading.Thread):
             secure_pass = "".join(random.choice(chars) for _ in range(12))
 
             if self.mode == "1":
-                mail_service = MailService()
+                mail_service = MailService(proxy=req_proxy)
                 used_email = mail_service.create_account(username)
                 if not used_email: return False
                 mail_service.authenticate()
@@ -598,7 +570,7 @@ class starts(threading.Thread):
                     if len(self.data_source) == 0: return False
                     used_email = self.data_source.pop(0)
                 if "mail.tm" in used_email.lower():
-                    mail_service = MailService()
+                    mail_service = MailService(proxy=req_proxy)
                     pass_to_use = self.manual_password if self.manual_password else "TempPass123!"
                     mail_service.authenticate(used_email, pass_to_use)
                 
@@ -619,7 +591,7 @@ class starts(threading.Thread):
                     if len(self.data_source) == 0: return False
                     data_line = self.data_source.pop(0)
                 used_email = data_line.split('|')[0]
-                hotmail_service = HotmailAPIService(data_line, self.api_mode)
+                hotmail_service = HotmailAPIService(data_line, self.api_mode, proxy=req_proxy)
 
             print(f"{Colors.color_text(f'[{self.thread_id}] Đang dùng Email: {used_email}', Colors.INFO)}")
 
@@ -628,7 +600,6 @@ class starts(threading.Thread):
                 # ========================================================
                 # MỞ CỬA SỔ DẠNG HÌNH CHỮ NHẬT DỌC ĐỂ XẾP 8 Ô
                 # ========================================================
-                
                 thread_idx = int(self.thread_id.split("-")[1]) - 1 
                 
                 win_width = 460   
@@ -648,16 +619,26 @@ class starts(threading.Thread):
                 
                 options.add_argument(f'--window-size={win_width},{win_height}')
                 options.add_argument(f'--window-position={x_pos},{y_pos}')
-                
                 options.add_argument('--force-device-scale-factor=0.65')
-                
                 options.add_argument('--disable-gpu')
                 options.add_argument('--disable-software-rasterizer')
                 options.add_argument('--disable-dev-shm-usage')
                 
+                # --- Gắn proxy vào Chrome ---
+                if raw_proxy:
+                    # Chrome chỉ nhận dạng chuẩn ip:port hoặc scheme://ip:port. User/pass chrome cần extension.
+                    p_parts = raw_proxy.split(':')
+                    if len(p_parts) == 2:
+                        options.add_argument(f'--proxy-server=http://{raw_proxy}')
+                    elif len(p_parts) == 4 and "@" not in raw_proxy:
+                        # Dạng ip:port:user:pass -> Chỉ gắn được ip:port vào options, 
+                        # chrome sẽ hiện popup hỏi user/pass. (Cần tool cấp cao hơn để vượt)
+                        options.add_argument(f'--proxy-server=http://{p_parts[0]}:{p_parts[1]}')
+                    else:
+                        options.add_argument(f'--proxy-server={raw_proxy}')
+                
                 with BROWSER_LOCK:
                     driver = uc.Chrome(options=options)
-                    # LƯU DRIVER VÀO DANH SÁCH TỔNG ĐỂ HỎI ĐÓNG SAU
                     with DRIVER_LOCK:
                         ALL_DRIVERS.append((self.thread_id, driver))
                     try:
@@ -666,7 +647,6 @@ class starts(threading.Thread):
                     except:
                         pass
                     time.sleep(1) 
-                # ========================================================
                     
                 wait = WebDriverWait(driver, 15)
                 
@@ -847,7 +827,6 @@ class starts(threading.Thread):
                         human_type(inputs[3], username, is_username=True)
                     else:
                         print(f"{Colors.color_text(f'[{self.thread_id}] Lỗi: Giao diện IG bị thay đổi!', Colors.ERROR)}")
-                        # KHÔNG ĐÓNG TRÌNH DUYỆT TẠI ĐÂY NỮA
                         return False
                     
                     print(f"{Colors.color_text(f'[{self.thread_id}] Đã điền xong. Ngâm form 10s trước khi bấm nút Đăng Ký...', Colors.WARNING)}")
@@ -1144,7 +1123,6 @@ class starts(threading.Thread):
                     print(f"\n{Colors.color_text('─'*70, Colors.LINE)}")
                     print(f"{Colors.color_text(f'[{self.thread_id}] LỖI: TÀI KHOẢN ĐÃ DIE / CHECKPOINT!', Colors.ERROR)}")
                     print(f"{Colors.color_text('─'*70, Colors.LINE)}\n")
-                    # KHÔNG ĐÓNG TRÌNH DUYỆT - ĐỂ NGUYÊN ĐỂ NGƯỜI DÙNG KIỂM TRA
                     return "DEAD" 
 
                 print(f"{Colors.color_text(f'[{self.thread_id}] TÀI KHOẢN SỐNG! Chuẩn bị up Avatar...', Colors.SUCCESS)}")
@@ -1310,7 +1288,6 @@ class starts(threading.Thread):
                         
                     # 5. Cào mã Secret Key & Sinh OTP nhập vào
                     try:
-                        # Cuộn để tìm "Sao chép khóa"
                         driver.execute_script("""
                             let allElements = document.querySelectorAll('span, div');
                             for (let el of allElements) {
@@ -1323,7 +1300,6 @@ class starts(threading.Thread):
                         """)
                         time.sleep(2)
 
-                        # Dùng textContent để lấy trọn vẹn Text
                         page_text = driver.execute_script("return document.body.textContent;")
                         clean_text = re.sub(r'[\s\n\r]', '', page_text)
                         
@@ -1350,7 +1326,6 @@ class starts(threading.Thread):
                             current_otp = totp.now()
                             print(f"{Colors.color_text(f'[{self.thread_id}] Đã xử lý Key ra mã OTP ({current_otp}). Đang điền...', Colors.INFO)}")
                             
-                            # Gõ từng số một để React nhận diện và kích hoạt nút Tiếp
                             inputs = driver.find_elements(By.TAG_NAME, "input")
                             for inp in inputs:
                                 if inp.is_displayed():
@@ -1359,18 +1334,15 @@ class starts(threading.Thread):
                                         time.sleep(0.1)
                                     time.sleep(1)
                                     
-                                    # CHỈ BẤM ENTER NHẸ, KHÔNG CUỘN TRANG LÀM MẤT GIAO DIỆN
                                     try: inp.send_keys(Keys.ENTER)
                                     except: pass
                                     
-                                    # CLICK VÀO VÙNG TRỐNG (MẸO ÉP REACTJS MỞ KHÓA NÚT)
                                     driver.execute_script("document.body.click();")
                                     time.sleep(1)
                                     break
                             
                             time.sleep(2)
                             
-                            # TÌM CHÍNH XÁC NÚT "TIẾP" TỪ DƯỚI LÊN ĐỂ CLICK
                             driver.execute_script("""
                                 let btns = Array.from(document.querySelectorAll('button, div[role="button"]'));
                                 btns.reverse(); // Quét từ dưới lên vì nút Tiếp luôn nằm dưới đáy
@@ -1424,12 +1396,10 @@ class starts(threading.Thread):
                 
                 save_account(self.thread_id, used_email, secure_pass, username, full_name, f"mode_{self.mode}", cookie_str, two_fa_secret)
                 
-                # KHÔNG BAO GIỜ GỌI LỆNH ĐÓNG TRÌNH DUYỆT Ở ĐÂY NỮA
                 return True
                 
             except Exception as e:
                 print(f"{Colors.color_text(f'[{self.thread_id}] Gặp Lỗi Ngoại Lệ: {e}', Colors.ERROR)}")
-                # LỖI CŨNG KHÔNG ĐÓNG ĐỂ KIỂM TRA
                 return False
         
         success_count = 0
@@ -1438,15 +1408,14 @@ class starts(threading.Thread):
             
             status = create_one_account(i)
             
-            # --- LUỒNG ĐỘC LẬP CHUẨN ---
             if status == True: 
                 success_count += 1
             elif status == "DEAD":
                 print(f"{Colors.color_text(f'[{self.thread_id}] Dừng luồng này vì acc đã Die, bảo toàn các Mail còn lại!', Colors.WARNING)}")
-                break # Break vòng lặp của luồng này (dừng luồng), các luồng khác kệ nó
+                break 
             else:
                 print(f"{Colors.color_text(f'[{self.thread_id}] Dừng luồng do lỗi quá trình tạo, bảo toàn Mail!', Colors.WARNING)}")
-                break # Break vòng lặp của luồng này
+                break 
                 
             time.sleep(random.uniform(5, 10))
         
@@ -1578,6 +1547,15 @@ if __name__ == "__main__":
             config_data["last_avatar_folder"] = avatar_folder_input
             save_config(config_data)
 
+    # >>> BỔ SUNG YÊU CẦU FILE PROXY Ở ĐÂY <<<
+    built_in_print(f"\n{Colors.KEY}Nhập đường dẫn file Proxy (.txt) (Bỏ trống nếu không dùng Proxy): {Colors.RESET}", end="")
+    proxy_file_input = input().strip().strip('"').strip("'")
+    proxies_list = []
+    if proxy_file_input and os.path.isfile(proxy_file_input):
+        with open(proxy_file_input, 'r', encoding='utf-8') as f_proxy:
+            proxies_list = [line.strip() for line in f_proxy if line.strip()]
+        built_in_print(f"{Colors.SUCCESS}Đã tải {len(proxies_list)} Proxy từ tệp.{Colors.RESET}")
+
     built_in_print(f"\n{Colors.KEY}Nhập số luồng (số tab Chrome chạy cùng lúc): {Colors.RESET}", end="")
     threads_count = int(input().strip())
     
@@ -1586,7 +1564,7 @@ if __name__ == "__main__":
     
     threads = []
     for i in range(threads_count):
-        t = starts(i+1, mode, accs_per_thread, data_source, manual_password, base_gmail, app_password, api_mode, avatar_folder_input)
+        t = starts(i+1, mode, accs_per_thread, data_source, manual_password, base_gmail, app_password, api_mode, avatar_folder_input, proxies_list)
         threads.append(t)
         
     for t in threads: t.start()
