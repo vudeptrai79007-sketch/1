@@ -140,7 +140,7 @@ def banner():
 ╚██████╔╝██║  ██║██║  ██║╚██████╔╝██║ ╚═╝ ██║███████╗
  ╚═════╝ ╚═╝  ╚═╝╚═╝  ╚═╝ ╚═════╝ ╚═╝    ╚═╝╚══════╝
 {Colors.RESET}""")
-    built_in_print(f"{Colors.INFO}Phiên Bản: v16.6 (TÍCH HỢP HỖ TRỢ PROXY CHO YÊU CẦU API & CHROME){Colors.RESET}")
+    built_in_print(f"{Colors.INFO}Phiên Bản: v16.7 (HỖ TRỢ TRỰC TIẾP IP:PORT TỪ AUTHPROXY){Colors.RESET}")
     built_in_print(f"{Colors.LINE}{'─'*70}{Colors.RESET}\n")
 
 def load_config():
@@ -196,19 +196,17 @@ def VietnameseNameGenerator():
     
     return full_name, username
 
-# >>> ĐÃ GẮN HÀM format_proxy Ở ĐÂY <<<
+# >>> ĐÃ TỐI ƯU LẠI HÀM format_proxy CHỈ NHẬN IP:PORT CHO AUTHPROXY <<<
 def format_proxy(proxy_str):
     if not proxy_str: return None
     proxy_str = proxy_str.strip()
     if not proxy_str: return None
-    scheme = "http"
-    if "://" in proxy_str: scheme, proxy_str = proxy_str.split("://", 1)
-    parts = proxy_str.split(":")
-    if len(parts) == 4 and "@" not in proxy_str:
-        ip, port, user, pwd = parts
-        formatted = f"{scheme}://{user}:{pwd}@{ip}:{port}"
-    else:
-        formatted = f"{scheme}://{proxy_str}"
+    
+    # Xóa tiền tố http:// nếu người dùng vô tình dán thừa
+    clean_proxy = proxy_str.replace("http://", "").replace("https://", "").strip()
+    
+    # Định dạng chuẩn cấp cho requests
+    formatted = f"http://{clean_proxy}"
     return {"http": formatted, "https": formatted}
 
 # ==================== CÁC CLASS XỬ LÝ EMAIL ====================
@@ -219,7 +217,7 @@ class MailService:
         self.domain = None
         self.email_address = None
         self.seen_codes = set() 
-        self.proxy = proxy # Gắn Proxy vào service
+        self.proxy = proxy 
         
     def get_domain(self):
         try:
@@ -287,7 +285,6 @@ class GmailIMAPService:
         self.app_password = app_password.replace(" ", "")
         self.mail = None
         self.seen_uids = set()
-        # IMAP không hỗ trợ requests proxy nên chạy mạng thật
 
     def connect(self):
         try:
@@ -394,7 +391,6 @@ class HotmailAPIService:
         self.seen_codes = set()
         
         self.session = requests.Session()
-        # Bổ sung update proxy cho session
         if proxy:
             self.session.proxies.update(proxy)
 
@@ -530,19 +526,19 @@ class starts(threading.Thread):
         self.app_password = app_password
         self.api_mode = api_mode
         self.avatar_folder = avatar_folder
-        self.proxies_list = proxies_list or [] # Lưu danh sách proxy
+        self.proxies_list = proxies_list or [] 
     
     def run(self):
         global BASE_YEAR
         
-        # --- BỐC PROXY CHO LUỒNG NÀY DỰA VÀO ID ---
+        # --- LẤY PROXY LOCAL DÀNH CHO LUỒNG NÀY ---
         raw_proxy = None
         req_proxy = None
         if self.proxies_list:
             thread_idx_for_proxy = int(self.thread_id.split("-")[1]) - 1
             raw_proxy = self.proxies_list[thread_idx_for_proxy % len(self.proxies_list)]
             req_proxy = format_proxy(raw_proxy)
-            print(f"{Colors.color_text(f'[{self.thread_id}] Đã gán Proxy cho Luồng: {raw_proxy}', Colors.WARNING)}")
+            print(f"{Colors.color_text(f'[{self.thread_id}] Đã gán Proxy từ AuthProxy: {raw_proxy}', Colors.WARNING)}")
         
         def create_one_account(account_index):
             global BASE_YEAR
@@ -624,18 +620,10 @@ class starts(threading.Thread):
                 options.add_argument('--disable-software-rasterizer')
                 options.add_argument('--disable-dev-shm-usage')
                 
-                # --- Gắn proxy vào Chrome ---
+                # >>> GẮN PROXY AUTHPROXY CHUẨN IP:PORT VÀO CHROME <<<
                 if raw_proxy:
-                    # Chrome chỉ nhận dạng chuẩn ip:port hoặc scheme://ip:port. User/pass chrome cần extension.
-                    p_parts = raw_proxy.split(':')
-                    if len(p_parts) == 2:
-                        options.add_argument(f'--proxy-server=http://{raw_proxy}')
-                    elif len(p_parts) == 4 and "@" not in raw_proxy:
-                        # Dạng ip:port:user:pass -> Chỉ gắn được ip:port vào options, 
-                        # chrome sẽ hiện popup hỏi user/pass. (Cần tool cấp cao hơn để vượt)
-                        options.add_argument(f'--proxy-server=http://{p_parts[0]}:{p_parts[1]}')
-                    else:
-                        options.add_argument(f'--proxy-server={raw_proxy}')
+                    clean_proxy = raw_proxy.replace("http://", "").replace("https://", "").strip()
+                    options.add_argument(f'--proxy-server=http://{clean_proxy}')
                 
                 with BROWSER_LOCK:
                     driver = uc.Chrome(options=options)
@@ -650,7 +638,7 @@ class starts(threading.Thread):
                     
                 wait = WebDriverWait(driver, 15)
                 
-                print(f"{Colors.color_text(f'[{self.thread_id}] Đang truy cập Instagram Web...', Colors.INFO)}")
+                print(f"{Colors.color_text(f'[{self.thread_id}] Đang truy cập Instagram Web qua Proxy...', Colors.INFO)}")
                 driver.get("https://www.instagram.com/accounts/emailsignup/")
                 
                 print(f"{Colors.color_text(f'[{self.thread_id}] Đang chờ trang tải hoàn tất (10s)...', Colors.WARNING)}")
@@ -1547,8 +1535,7 @@ if __name__ == "__main__":
             config_data["last_avatar_folder"] = avatar_folder_input
             save_config(config_data)
 
-    # >>> BỔ SUNG YÊU CẦU FILE PROXY Ở ĐÂY <<<
-    built_in_print(f"\n{Colors.KEY}Nhập đường dẫn file Proxy (.txt) (Bỏ trống nếu không dùng Proxy): {Colors.RESET}", end="")
+    built_in_print(f"\n{Colors.KEY}Nhập đường dẫn file Proxy (.txt) (Lưu ý: Chỉ cần chứa định dạng IP:Port): {Colors.RESET}", end="")
     proxy_file_input = input().strip().strip('"').strip("'")
     proxies_list = []
     if proxy_file_input and os.path.isfile(proxy_file_input):
