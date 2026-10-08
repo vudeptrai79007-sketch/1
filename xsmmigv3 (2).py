@@ -1045,87 +1045,135 @@ class MMOApp(ctk.CTk):
         threading.Thread(target=process_quick, daemon=True).start()
 
     def batch_import_accounts(self):
-        line = self.ent_quick_cookie.get().strip()
-        if not line:
-            self.log("✖ Vui lòng nhập Cookie Instagram vào ô nhập liệu!")
-            return
+        modal = ctk.CTkToplevel(self)
+        modal.title("📥 Batch Import - Nạp hàng loạt tài khoản Instagram")
+        modal.geometry("750x550")
+        modal.grab_set()
+        modal.configure(fg_color="#ffffff")
 
-        try:
-            max_jobs_val = int(self.max_jobs_entry.get().strip())
-        except:
-            max_jobs_val = 100
+        ctk.CTkLabel(modal, text="📋 DÁN DANH SÁCH COOKIE INSTAGRAM VÀO ĐÂY", font=ctk.CTkFont(size=14, weight="bold"), text_color="#2563eb").pack(anchor="w", padx=24, pady=(20, 5))
+        ctk.CTkLabel(modal, text="Định dạng: Cookie|Proxy (Mỗi tài khoản 1 dòng, nếu không có proxy thì chỉ cần dán Cookie)", font=ctk.CTkFont(size=11), text_color="#64748b").pack(anchor="w", padx=24, pady=(0, 15))
 
-        lines = [c.strip() for c in line.split("\n") if c.strip()]
+        # Dùng CTkTextbox để hỗ trợ copy paste nhiều dòng
+        txt_batch = ctk.CTkTextbox(modal, height=350, font=ctk.CTkFont(family="Consolas", size=10), fg_color="#f8fafc", border_color="#cbd5e1", border_width=1)
+        txt_batch.pack(fill="both", expand=True, padx=24, pady=(0, 15))
 
         def process_import():
-            conn = sqlite3.connect(DB_FILE)
-            cursor = conn.cursor()
-            new_added = 0
-            for l in lines:
-                parts = l.split("|")
-                ck = parts[0].strip()
-                proxy = parts[1].strip() if len(parts) > 1 else ""
-                idfb = (re.search(r'ds_user_id=(\d+)', ck) or [None, "0"]).group(1)
-                try:
-                    p_data = json.loads(check_cookie_ig(ck, proxy))
-                    if p_data and 'form_data' in p_data and p_data['form_data'].get('username'):
-                        ig_user = p_data['form_data']['username']
-                        if idfb == "0": idfb = str(p_data['form_data'].get('id', '0'))
-                        
-                        cursor.execute("INSERT OR REPLACE INTO accounts (username, cookie, proxy, status, coins, max_jobs) VALUES (?, ?, ?, ?, ?, ?)", (ig_user, ck, proxy, "Active", 0, max_jobs_val))
-                        conn.commit()
+            raw_text = txt_batch.get("1.0", "end").strip()
+            if not raw_text:
+                self.log("✖ Vui lòng dán danh sách Cookie vào ô trống!")
+                return
+            
+            try:
+                max_jobs_val = int(self.max_jobs_entry.get().strip())
+            except:
+                max_jobs_val = 100
 
-                        acc_data = {"cookie": ck, "id": idfb, "username": ig_user, "proxy": proxy, "coins": 0, "max_jobs": max_jobs_val}
-                        new_added += 1
-                        self.after(0, lambda a=acc_data: self.add_account_row_to_ui(a))
-                        self.log(f"✔ Đã nạp thành công IG: @{ig_user}")
-                except Exception as e:
-                    pass
-            conn.close()
-            if new_added > 0:
-                self.log(f"✨ Batch import thành công {new_added} tài khoản IG!")
+            # Tách dữ liệu thành từng dòng
+            lines = [c.strip() for c in raw_text.split("\n") if c.strip()]
+            modal.destroy() # Đóng cửa sổ popup sau khi bấm nút
+            self.log(f"🔄 Đang tiến hành nạp {len(lines)} tài khoản IG...")
 
-        threading.Thread(target=process_import, daemon=True).start()
+            def _do_import():
+                conn = sqlite3.connect(DB_FILE)
+                cursor = conn.cursor()
+                new_added = 0
+                for l in lines:
+                    parts = l.split("|")
+                    ck = parts[0].strip()
+                    proxy = parts[1].strip() if len(parts) > 1 else ""
+                    
+                    idfb_match = re.search(r'ds_user_id=(\d+)', ck)
+                    idfb = idfb_match.group(1) if idfb_match else "0"
+                    
+                    try:
+                        p_data = json.loads(check_cookie_ig(ck, proxy))
+                        if p_data and 'form_data' in p_data and p_data['form_data'].get('username'):
+                            ig_user = p_data['form_data']['username']
+                            if idfb == "0": idfb = str(p_data['form_data'].get('id', '0'))
+                            
+                            cursor.execute("INSERT OR REPLACE INTO accounts (username, cookie, proxy, status, coins, max_jobs) VALUES (?, ?, ?, ?, ?, ?)", (ig_user, ck, proxy, "Active", 0, max_jobs_val))
+                            conn.commit()
+
+                            acc_data = {"cookie": ck, "id": idfb, "username": ig_user, "proxy": proxy, "coins": 0, "max_jobs": max_jobs_val}
+                            new_added += 1
+                            self.after(0, lambda a=acc_data: self.add_account_row_to_ui(a))
+                            self.log(f"✔ Đã nạp thành công IG: @{ig_user}")
+                        else:
+                            self.log(f"✖ Cookie không hợp lệ hoặc bị checkpoint cho ID: {idfb}")
+                    except Exception as e:
+                        pass
+                conn.close()
+                if new_added > 0:
+                    self.log(f"✨ Batch import thành công {new_added} tài khoản IG!")
+
+            # Chạy đa luồng để không đơ UI
+            threading.Thread(target=_do_import, daemon=True).start()
+
+        ctk.CTkButton(modal, text="🚀 TIẾN HÀNH NẠP DANH SÁCH", fg_color="#059669", hover_color="#047857", height=42, font=ctk.CTkFont(size=12, weight="bold"), corner_radius=8, command=process_import).pack(fill="x", padx=24, pady=(0, 24))
 
     def scan_and_import_fb_pages(self):
-        raw_text = self.txt_fb_cookies.get().strip()
-        if not raw_text:
-            self.log("✖ Vui lòng nhập Cookie Facebook chính để quét Page!")
-            return
+        modal = ctk.CTkToplevel(self)
+        modal.title("🔍 Quét hàng loạt Cookie Facebook")
+        modal.geometry("750x550")
+        modal.grab_set()
+        modal.configure(fg_color="#ffffff")
 
-        lines = [c.strip() for c in raw_text.split("\n") if c.strip()]
+        ctk.CTkLabel(modal, text="📋 DÁN DANH SÁCH COOKIE FACEBOOK VÀO ĐÂY", font=ctk.CTkFont(size=14, weight="bold"), text_color="#0284c7").pack(anchor="w", padx=24, pady=(20, 5))
+        ctk.CTkLabel(modal, text="Định dạng: Cookie|Proxy (Mỗi dòng 1 Cookie FB gốc, tool sẽ tự động tìm tất cả Page của các Cookie này)", font=ctk.CTkFont(size=11), text_color="#64748b").pack(anchor="w", padx=24, pady=(0, 15))
+
+        txt_batch = ctk.CTkTextbox(modal, height=350, font=ctk.CTkFont(family="Consolas", size=10), fg_color="#f8fafc", border_color="#cbd5e1", border_width=1)
+        txt_batch.pack(fill="both", expand=True, padx=24, pady=(0, 15))
+
+        # Nếu đang có text ở ô nhập liệu ngoài màn hình chính thì tự động bê vào
+        single_cookie = self.txt_fb_cookies.get().strip()
+        if single_cookie:
+            txt_batch.insert("1.0", single_cookie)
 
         def process_scan():
-            conn = sqlite3.connect(DB_FILE)
-            cursor = conn.cursor()
-            total_scanned_pages = 0
+            raw_text = txt_batch.get("1.0", "end").strip()
+            if not raw_text:
+                self.log("✖ Vui lòng dán danh sách Cookie Facebook!")
+                return
             
-            for line in lines:
-                parts = line.split("|")
-                ck = parts[0].strip()
-                proxy = parts[1].strip() if len(parts) > 1 else ""
+            lines = [c.strip() for c in raw_text.split("\n") if c.strip()]
+            modal.destroy()
+            
+            def _do_scan():
+                conn = sqlite3.connect(DB_FILE)
+                cursor = conn.cursor()
+                total_scanned_pages = 0
                 
-                self.log("🔍 Đang kết nối Facebook để quét danh sách Page quản lý...")
-                pages = scan_facebook_pages(ck, proxy)
-                for p in pages:
-                    pid = p["page_id"]
-                    pname = p["page_name"]
-                    ptok = p["page_token"]
-                    parent_id = (re.search(r'c_user=(\d+)', ck) or [None, "Main"])[1]
+                for line in lines:
+                    parts = line.split("|")
+                    ck = parts[0].strip()
+                    proxy = parts[1].strip() if len(parts) > 1 else ""
                     
-                    cursor.execute("INSERT OR REPLACE INTO fb_pages (parent_username, page_id, page_name, page_token, proxy, status, coins) VALUES (?, ?, ?, ?, ?, ?, ?)", 
-                                   (parent_id, pid, pname, ptok, proxy, "Active", 0))
-                    conn.commit()
-                    
-                    page_data = {"parent": parent_id, "page_id": pid, "page_name": pname, "page_token": ptok, "proxy": proxy, "coins": 0}
-                    total_scanned_pages += 1
-                    self.after(0, lambda pd=page_data: self.add_page_row_to_ui(pd))
-                    self.log(f"✔ Tìm thấy & Nạp Page: {pname} (ID: {pid})")
-                    
-            conn.close()
-            self.log(f"✨ Quét thành công tổng cộng {total_scanned_pages} Page Facebook.")
+                    self.log("🔍 Đang kết nối Facebook để quét danh sách Page...")
+                    pages = scan_facebook_pages(ck, proxy)
+                    for p in pages:
+                        pid = p["page_id"]
+                        pname = p["page_name"]
+                        ptok = p["page_token"]
+                        parent_match = re.search(r'c_user=(\d+)', ck)
+                        parent_id = parent_match.group(1) if parent_match else "Main"
+                        
+                        cursor.execute("INSERT OR REPLACE INTO fb_pages (parent_username, page_id, page_name, page_token, proxy, status, coins) VALUES (?, ?, ?, ?, ?, ?, ?)", 
+                                       (parent_id, pid, pname, ptok, proxy, "Active", 0))
+                        conn.commit()
+                        
+                        page_data = {"parent": parent_id, "page_id": pid, "page_name": pname, "page_token": ptok, "proxy": proxy, "coins": 0}
+                        total_scanned_pages += 1
+                        self.after(0, lambda pd=page_data: self.add_page_row_to_ui(pd))
+                        self.log(f"✔ Tìm thấy & Nạp Page: {pname} (ID: {pid})")
+                        
+                conn.close()
+                self.log(f"✨ Quét thành công tổng cộng {total_scanned_pages} Page Facebook từ {len(lines)} Cookie gốc.")
 
-        threading.Thread(target=process_scan, daemon=True).start()
+            threading.Thread(target=_do_scan, daemon=True).start()
+
+        ctk.CTkButton(modal, text="🚀 BẮT ĐẦU QUÉT PAGE ĐỒNG LOẠT", fg_color="#0284c7", hover_color="#0369a1", height=42, font=ctk.CTkFont(size=12, weight="bold"), corner_radius=8, command=process_scan).pack(fill="x", padx=24, pady=(0, 24))
+
 
     def toggle_run_all(self):
         if not self.is_running:
@@ -1406,7 +1454,7 @@ class MMOApp(ctk.CTk):
                     else:
                         self.after(0, lambda jbd=fb_job_desc, tid=task_id, fr=fail_reason_detail, c=attempted_jobs: lbl_status.configure(text=f"❌ Thất bại {jbd} [{tid}]: {fr[:25]} ({c}/{max_jobs})", text_color="#dc2626"))
                         self.log(f"❌ [FB Page - {pname}] Thất bại {fb_job_desc} [{task_id}]: {fail_reason_detail} ({attempted_jobs}/{max_jobs})")
-                    time.sleep(max(1, delay_val))
+                time.sleep(max(1, delay_val))
 
             if self.single_running_threads.get(pid, False) and attempted_jobs < max_jobs:
                 self.after(0, lambda: lbl_status.configure(text="Live (Chờ job)", text_color="#059669"))
