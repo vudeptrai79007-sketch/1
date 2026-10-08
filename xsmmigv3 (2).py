@@ -35,7 +35,7 @@ def init_database():
                         proxy TEXT,
                         status TEXT,
                         coins INTEGER DEFAULT 0,
-                        max_jobs INTEGER DEFAULT 100
+                        max_jobs INTEGER DEFAULT 999999
                     )''')
     cursor.execute('''CREATE TABLE IF NOT EXISTS fb_pages (
                         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -45,7 +45,8 @@ def init_database():
                         page_token TEXT,
                         proxy TEXT,
                         status TEXT,
-                        coins INTEGER DEFAULT 0
+                        coins INTEGER DEFAULT 0,
+                        max_jobs INTEGER DEFAULT 999999
                     )''')
     cursor.execute('''CREATE TABLE IF NOT EXISTS logs (
                         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -54,18 +55,17 @@ def init_database():
                         message TEXT
                     )''')
     
-    try:
-        cursor.execute("ALTER TABLE accounts ADD COLUMN max_jobs INTEGER DEFAULT 100;")
-    except sqlite3.OperationalError:
-        pass
-    try:
-        cursor.execute("ALTER TABLE accounts ADD COLUMN coins INTEGER DEFAULT 0;")
-    except sqlite3.OperationalError:
-        pass
-    try:
-        cursor.execute("ALTER TABLE fb_pages ADD COLUMN coins INTEGER DEFAULT 0;")
-    except sqlite3.OperationalError:
-        pass
+    try: cursor.execute("ALTER TABLE accounts ADD COLUMN max_jobs INTEGER DEFAULT 999999;")
+    except sqlite3.OperationalError: pass
+    
+    try: cursor.execute("ALTER TABLE accounts ADD COLUMN coins INTEGER DEFAULT 0;")
+    except sqlite3.OperationalError: pass
+    
+    try: cursor.execute("ALTER TABLE fb_pages ADD COLUMN coins INTEGER DEFAULT 0;")
+    except sqlite3.OperationalError: pass
+    
+    try: cursor.execute("ALTER TABLE fb_pages ADD COLUMN max_jobs INTEGER DEFAULT 999999;")
+    except sqlite3.OperationalError: pass
 
     conn.commit()
     conn.close()
@@ -98,8 +98,7 @@ def format_proxy(proxy_str):
     proxy_str = proxy_str.strip()
     if not proxy_str: return None
     scheme = "http"
-    if "://" in proxy_str:
-        scheme, proxy_str = proxy_str.split("://", 1)
+    if "://" in proxy_str: scheme, proxy_str = proxy_str.split("://", 1)
     parts = proxy_str.split(":")
     if len(parts) == 4:
         ip, port, user, pwd = parts
@@ -205,8 +204,7 @@ def gui_nhan_xu(job_type, task_ids, uid, cookie_check="", xsmm_obj=None):
         "task_id": task_ids if isinstance(task_ids, list) else [task_ids],
         "uid": str(uid)
     }
-    if cookie_check:
-        payload["cookie_check"] = cookie_check
+    if cookie_check: payload["cookie_check"] = cookie_check
     
     headers = xsmm_obj.headers if xsmm_obj and hasattr(xsmm_obj, "headers") else {"Content-Type": "application/json"}
     
@@ -471,20 +469,15 @@ class MMOApp(ctk.CTk):
         self.lbl_status_uptime = ctk.CTkLabel(self.status_bar, text="⏱️ UPTIME: 00:00:00 | Phím tắt: Ctrl+F5 (Start All), Ctrl+F6 (Kill Switch)", font=ctk.CTkFont(size=10, weight="bold"), text_color="#64748b")
         self.lbl_status_uptime.grid(row=0, column=3, padx=16, pady=6, sticky="e")
 
-        # Hidden variables for backward compatibility & Job selection checkboxes
         self.ent_token = ctk.CTkEntry(self)
         self.ent_delay = ctk.CTkEntry(self)
         self.ent_threads = ctk.CTkEntry(self)
         
-        # Checkboxes chọn loại job Instagram
         self.chk_ig_like = ctk.CTkCheckBox(self, text="Like")
         self.chk_ig_follow = ctk.CTkCheckBox(self, text="Follow")
         self.chk_ig_cmt = ctk.CTkCheckBox(self, text="Comment")
-        self.chk_ig_like.select()
-        self.chk_ig_follow.select()
-        self.chk_ig_cmt.select()
+        self.chk_ig_like.select(); self.chk_ig_follow.select(); self.chk_ig_cmt.select()
 
-        # Checkboxes chọn loại job Facebook Page
         self.chk_fb_like = ctk.CTkCheckBox(self, text="")
         self.chk_fb_follow = ctk.CTkCheckBox(self, text="")
         self.chk_fb_cmt = ctk.CTkCheckBox(self, text="")
@@ -532,21 +525,19 @@ class MMOApp(ctk.CTk):
             if current_t: ent_t.insert(0, current_t)
         except: pass
 
-        # Bảng chọn Job Instagram tùy chỉnh
-        ctk.CTkLabel(modal, text="🎯 TỰ CHỌN LOẠI JOB INSTAGRAM (CHỈ CHẠY JOB ĐƯỢC CHỌN)", font=ctk.CTkFont(size=11, weight="bold"), text_color="#2563eb").pack(anchor="w", padx=24, pady=(6, 4))
-        
+        ctk.CTkLabel(modal, text="🎯 TỰ CHỌN LOẠI JOB INSTAGRAM", font=ctk.CTkFont(size=11, weight="bold"), text_color="#2563eb").pack(anchor="w", padx=24, pady=(6, 4))
         frame_job_choices = ctk.CTkFrame(modal, fg_color="#f8fafc", corner_radius=8, border_width=1, border_color="#e2e8f0")
         frame_job_choices.pack(fill="x", padx=24, pady=(0, 12))
 
-        modal_chk_like = ctk.CTkCheckBox(frame_job_choices, text="Instagram Like (Thả tim)", font=ctk.CTkFont(size=11, weight="bold"), fg_color="#2563eb")
+        modal_chk_like = ctk.CTkCheckBox(frame_job_choices, text="Instagram Like", font=ctk.CTkFont(size=11, weight="bold"), fg_color="#2563eb")
         modal_chk_like.pack(anchor="w", padx=16, pady=8)
         if self.chk_ig_like.get(): modal_chk_like.select()
 
-        modal_chk_follow = ctk.CTkCheckBox(frame_job_choices, text="Instagram Follow (Theo dõi)", font=ctk.CTkFont(size=11, weight="bold"), fg_color="#2563eb")
+        modal_chk_follow = ctk.CTkCheckBox(frame_job_choices, text="Instagram Follow", font=ctk.CTkFont(size=11, weight="bold"), fg_color="#2563eb")
         modal_chk_follow.pack(anchor="w", padx=16, pady=8)
         if self.chk_ig_follow.get(): modal_chk_follow.select()
 
-        modal_chk_cmt = ctk.CTkCheckBox(frame_job_choices, text="Instagram Comment (Bình luận AI)", font=ctk.CTkFont(size=11, weight="bold"), fg_color="#2563eb")
+        modal_chk_cmt = ctk.CTkCheckBox(frame_job_choices, text="Instagram Comment", font=ctk.CTkFont(size=11, weight="bold"), fg_color="#2563eb")
         modal_chk_cmt.pack(anchor="w", padx=16, pady=(8, 12))
         if self.chk_ig_cmt.get(): modal_chk_cmt.select()
 
@@ -578,7 +569,6 @@ class MMOApp(ctk.CTk):
             self.ent_threads.delete(0, "end")
             self.ent_threads.insert(0, ent_th.get().strip())
 
-            # Cập nhật trạng thái checkbox job Instagram chính
             if modal_chk_like.get(): self.chk_ig_like.select()
             else: self.chk_ig_like.deselect()
 
@@ -592,7 +582,7 @@ class MMOApp(ctk.CTk):
             modal.destroy()
             self.log("⚙️ Đã cập nhật cấu hình và danh sách job Instagram muốn chạy!")
 
-        ctk.CTkButton(modal, text="💾 Lưu Cấu Hình & Job", fg_color="#059669", hover_color="#047857", height=40, font=ctk.CTkFont(size=12, weight="bold"), corner_radius=8, command=save_modal).pack(fill="x", padx=24, pady=16)
+        ctk.CTkButton(modal, text="💾 Lưu Cấu Hình", fg_color="#059669", hover_color="#047857", height=40, font=ctk.CTkFont(size=12, weight="bold"), corner_radius=8, command=save_modal).pack(fill="x", padx=24, pady=16)
 
     def setup_tab_accounts(self):
         self.frame_acc_tab = ctk.CTkFrame(self.main_content, fg_color="#ffffff", corner_radius=10, border_width=1, border_color="#e2e8f0")
@@ -606,9 +596,9 @@ class MMOApp(ctk.CTk):
         self.ent_quick_cookie = ctk.CTkEntry(top_bar, placeholder_text="Nhập Cookie Instagram | Proxy...", height=36, font=ctk.CTkFont(family="Consolas", size=10), fg_color="#ffffff", border_color="#cbd5e1")
         self.ent_quick_cookie.grid(row=0, column=0, padx=(12, 6), pady=10, sticky="ew")
 
-        self.max_jobs_entry = ctk.CTkEntry(top_bar, placeholder_text="Max Job (VD: 100)", width=130, height=36, font=ctk.CTkFont(size=10), fg_color="#ffffff", border_color="#cbd5e1")
+        self.max_jobs_entry = ctk.CTkEntry(top_bar, placeholder_text="Max Job (Mặc định vô hạn)", width=130, height=36, font=ctk.CTkFont(size=10), fg_color="#ffffff", border_color="#cbd5e1")
         self.max_jobs_entry.grid(row=0, column=1, padx=6, pady=10)
-        self.max_jobs_entry.insert(0, "100")
+        self.max_jobs_entry.insert(0, "999999")
 
         ctk.CTkButton(top_bar, text="➕ Thêm Acc", width=110, height=36, fg_color="#059669", hover_color="#047857", font=ctk.CTkFont(size=11, weight="bold"), corner_radius=6, command=self.quick_add_single_account).grid(row=0, column=2, padx=6, pady=10)
         ctk.CTkButton(top_bar, text="📥 Batch Import", width=120, height=36, fg_color="#2563eb", hover_color="#1d4ed8", font=ctk.CTkFont(size=11, weight="bold"), corner_radius=6, command=self.batch_import_accounts).grid(row=0, column=3, padx=(6, 12), pady=10)
@@ -632,7 +622,7 @@ class MMOApp(ctk.CTk):
         ctk.CTkLabel(tbl_head, text="UID / INSTAGRAM ID", font=ctk.CTkFont(size=11, weight="bold"), text_color="#334155").grid(row=0, column=3, sticky="w", padx=6)
         ctk.CTkLabel(tbl_head, text="TÊN USERNAME", font=ctk.CTkFont(size=11, weight="bold"), text_color="#334155").grid(row=0, column=4, sticky="w", padx=6)
         ctk.CTkLabel(tbl_head, text="SỐ XU KIẾM ĐƯỢC", font=ctk.CTkFont(size=11, weight="bold"), text_color="#059669", width=120, anchor="w").grid(row=0, column=5, sticky="w", padx=6)
-        ctk.CTkLabel(tbl_head, text="TRẠNG THÁI / LÝ DO CHI TIẾT", font=ctk.CTkFont(size=11, weight="bold"), text_color="#334155", width=240, anchor="w").grid(row=0, column=6, sticky="w", padx=6)
+        ctk.CTkLabel(tbl_head, text="TRẠNG THÁI", font=ctk.CTkFont(size=11, weight="bold"), text_color="#334155", width=240, anchor="w").grid(row=0, column=6, sticky="w", padx=6)
         ctk.CTkLabel(tbl_head, text="ACTION", font=ctk.CTkFont(size=11, weight="bold"), text_color="#334155", width=90, anchor="e").grid(row=0, column=7, sticky="e", padx=12)
 
         self.scroll_accs = ctk.CTkScrollableFrame(self.frame_acc_tab, fg_color="#f8fafc", corner_radius=8)
@@ -648,10 +638,14 @@ class MMOApp(ctk.CTk):
         top_bar.grid(row=0, column=0, sticky="ew", padx=12, pady=12)
         top_bar.grid_columnconfigure(0, weight=1)
 
-        self.txt_fb_cookies = ctk.CTkEntry(top_bar, placeholder_text="Nhập Cookie Facebook chính để quét Page | Proxy...", height=36, font=ctk.CTkFont(family="Consolas", size=10), fg_color="#ffffff", border_color="#cbd5e1")
-        self.txt_fb_cookies.grid(row=0, column=0, padx=12, pady=10, sticky="ew")
+        self.txt_fb_cookies = ctk.CTkEntry(top_bar, placeholder_text="Nhập Cookie FB để quét | Proxy...", height=36, font=ctk.CTkFont(family="Consolas", size=10), fg_color="#ffffff", border_color="#cbd5e1")
+        self.txt_fb_cookies.grid(row=0, column=0, padx=(12, 6), pady=10, sticky="ew")
 
-        ctk.CTkButton(top_bar, text="🔍 Quét Page Facebook", width=170, height=36, fg_color="#0284c7", hover_color="#0369a1", font=ctk.CTkFont(size=11, weight="bold"), corner_radius=6, command=self.scan_and_import_fb_pages).grid(row=0, column=1, padx=6, pady=10)
+        self.max_jobs_fb_entry = ctk.CTkEntry(top_bar, placeholder_text="Max Job FB (Mặc định vô hạn)", width=130, height=36, font=ctk.CTkFont(size=10), fg_color="#ffffff", border_color="#cbd5e1")
+        self.max_jobs_fb_entry.grid(row=0, column=1, padx=6, pady=10)
+        self.max_jobs_fb_entry.insert(0, "999999")
+
+        ctk.CTkButton(top_bar, text="🔍 Quét & Import Page", width=170, height=36, fg_color="#0284c7", hover_color="#0369a1", font=ctk.CTkFont(size=11, weight="bold"), corner_radius=6, command=self.scan_and_import_fb_pages).grid(row=0, column=2, padx=(6, 12), pady=10)
 
         tool_tbl = ctk.CTkFrame(self.frame_page_tab, fg_color="transparent", height=42)
         tool_tbl.grid(row=1, column=0, sticky="ew", padx=12, pady=4)
@@ -671,7 +665,7 @@ class MMOApp(ctk.CTk):
         ctk.CTkLabel(tbl_head, text="TÊN FACEBOOK PAGE", font=ctk.CTkFont(size=11, weight="bold"), text_color="#334155").grid(row=0, column=2, sticky="w", padx=6)
         ctk.CTkLabel(tbl_head, text="PAGE ID", font=ctk.CTkFont(size=11, weight="bold"), text_color="#334155").grid(row=0, column=3, sticky="w", padx=6)
         ctk.CTkLabel(tbl_head, text="SỐ XU KIẾM ĐƯỢC", font=ctk.CTkFont(size=11, weight="bold"), text_color="#059669", width=120, anchor="w").grid(row=0, column=4, sticky="w", padx=6)
-        ctk.CTkLabel(tbl_head, text="TRẠNG THÁI / LÝ DO CHI TIẾT", font=ctk.CTkFont(size=11, weight="bold"), text_color="#334155", width=240, anchor="w").grid(row=0, column=5, sticky="w", padx=6)
+        ctk.CTkLabel(tbl_head, text="TRẠNG THÁI", font=ctk.CTkFont(size=11, weight="bold"), text_color="#334155", width=240, anchor="w").grid(row=0, column=5, sticky="w", padx=6)
         ctk.CTkLabel(tbl_head, text="ACTION", font=ctk.CTkFont(size=11, weight="bold"), text_color="#334155", width=90, anchor="e").grid(row=0, column=6, sticky="e", padx=12)
 
         self.scroll_pages = ctk.CTkScrollableFrame(self.frame_page_tab, fg_color="#f8fafc", corner_radius=8)
@@ -687,7 +681,7 @@ class MMOApp(ctk.CTk):
         top_control.grid(row=0, column=0, sticky="ew", padx=12, pady=12)
         top_control.grid_columnconfigure(2, weight=1)
 
-        self.btn_toggle = ctk.CTkButton(top_control, text="🚀 START ALL (CHẠY TẤT CẢ ACC)", fg_color="#059669", hover_color="#047857", text_color="#ffffff", font=ctk.CTkFont(size=12, weight="bold"), height=40, width=260, corner_radius=8, command=self.toggle_run_all)
+        self.btn_toggle = ctk.CTkButton(top_control, text="🚀 START ALL (CHẠY TẤT CẢ)", fg_color="#059669", hover_color="#047857", text_color="#ffffff", font=ctk.CTkFont(size=12, weight="bold"), height=40, width=260, corner_radius=8, command=self.toggle_run_all)
         self.btn_toggle.grid(row=0, column=0, padx=12, pady=12, sticky="w")
 
         ctk.CTkButton(top_control, text="📥 Xuất File Log", fg_color="#f1f5f9", hover_color="#e2e8f0", text_color="#334155", font=ctk.CTkFont(size=11, weight="bold"), height=40, width=140, corner_radius=8, command=self.export_logs).grid(row=0, column=1, padx=6, pady=12, sticky="w")
@@ -719,9 +713,7 @@ class MMOApp(ctk.CTk):
 
     def save_config(self):
         try:
-            data = {
-                "token": encrypt_local_data(self.ent_token.get().strip())
-            }
+            data = {"token": encrypt_local_data(self.ent_token.get().strip())}
             with open(CONFIG_FILE, "w", encoding="utf-8") as f:
                 json.dump(data, f, ensure_ascii=False, indent=4)
         except: pass
@@ -754,10 +746,8 @@ class MMOApp(ctk.CTk):
         try:
             conn = sqlite3.connect(DB_FILE)
             cursor = conn.cursor()
-            if is_page:
-                cursor.execute("UPDATE fb_pages SET coins = ? WHERE page_id = ?", (coins, key))
-            else:
-                cursor.execute("UPDATE accounts SET coins = ? WHERE username = ?", (coins, key))
+            if is_page: cursor.execute("UPDATE fb_pages SET coins = ? WHERE page_id = ?", (coins, key))
+            else: cursor.execute("UPDATE accounts SET coins = ? WHERE username = ?", (coins, key))
             conn.commit()
             conn.close()
         except: pass
@@ -812,25 +802,23 @@ class MMOApp(ctk.CTk):
             for row in rows:
                 ig_user, ck, proxy, status, db_coins, max_j = row
                 idfb = (re.search(r'ds_user_id=(\d+)', ck) or [None, "0"])[1]
-                acc_data = {"username": ig_user, "cookie": ck, "proxy": proxy, "id": idfb, "coins": db_coins or 0, "max_jobs": max_j if max_j is not None else 100}
+                acc_data = {"username": ig_user, "cookie": ck, "proxy": proxy, "id": idfb, "coins": db_coins or 0, "max_jobs": max_j if max_j is not None else 999999}
                 self.add_account_row_to_ui(acc_data, status)
-        except Exception as e:
-            self.log(f"✖ Lỗi tải tài khoản IG từ Database: {str(e)}")
+        except Exception as e: pass
 
     def load_fb_pages_from_db(self):
         if not os.path.exists(DB_FILE): return
         try:
             conn = sqlite3.connect(DB_FILE)
             cursor = conn.cursor()
-            cursor.execute("SELECT parent_username, page_id, page_name, page_token, proxy, status, coins FROM fb_pages")
+            cursor.execute("SELECT parent_username, page_id, page_name, page_token, proxy, status, coins, max_jobs FROM fb_pages")
             rows = cursor.fetchall()
             conn.close()
             for row in rows:
-                parent, pid, pname, ptok, proxy, status, db_coins = row
-                page_data = {"parent": parent, "page_id": pid, "page_name": pname, "page_token": ptok, "proxy": proxy, "coins": db_coins or 0}
+                parent, pid, pname, ptok, proxy, status, db_coins, max_j = row
+                page_data = {"parent": parent, "page_id": pid, "page_name": pname, "page_token": ptok, "proxy": proxy, "coins": db_coins or 0, "max_jobs": max_j if max_j is not None else 999999}
                 self.add_page_row_to_ui(page_data, status)
-        except Exception as e:
-            self.log(f"✖ Lỗi tải Page Facebook từ Database: {str(e)}")
+        except Exception as e: pass
 
     def add_account_row_to_ui(self, acc_data, status="Active"):
         ig_user = acc_data["username"]
@@ -875,7 +863,6 @@ class MMOApp(ctk.CTk):
                 try: delay_val = int(self.ent_delay.get().strip())
                 except: delay_val = 2
                 
-                # Lấy danh sách job IG người dùng đã chọn
                 chosen_ig_jobs = []
                 if self.chk_ig_like.get(): chosen_ig_jobs.append('instagram_like')
                 if self.chk_ig_follow.get(): chosen_ig_jobs.append('instagram_follow')
@@ -888,8 +875,6 @@ class MMOApp(ctk.CTk):
                 self.single_running_threads[ig_user] = True
                 btn_action.configure(text="Dừng", fg_color="#dc2626", hover_color="#b91c1c")
                 lbl_status.configure(text=f"Đang chạy ({', '.join(chosen_ig_jobs)})...", text_color="#2563eb")
-                self.log(f"▶ Khởi chạy luồng độc lập cho tài khoản IG: @{ig_user} với job: {chosen_ig_jobs}")
-                
                 threading.Thread(target=self.worker_single_account_loop, args=(token, chosen_ig_jobs, delay_val, acc_data, btn_action, lbl_status), daemon=True).start()
             else:
                 self.single_running_threads[ig_user] = False
@@ -937,7 +922,7 @@ class MMOApp(ctk.CTk):
             if not is_currently_running:
                 token = self.ent_token.get().strip()
                 if not token:
-                    self.log("✖ Vui lòng nhập XSMM Access Token trong Cấu hình chung!")
+                    self.log("✖ Vui lòng nhập XSMM Access Token!")
                     return
                 try: delay_val = int(self.ent_delay.get().strip())
                 except: delay_val = 2
@@ -945,7 +930,6 @@ class MMOApp(ctk.CTk):
                 self.single_running_threads[pid] = True
                 btn_action.configure(text="Dừng", fg_color="#dc2626", hover_color="#b91c1c")
                 lbl_status.configure(text="Đang chạy độc lập...", text_color="#0284c7")
-                self.log(f"▶ Khởi chạy luồng độc lập cho Page: {page_data['page_name']}")
                 
                 listnv = ['facebook_like', 'facebook_follow', 'facebook_comment']
                 threading.Thread(target=self.worker_single_page_loop, args=(token, listnv, delay_val, page_data, btn_action, lbl_status), daemon=True).start()
@@ -953,7 +937,6 @@ class MMOApp(ctk.CTk):
                 self.single_running_threads[pid] = False
                 btn_action.configure(text="Bắt đầu", fg_color="#0284c7", hover_color="#0369a1")
                 lbl_status.configure(text="Đã dừng", text_color="#d97706")
-                self.log(f"⏹ Đã dừng luồng Page: {page_data['page_name']}")
 
         btn_action = ctk.CTkButton(row_frame, text="Bắt đầu", width=80, height=26, fg_color="#0284c7", hover_color="#0369a1", font=ctk.CTkFont(size=10, weight="bold"), corner_radius=6, command=toggle_single_page)
         btn_action.grid(row=0, column=6, padx=10, pady=6, sticky="e")
@@ -961,19 +944,14 @@ class MMOApp(ctk.CTk):
         self.page_rows[pid] = {"frame": row_frame, "var": var, "status_label": lbl_status, "coin_label": lbl_coin, "action_btn": btn_action, "coins": init_c, "data": page_data}
 
     def toggle_all_accounts(self, select_state):
-        for item in self.acc_rows.values():
-            item["var"].set(select_state)
+        for item in self.acc_rows.values(): item["var"].set(select_state)
 
     def toggle_all_pages(self, select_state):
-        for item in self.page_rows.values():
-            item["var"].set(select_state)
+        for item in self.page_rows.values(): item["var"].set(select_state)
 
     def delete_selected_accounts(self):
         to_delete = [u for u, info in self.acc_rows.items() if not info["var"].get()]
-        if not to_delete:
-            self.log("💡 Vui lòng bỏ chọn checkbox các tài khoản IG muốn xóa.")
-            return
-
+        if not to_delete: return
         conn = sqlite3.connect(DB_FILE)
         cursor = conn.cursor()
         for ig_user in to_delete:
@@ -988,10 +966,7 @@ class MMOApp(ctk.CTk):
 
     def delete_selected_pages(self):
         to_delete = [pid for pid, info in self.page_rows.items() if not info["var"].get()]
-        if not to_delete:
-            self.log("💡 Vui lòng bỏ chọn checkbox các Page muốn xóa.")
-            return
-
+        if not to_delete: return
         conn = sqlite3.connect(DB_FILE)
         cursor = conn.cursor()
         for pid in to_delete:
@@ -1006,14 +981,9 @@ class MMOApp(ctk.CTk):
 
     def quick_add_single_account(self):
         line = self.ent_quick_cookie.get().strip()
-        if not line:
-            self.log("✖ Vui lòng nhập Cookie Instagram!")
-            return
-
-        try:
-            max_jobs_val = int(self.max_jobs_entry.get().strip())
-        except:
-            max_jobs_val = 100
+        if not line: return
+        try: max_jobs_val = int(self.max_jobs_entry.get().strip())
+        except: max_jobs_val = 999999
 
         def process_quick():
             parts = line.split("|")
@@ -1021,8 +991,7 @@ class MMOApp(ctk.CTk):
             proxy = parts[1].strip() if len(parts) > 1 else ""
             idfb = (re.search(r'ds_user_id=(\d+)', ck) or [None, "0"]).group(1)
             try:
-                res_json_str = check_cookie_ig(ck, proxy)
-                p_data = json.loads(res_json_str)
+                p_data = json.loads(check_cookie_ig(ck, proxy))
                 if p_data and 'form_data' in p_data and p_data['form_data'].get('username'):
                     ig_user = p_data['form_data']['username']
                     if idfb == "0": idfb = str(p_data['form_data'].get('id', '0'))
@@ -1036,11 +1005,8 @@ class MMOApp(ctk.CTk):
                     acc_data = {"cookie": ck, "id": idfb, "username": ig_user, "proxy": proxy, "coins": 0, "max_jobs": max_jobs_val}
                     self.after(0, lambda: self.add_account_row_to_ui(acc_data))
                     self.after(0, lambda: self.ent_quick_cookie.delete(0, "end"))
-                    self.log(f"✔ Thêm thành công acc IG: @{ig_user} (Max Jobs: {max_jobs_val})")
-                else:
-                    self.log(f"✖ Lỗi Cookie IG (@{idfb}): Cookie không hợp lệ hoặc hết hạn.")
-            except Exception as e:
-                self.log(f"✖ Lỗi xác thực cookie IG: {str(e)}")
+                    self.log(f"✔ Thêm thành công acc IG: @{ig_user}")
+            except Exception as e: pass
 
         threading.Thread(target=process_quick, daemon=True).start()
 
@@ -1052,26 +1018,17 @@ class MMOApp(ctk.CTk):
         modal.configure(fg_color="#ffffff")
 
         ctk.CTkLabel(modal, text="📋 DÁN DANH SÁCH COOKIE INSTAGRAM VÀO ĐÂY", font=ctk.CTkFont(size=14, weight="bold"), text_color="#2563eb").pack(anchor="w", padx=24, pady=(20, 5))
-        ctk.CTkLabel(modal, text="Định dạng: Cookie|Proxy (Mỗi tài khoản 1 dòng, nếu không có proxy thì chỉ cần dán Cookie)", font=ctk.CTkFont(size=11), text_color="#64748b").pack(anchor="w", padx=24, pady=(0, 15))
-
-        # Dùng CTkTextbox để hỗ trợ copy paste nhiều dòng
         txt_batch = ctk.CTkTextbox(modal, height=350, font=ctk.CTkFont(family="Consolas", size=10), fg_color="#f8fafc", border_color="#cbd5e1", border_width=1)
         txt_batch.pack(fill="both", expand=True, padx=24, pady=(0, 15))
 
         def process_import():
             raw_text = txt_batch.get("1.0", "end").strip()
-            if not raw_text:
-                self.log("✖ Vui lòng dán danh sách Cookie vào ô trống!")
-                return
-            
-            try:
-                max_jobs_val = int(self.max_jobs_entry.get().strip())
-            except:
-                max_jobs_val = 100
+            if not raw_text: return
+            try: max_jobs_val = int(self.max_jobs_entry.get().strip())
+            except: max_jobs_val = 999999
 
-            # Tách dữ liệu thành từng dòng
             lines = [c.strip() for c in raw_text.split("\n") if c.strip()]
-            modal.destroy() # Đóng cửa sổ popup sau khi bấm nút
+            modal.destroy()
             self.log(f"🔄 Đang tiến hành nạp {len(lines)} tài khoản IG...")
 
             def _do_import():
@@ -1082,9 +1039,7 @@ class MMOApp(ctk.CTk):
                     parts = l.split("|")
                     ck = parts[0].strip()
                     proxy = parts[1].strip() if len(parts) > 1 else ""
-                    
-                    idfb_match = re.search(r'ds_user_id=(\d+)', ck)
-                    idfb = idfb_match.group(1) if idfb_match else "0"
+                    idfb = (re.search(r'ds_user_id=(\d+)', ck) or [None, "0"]).group(1)
                     
                     try:
                         p_data = json.loads(check_cookie_ig(ck, proxy))
@@ -1098,16 +1053,10 @@ class MMOApp(ctk.CTk):
                             acc_data = {"cookie": ck, "id": idfb, "username": ig_user, "proxy": proxy, "coins": 0, "max_jobs": max_jobs_val}
                             new_added += 1
                             self.after(0, lambda a=acc_data: self.add_account_row_to_ui(a))
-                            self.log(f"✔ Đã nạp thành công IG: @{ig_user}")
-                        else:
-                            self.log(f"✖ Cookie không hợp lệ hoặc bị checkpoint cho ID: {idfb}")
-                    except Exception as e:
-                        pass
+                    except: pass
                 conn.close()
-                if new_added > 0:
-                    self.log(f"✨ Batch import thành công {new_added} tài khoản IG!")
+                if new_added > 0: self.log(f"✨ Batch import thành công {new_added} tài khoản IG!")
 
-            # Chạy đa luồng để không đơ UI
             threading.Thread(target=_do_import, daemon=True).start()
 
         ctk.CTkButton(modal, text="🚀 TIẾN HÀNH NẠP DANH SÁCH", fg_color="#059669", hover_color="#047857", height=42, font=ctk.CTkFont(size=12, weight="bold"), corner_radius=8, command=process_import).pack(fill="x", padx=24, pady=(0, 24))
@@ -1120,21 +1069,17 @@ class MMOApp(ctk.CTk):
         modal.configure(fg_color="#ffffff")
 
         ctk.CTkLabel(modal, text="📋 DÁN DANH SÁCH COOKIE FACEBOOK VÀO ĐÂY", font=ctk.CTkFont(size=14, weight="bold"), text_color="#0284c7").pack(anchor="w", padx=24, pady=(20, 5))
-        ctk.CTkLabel(modal, text="Định dạng: Cookie|Proxy (Mỗi dòng 1 Cookie FB gốc, tool sẽ tự động tìm tất cả Page của các Cookie này)", font=ctk.CTkFont(size=11), text_color="#64748b").pack(anchor="w", padx=24, pady=(0, 15))
-
         txt_batch = ctk.CTkTextbox(modal, height=350, font=ctk.CTkFont(family="Consolas", size=10), fg_color="#f8fafc", border_color="#cbd5e1", border_width=1)
         txt_batch.pack(fill="both", expand=True, padx=24, pady=(0, 15))
 
-        # Nếu đang có text ở ô nhập liệu ngoài màn hình chính thì tự động bê vào
         single_cookie = self.txt_fb_cookies.get().strip()
-        if single_cookie:
-            txt_batch.insert("1.0", single_cookie)
+        if single_cookie: txt_batch.insert("1.0", single_cookie)
 
         def process_scan():
             raw_text = txt_batch.get("1.0", "end").strip()
-            if not raw_text:
-                self.log("✖ Vui lòng dán danh sách Cookie Facebook!")
-                return
+            if not raw_text: return
+            try: max_jobs_val = int(self.max_jobs_fb_entry.get().strip())
+            except: max_jobs_val = 999999
             
             lines = [c.strip() for c in raw_text.split("\n") if c.strip()]
             modal.destroy()
@@ -1149,37 +1094,32 @@ class MMOApp(ctk.CTk):
                     ck = parts[0].strip()
                     proxy = parts[1].strip() if len(parts) > 1 else ""
                     
-                    self.log("🔍 Đang kết nối Facebook để quét danh sách Page...")
+                    self.log("🔍 Đang quét danh sách Page từ FB Cookie...")
                     pages = scan_facebook_pages(ck, proxy)
                     for p in pages:
-                        pid = p["page_id"]
-                        pname = p["page_name"]
-                        ptok = p["page_token"]
-                        parent_match = re.search(r'c_user=(\d+)', ck)
-                        parent_id = parent_match.group(1) if parent_match else "Main"
+                        pid, pname, ptok = p["page_id"], p["page_name"], p["page_token"]
+                        parent_id = (re.search(r'c_user=(\d+)', ck) or [None, "Main"])[1]
                         
-                        cursor.execute("INSERT OR REPLACE INTO fb_pages (parent_username, page_id, page_name, page_token, proxy, status, coins) VALUES (?, ?, ?, ?, ?, ?, ?)", 
-                                       (parent_id, pid, pname, ptok, proxy, "Active", 0))
+                        cursor.execute("INSERT OR REPLACE INTO fb_pages (parent_username, page_id, page_name, page_token, proxy, status, coins, max_jobs) VALUES (?, ?, ?, ?, ?, ?, ?, ?)", 
+                                       (parent_id, pid, pname, ptok, proxy, "Active", 0, max_jobs_val))
                         conn.commit()
                         
-                        page_data = {"parent": parent_id, "page_id": pid, "page_name": pname, "page_token": ptok, "proxy": proxy, "coins": 0}
+                        page_data = {"parent": parent_id, "page_id": pid, "page_name": pname, "page_token": ptok, "proxy": proxy, "coins": 0, "max_jobs": max_jobs_val}
                         total_scanned_pages += 1
                         self.after(0, lambda pd=page_data: self.add_page_row_to_ui(pd))
-                        self.log(f"✔ Tìm thấy & Nạp Page: {pname} (ID: {pid})")
                         
                 conn.close()
-                self.log(f"✨ Quét thành công tổng cộng {total_scanned_pages} Page Facebook từ {len(lines)} Cookie gốc.")
+                self.log(f"✨ Quét xong {total_scanned_pages} Page Facebook.")
 
             threading.Thread(target=_do_scan, daemon=True).start()
 
         ctk.CTkButton(modal, text="🚀 BẮT ĐẦU QUÉT PAGE ĐỒNG LOẠT", fg_color="#0284c7", hover_color="#0369a1", height=42, font=ctk.CTkFont(size=12, weight="bold"), corner_radius=8, command=process_scan).pack(fill="x", padx=24, pady=(0, 24))
 
-
     def toggle_run_all(self):
         if not self.is_running:
             token = self.ent_token.get().strip()
             if not token:
-                self.log("✖ Vui lòng nhập XSMM Access Token trong Cấu hình chung!")
+                self.log("✖ Vui lòng nhập XSMM Access Token!")
                 return
             
             self.save_config()
@@ -1189,19 +1129,12 @@ class MMOApp(ctk.CTk):
             selected_ig = [info for info in self.acc_rows.values() if info["var"].get()]
             selected_pg = [info for info in self.page_rows.values() if info["var"].get()]
 
-            if not selected_ig and not selected_pg:
-                self.log("✖ Không có tài khoản hoặc Page nào được chọn (tick chọn checkbox) để chạy!")
-                return
+            if not selected_ig and not selected_pg: return
 
-            # Lấy danh sách job IG được chọn chung
             chosen_ig_jobs = []
             if self.chk_ig_like.get(): chosen_ig_jobs.append('instagram_like')
             if self.chk_ig_follow.get(): chosen_ig_jobs.append('instagram_follow')
             if self.chk_ig_cmt.get(): chosen_ig_jobs.append('instagram_comment')
-
-            if selected_ig and not chosen_ig_jobs:
-                self.log("✖ Bạn chưa chọn loại job Instagram nào để chạy! Vào 'Cấu hình chung' để bật ít nhất 1 loại job.")
-                return
 
             self.is_running = True
             self.start_time = time.time()
@@ -1227,47 +1160,38 @@ class MMOApp(ctk.CTk):
                     info["action_btn"].configure(text="Dừng", fg_color="#dc2626", hover_color="#b91c1c")
                     info["status_label"].configure(text="Đang chạy độc lập...", text_color="#0284c7")
                     threading.Thread(target=self.worker_single_page_loop, args=(token, list_pg_nv, delay_val, page_data, info["action_btn"], info["status_label"]), daemon=True).start()
-
-            self.log(f"🚀 Đã kích hoạt chạy đồng thời {len(selected_ig)} tài khoản IG (với job: {chosen_ig_jobs}) và {len(selected_pg)} Page FB!")
         else:
             self.is_running = False
             self.start_time = None
             self.single_running_threads.clear()
-            self.btn_toggle.configure(text="🚀 START ALL (CHẠY TẤT CẢ ACC)", fg_color="#059669", hover_color="#047857")
+            self.btn_toggle.configure(text="🚀 START ALL (CHẠY TẤT CẢ ACC)", fg_color="#059669")
             self.lbl_status_conn.configure(text="● SYSTEM: DISCONNECTED", text_color="#dc2626")
             
             for info in self.acc_rows.values():
-                info["action_btn"].configure(text="Bắt đầu", fg_color="#2563eb", hover_color="#1d4ed8")
+                info["action_btn"].configure(text="Bắt đầu", fg_color="#2563eb")
                 info["status_label"].configure(text="Đã dừng", text_color="#d97706")
             for info in self.page_rows.values():
-                info["action_btn"].configure(text="Bắt đầu", fg_color="#0284c7", hover_color="#0369a1")
+                info["action_btn"].configure(text="Bắt đầu", fg_color="#0284c7")
                 info["status_label"].configure(text="Đã dừng", text_color="#d97706")
-            
-            self.log("🛑 Đã dừng toàn bộ các luồng hệ thống.")
 
     def worker_single_account_loop(self, token, listnv, delay_val, acc, btn_action, lbl_status):
         xsmm = XSMMTool(token)
         username, ck, id_val, proxy = acc["username"], acc["cookie"], acc["id"], acc["proxy"]
-        max_jobs = acc.get("max_jobs", 100)
+        max_jobs = acc.get("max_jobs", 999999)
         attempted_jobs = 0
-        
         xsmm.add_social_account(username, "instagram")
         
         while self.single_running_threads.get(username, False):
             if attempted_jobs >= max_jobs:
-                self.log(f"ℹ️ [IG - @{username}] Đã chạy đủ {max_jobs} job giới hạn.")
                 self.after(0, lambda: lbl_status.configure(text=f"Đã hoàn thành {max_jobs} job", text_color="#059669"))
                 break
 
             for rand_job in [j for j in listnv if 'instagram' in j]:
                 if not self.single_running_threads.get(username, False) or attempted_jobs >= max_jobs: break
                 
-                self.after(0, lambda jn=rand_job: lbl_status.configure(text=f"Đang quét job: {jn}", text_color="#d97706"))
-
                 tasks, err_msg = xsmm.get_tasks(rand_job, id_val)
                 if not tasks or not isinstance(tasks, list):
-                    fail_reason = f"⚠️ Hết job/Lỗi API: {err_msg[:30]}" if err_msg else "⚠️ Không tìm thấy job"
-                    self.after(0, lambda fr=fail_reason: lbl_status.configure(text=fr, text_color="#d97706"))
+                    self.after(0, lambda fr=err_msg: lbl_status.configure(text=f"⚠️ {fr[:25]}", text_color="#d97706"))
                     continue
 
                 csf = (re.search(r'csrftoken=([^;]+)', ck) or [None, ""])[1]
@@ -1290,9 +1214,6 @@ class MMOApp(ctk.CTk):
                                 target_id = (re.search(r'"profile_id":"(\d+)"', html) or re.search(r'"user_id":"(\d+)"', html) or re.search(r'profilePage_(\d+)', html)).group(1)
                             except Exception as e:
                                 attempted_jobs += 1
-                                fail_msg = f"❌ Thất bại Follow [{task_id}]: Không lấy được target_id ({attempted_jobs}/{max_jobs})"
-                                self.after(0, lambda fm=fail_msg: lbl_status.configure(text=fm, text_color="#dc2626"))
-                                self.log(f"❌ [IG - @{username}] Follow [{task_id}] thất bại: Không lấy được target_id (Lỗi: {str(e)})")
                                 continue
 
                         success = False
@@ -1301,21 +1222,17 @@ class MMOApp(ctk.CTk):
                             try:
                                 res_raw = follow(target_id, ck, csf, link_job, proxy)
                                 j = json.loads(res_raw)
-                                if "errors" not in j and ("data" in j or j.get("status") == "ok"):
-                                    success = True
-                                else:
-                                    fail_reason_detail = j.get("message") or str(j.get("errors", "IG Block/Checkpoint"))
+                                if "errors" not in j and ("data" in j or j.get("status") == "ok"): success = True
+                                else: fail_reason_detail = j.get("message") or str(j.get("errors", "IG Block"))
                             except Exception as e:
-                                fail_reason_detail = f"Exception: {str(e)[:25]}"
+                                fail_reason_detail = f"Lỗi: {str(e)[:15]}"
 
                         attempted_jobs += 1
                         if success:
                             success_task_ids.append(task_id)
-                            self.after(0, lambda tid=task_id, c=attempted_jobs: lbl_status.configure(text=f"✅ Thành công Follow [{tid}] ({c}/{max_jobs})", text_color="#059669"))
-                            self.log(f"✅ [IG - @{username}] Follow thành công task {task_id} ({attempted_jobs}/{max_jobs})")
+                            self.after(0, lambda tid=task_id, c=attempted_jobs: lbl_status.configure(text=f"✅ Thành công Follow ({c}/{max_jobs})", text_color="#059669"))
                         else:
-                            self.after(0, lambda tid=task_id, fr=fail_reason_detail, c=attempted_jobs: lbl_status.configure(text=f"❌ Thất bại Follow [{tid}]: {fr[:25]} ({c}/{max_jobs})", text_color="#dc2626"))
-                            self.log(f"❌ [IG - @{username}] Thất bại Follow [{task_id}]: {fail_reason_detail} ({attempted_jobs}/{max_jobs})")
+                            self.after(0, lambda fr=fail_reason_detail, c=attempted_jobs: lbl_status.configure(text=f"❌ Thất bại: {fr} ({c})", text_color="#dc2626"))
                         
                         if len(success_task_ids) >= 3 or attempted_jobs >= max_jobs:
                             if success_task_ids:
@@ -1323,7 +1240,6 @@ class MMOApp(ctk.CTk):
                                 earned, _ = parse_real_earned_points(c_res, default_points=default_p * len(success_task_ids))
                                 if earned > 0:
                                     self.update_stats(coins=int(earned), jobs=len(success_task_ids), entity_type="account", entity_key=username)
-                                    self.log(f"✨ [IG - @{username}] Nhận +{earned} xu")
                                 success_task_ids = []
                         time.sleep(min(3, max(1, delay_val)))
                 else:
@@ -1341,23 +1257,17 @@ class MMOApp(ctk.CTk):
                             try:
                                 res_raw = tym(nv.get('target_id', ''), ck, csf, link_job, proxy)
                                 j = json.loads(res_raw)
-                                if "errors" not in j and ("data" in j or j.get("status") == "ok"):
-                                    success = True
-                                else:
-                                    fail_reason_detail = j.get("message") or str(j.get("errors", "IG Block/Checkpoint"))
-                            except Exception as e:
-                                fail_reason_detail = f"Exception: {str(e)[:25]}"
+                                if "errors" not in j and ("data" in j or j.get("status") == "ok"): success = True
+                                else: fail_reason_detail = j.get("message") or str(j.get("errors", "Block"))
+                            except Exception as e: pass
                         elif rand_job == 'instagram_comment':
                             idm, noidung = nv.get('target_id', ''), nv.get('comment', '') or ai_generate_unique_comment()
                             try:
                                 res_raw = cmt(idm, noidung, ck, csf, link_job, proxy)
                                 j = json.loads(res_raw)
-                                if "errors" not in j and ("data" in j or j.get("status") == "ok"):
-                                    success = True
-                                else:
-                                    fail_reason_detail = j.get("message") or str(j.get("errors", "IG Block/Checkpoint"))
-                            except Exception as e:
-                                fail_reason_detail = f"Exception: {str(e)[:25]}"
+                                if "errors" not in j and ("data" in j or j.get("status") == "ok"): success = True
+                                else: fail_reason_detail = j.get("message") or str(j.get("errors", "Block"))
+                            except Exception as e: pass
 
                         attempted_jobs += 1
                         if success:
@@ -1365,38 +1275,33 @@ class MMOApp(ctk.CTk):
                             earned, _ = parse_real_earned_points(c_res, default_points=default_p)
                             if earned > 0:
                                 self.update_stats(coins=int(earned), jobs=1, entity_type="account", entity_key=username)
-                                self.after(0, lambda jn=job_name_vn, tid=task_id, c=attempted_jobs: lbl_status.configure(text=f"✅ Thành công {jn} [{tid}] ({c}/{max_jobs})", text_color="#059669"))
-                                self.log(f"✨ [IG - @{username}] Nhận +{earned} xu ({attempted_jobs}/{max_jobs})")
+                                self.after(0, lambda jn=job_name_vn, tid=task_id, c=attempted_jobs: lbl_status.configure(text=f"✅ Xong {jn} ({c}/{max_jobs})", text_color="#059669"))
                         else:
-                            self.after(0, lambda jn=job_name_vn, tid=task_id, fr=fail_reason_detail, c=attempted_jobs: lbl_status.configure(text=f"❌ Thất bại {jn} [{tid}]: {fr[:25]} ({c}/{max_jobs})", text_color="#dc2626"))
-                            self.log(f"❌ [IG - @{username}] Thất bại {job_name_vn} [{task_id}]: {fail_reason_detail} ({attempted_jobs}/{max_jobs})")
+                            self.after(0, lambda fr=fail_reason_detail, c=attempted_jobs: lbl_status.configure(text=f"❌ Lỗi: {fr[:15]} ({c})", text_color="#dc2626"))
                         time.sleep(max(1, delay_val))
 
             if self.single_running_threads.get(username, False) and attempted_jobs < max_jobs:
-                self.after(0, lambda: lbl_status.configure(text="Live (Chờ job)", text_color="#059669"))
+                self.after(0, lambda: lbl_status.configure(text="Live (Chờ job mới)", text_color="#059669"))
             time.sleep(3)
 
         self.single_running_threads[username] = False
-        self.after(0, lambda: btn_action.configure(text="Bắt đầu", fg_color="#2563eb", hover_color="#1d4ed8"))
+        self.after(0, lambda: btn_action.configure(text="Bắt đầu", fg_color="#2563eb"))
         self.after(0, lambda: lbl_status.configure(text="Đã dừng", text_color="#d97706"))
 
     def worker_single_page_loop(self, token, listnv, delay_val, page, btn_action, lbl_status):
         xsmm = XSMMTool(token)
         pid, pname, ptok, proxy = page["page_id"], page["page_name"], page["page_token"], page["proxy"]
-        max_jobs = page.get("max_jobs", 100)
+        max_jobs = page.get("max_jobs", 999999)
         attempted_jobs = 0
         xsmm.add_social_account(pname, "facebook")
 
         while self.single_running_threads.get(pid, False):
             if attempted_jobs >= max_jobs:
-                self.log(f"ℹ️ [FB Page - {pname}] Đã chạy đủ {max_jobs} job giới hạn.")
                 self.after(0, lambda: lbl_status.configure(text=f"Đã hoàn thành {max_jobs} job", text_color="#059669"))
                 break
 
             for rand_job in [j for j in listnv if 'facebook' in j]:
                 if not self.single_running_threads.get(pid, False) or attempted_jobs >= max_jobs: break
-                self.after(0, lambda jn=rand_job: lbl_status.configure(text=f"Đang quét job: {jn}", text_color="#d97706"))
-
                 tasks, err_msg = xsmm.get_tasks(rand_job, pid)
                 if not tasks or not isinstance(tasks, list):
                     self.after(0, lambda: lbl_status.configure(text="⚠️ Hết job Page", text_color="#d97706"))
@@ -1407,7 +1312,7 @@ class MMOApp(ctk.CTk):
                     task_id, link_job = nv.get('id', ''), nv.get('target_url', '')
                     default_p = int(nv.get('points', 10))
                     success = False
-                    fail_reason_detail = "Lỗi FB Graph API"
+                    fail_reason_detail = "Lỗi FB API"
                     
                     fb_job_desc = "FB Like" if 'like' in rand_job else ("FB Follow" if 'follow' in rand_job else "FB Cmt")
                     self.after(0, lambda jbd=fb_job_desc, tid=task_id: lbl_status.configure(text=f"Đang {jbd} [{tid}]...", text_color="#0284c7"))
@@ -1416,32 +1321,23 @@ class MMOApp(ctk.CTk):
                         try:
                             res_raw = fb_page_like(link_job, ptok, proxy)
                             j = json.loads(res_raw)
-                            if "success" in j or j.get("id"):
-                                success = True
-                            else:
-                                fail_reason_detail = j.get("error", {}).get("message", "Token hết hạn / Block")
-                        except Exception as e:
-                            fail_reason_detail = f"Exception: {str(e)[:20]}"
+                            if "success" in j or j.get("id"): success = True
+                            else: fail_reason_detail = j.get("error", {}).get("message", "Block")
+                        except Exception as e: pass
                     elif rand_job == 'facebook_follow':
                         try:
                             res_raw = fb_page_follow(nv.get('target_id', ''), ptok, proxy)
                             j = json.loads(res_raw)
-                            if "success" in j:
-                                success = True
-                            else:
-                                fail_reason_detail = j.get("error", {}).get("message", "Token hết hạn / Block")
-                        except Exception as e:
-                            fail_reason_detail = f"Exception: {str(e)[:20]}"
+                            if "success" in j: success = True
+                            else: fail_reason_detail = j.get("error", {}).get("message", "Block")
+                        except Exception as e: pass
                     elif rand_job == 'facebook_comment':
                         try:
                             res_raw = fb_page_comment(nv.get('target_id', '') or link_job, nv.get('comment', '') or ai_generate_unique_comment(), ptok, proxy)
                             j = json.loads(res_raw)
-                            if "id" in j:
-                                success = True
-                            else:
-                                fail_reason_detail = j.get("error", {}).get("message", "Token hết hạn / Block")
-                        except Exception as e:
-                            fail_reason_detail = f"Exception: {str(e)[:20]}"
+                            if "id" in j: success = True
+                            else: fail_reason_detail = j.get("error", {}).get("message", "Block")
+                        except Exception as e: pass
 
                     attempted_jobs += 1
                     if success:
@@ -1449,11 +1345,9 @@ class MMOApp(ctk.CTk):
                         earned, _ = parse_real_earned_points(c_res, default_points=default_p)
                         if earned > 0:
                             self.update_stats(coins=int(earned), jobs=1, entity_type="page", entity_key=pid)
-                            self.after(0, lambda jbd=fb_job_desc, tid=task_id, c=attempted_jobs: lbl_status.configure(text=f"✅ Thành công {jbd} [{tid}] ({c}/{max_jobs})", text_color="#059669"))
-                            self.log(f"✨ [FB Page - {pname}] Nhận +{earned} xu")
+                            self.after(0, lambda jbd=fb_job_desc, tid=task_id, c=attempted_jobs: lbl_status.configure(text=f"✅ Xong {jbd} ({c}/{max_jobs})", text_color="#059669"))
                     else:
-                        self.after(0, lambda jbd=fb_job_desc, tid=task_id, fr=fail_reason_detail, c=attempted_jobs: lbl_status.configure(text=f"❌ Thất bại {jbd} [{tid}]: {fr[:25]} ({c}/{max_jobs})", text_color="#dc2626"))
-                        self.log(f"❌ [FB Page - {pname}] Thất bại {fb_job_desc} [{task_id}]: {fail_reason_detail} ({attempted_jobs}/{max_jobs})")
+                        self.after(0, lambda fr=fail_reason_detail, c=attempted_jobs: lbl_status.configure(text=f"❌ Lỗi: {fr[:15]} ({c})", text_color="#dc2626"))
                 time.sleep(max(1, delay_val))
 
             if self.single_running_threads.get(pid, False) and attempted_jobs < max_jobs:
@@ -1461,9 +1355,9 @@ class MMOApp(ctk.CTk):
             time.sleep(3)
 
         self.single_running_threads[pid] = False
-        self.after(0, lambda: btn_action.configure(text="Bắt đầu", fg_color="#0284c7", hover_color="#0369a1"))
+        self.after(0, lambda: btn_action.configure(text="Bắt đầu", fg_color="#0284c7"))
         self.after(0, lambda: lbl_status.configure(text="Đã dừng", text_color="#d97706"))
 
 if __name__ == "__main__":
     app = MMOApp()
-    app.mainloop()
+    app.mainloop()v
