@@ -69,6 +69,7 @@ from email.header import decode_header
 import json
 import traceback
 import string
+import hashlib
 
 # ===== THƯ VIỆN CHROME CHO PC & PYOTP =====
 try:
@@ -157,7 +158,7 @@ def banner():
 ╚██████╔╝██║  ██║██║  ██║╚██████╔╝██║ ╚═╝ ██║███████╗
  ╚═════╝ ╚═╝  ╚═╝╚═╝  ╚═╝ ╚═════╝ ╚═╝     ╚═╝╚══════╝
 {Colors.RESET}""")
-    built_in_print(f"{Colors.INFO}Phiên Bản: v17.3 (Cải thiện retry kết nối Smail1s){Colors.RESET}")
+    built_in_print(f"{Colors.INFO}Phiên Bản: v17.4 (Fix triệt để lỗi bỏ qua mã OTP khi Gửi Lại){Colors.RESET}")
     built_in_print(f"{Colors.LINE}{'─'*70}{Colors.RESET}\n")
 
 def load_config():
@@ -372,14 +373,14 @@ class LocalProxyForwarder:
         except: pass
 
 
-# ==================== CÁC CLASS XỬ LÝ EMAIL ====================
+# ==================== CÁC CLASS XỬ LÝ EMAIL (TRACKING THEO ID THAY VÌ TEXT OTP) ====================
 class MailService:
     def __init__(self, proxy=None):
         self.base_url = "https://api.mail.tm"
         self.token = None
         self.domain = None
         self.email_address = None
-        self.seen_codes = set() 
+        self.seen_msg_ids = set() # Track Message ID
         self.proxy = proxy 
         
     def get_domain(self):
@@ -415,8 +416,6 @@ class MailService:
         if not self.token: return None
         headers = {"Authorization": f"Bearer {self.token}", "Accept": "application/json"}
         start_time = time.time()
-        last_id = None
-        
         time.sleep(random.uniform(1.0, 5.0))
         
         while time.time() - start_time < timeout:
@@ -425,22 +424,23 @@ class MailService:
                 r = requests.get(f"{self.base_url}/messages", headers=headers, timeout=10, proxies=self.proxy)
                 if r.status_code == 200:
                     for msg in r.json().get('hydra:member', []):
+                        msg_id = msg.get('id')
+                        if not msg_id or msg_id in self.seen_msg_ids:
+                            continue
+                            
                         sub = str(msg.get('subject', '')).lower()
                         frm = str(msg.get('from', {}).get('address', '')).lower()
                         if 'instagram' in sub or 'instagram' in frm:
-                            if msg.get('id') != last_id:
-                                last_id = msg['id']
-                                detail = requests.get(f"{self.base_url}/messages/{last_id}", headers=headers, timeout=10, proxies=self.proxy).json()
-                                text = detail.get('text', '') or re.sub('<[^<]+?>', '', str(detail.get('html', '')))
-                                clean_txt = text.replace(" ", "")
-                                
-                                regex_rule = r'(?<!\d)(\d{8})(?!\d)' if force_8_digits else r'(?<!\d)(\d{6})(?!\d)'
-                                match = re.search(regex_rule, clean_txt)
-                                if match: 
-                                    code = match.group(1)
-                                    if code not in self.seen_codes:
-                                        self.seen_codes.add(code)
-                                        return code
+                            detail = requests.get(f"{self.base_url}/messages/{msg_id}", headers=headers, timeout=10, proxies=self.proxy).json()
+                            text = detail.get('text', '') or re.sub('<[^<]+?>', '', str(detail.get('html', '')))
+                            clean_txt = text.replace(" ", "")
+                            
+                            regex_rule = r'(?<!\d)(\d{8})(?!\d)' if force_8_digits else r'(?<!\d)(\d{6})(?!\d)'
+                            match = re.search(regex_rule, clean_txt)
+                            if match: 
+                                code = match.group(1)
+                                self.seen_msg_ids.add(msg_id) # Mark this specific email as processed
+                                return code
             except Exception: pass
             time.sleep(random.uniform(6.0, 10.0))
         return None
@@ -525,7 +525,10 @@ class GmailIMAPService:
                     for uid_bytes in reversed(uids[-10:]):
                         try: uid_int = int(uid_bytes)
                         except ValueError: continue
-                        if uid_int <= since_uid or uid_bytes in self.seen_uids: continue
+                        
+                        if uid_int <= since_uid or uid_bytes in self.seen_uids: 
+                            continue
+                            
                         status, fetch_data = self.mail.uid("fetch", uid_bytes, "(RFC822)")
                         if status == "OK" and fetch_data:
                             raw = None
@@ -543,8 +546,6 @@ class GmailIMAPService:
                                 is_security_mail = any(kw in subject for kw in ["security", "bảo mật", "verify", "xác minh", "code", "mã"])
                                 
                                 if is_ig and is_security_mail:
-                                    self.seen_uids.add(uid_bytes) 
-                                    
                                     raw_html = ""
                                     for part in msg.walk():
                                         if part.get_content_type() == "text/html":
@@ -558,6 +559,7 @@ class GmailIMAPService:
                                     regex_rule = r'(?<!\d)(\d{8})(?!\d)' if force_8_digits else r'(?<!\d)(\d{6})(?!\d)'
                                     match = re.search(regex_rule, combined)
                                     if match:
+                                        self.seen_uids.add(uid_bytes) # Mark email as processed
                                         return match.group(1)
             except Exception: pass
             time.sleep(random.uniform(6.0, 10.0)) 
@@ -570,14 +572,12 @@ class HotmailAPIService:
         self.data_line = data_line.strip()
         self.api_mode = api_mode.strip()
         self.email = self.data_line.split('|')[0] if '|' in self.data_line else self.data_line
-        self.seen_codes = set()
+        self.seen_msg_ids = set() # Track by unique message ID, not code text!
         self.proxy = proxy
         self._init_session()
 
     def _init_session(self):
         self.session = requests.Session()
-        
-        # Cấu hình retry cho các lỗi mạng (Read timeout, Connection error)
         retries = Retry(total=5, backoff_factor=1, status_forcelist=[500, 502, 503, 504])
         self.session.mount('http://', HTTPAdapter(max_retries=retries))
         self.session.mount('https://', HTTPAdapter(max_retries=retries))
@@ -594,7 +594,6 @@ class HotmailAPIService:
         payload = {"mode": self.api_mode, "data": self.data_line}
         time.sleep(random.uniform(1.0, 3.0)) 
         
-        # Thử lấy baseline vài lần nếu lỗi
         for _ in range(3):
             try:
                 response = self.session.post(self.url, json=payload, timeout=20)
@@ -603,33 +602,26 @@ class HotmailAPIService:
                     if data_array and len(data_array) > 0:
                         messages = data_array[0].get("messages", [])
                         for msg in messages:
-                            raw_msg = str(msg.get("message", ""))
-                            clean_text = re.sub(r'<[^>]+>', ' ', raw_msg)
-                            all_numbers = re.findall(r'(?<!\d)(\d{6}|\d{8})(?!\d)', clean_text.replace(" ", ""))
-                            for num in all_numbers:
-                                self.seen_codes.add(num)
-                    break # Thành công thì thoát vòng lặp
+                            msg_id = str(msg.get("id", msg.get("uid", "")))
+                            if not msg_id: # Fallback hash if API has no ID
+                                msg_id = hashlib.md5(str(msg.get("message", "")).encode()).hexdigest()
+                            self.seen_msg_ids.add(msg_id)
+                    break 
             except Exception:
-                time.sleep(3) # Đợi một chút trước khi thử lại
+                time.sleep(3) 
 
     def get_otp_code(self, timeout=180, force_8_digits=False): 
         start_time = time.time()
         loai_ma = "ÉP ĐỌC MÃ 8 SỐ 2FA" if force_8_digits else "ĐỌC MÃ ĐĂNG KÝ 6 SỐ"
         print(f"{Colors.color_text(f'[API Smail1s] Đang check hộp thư {self.email} ({loai_ma})...', Colors.INFO)}")
         
-        payload = {
-            "mode": self.api_mode,
-            "data": self.data_line
-        }
-        
+        payload = {"mode": self.api_mode, "data": self.data_line}
         time.sleep(random.uniform(1.0, 5.0))
-        
         last_logged = ""
+        
         while time.time() - start_time < timeout:
-            if STOP_EVENT.is_set():
-                return None
+            if STOP_EVENT.is_set(): return None
             try:
-                # Tăng timeout lên 20s để tránh "Read timed out"
                 response = self.session.post(self.url, json=payload, timeout=20)
                 
                 if response.status_code == 200:
@@ -653,31 +645,37 @@ class HotmailAPIService:
                                 last_logged = msg_info
                                 
                             for msg in messages:
+                                msg_id = str(msg.get("id", msg.get("uid", "")))
+                                if not msg_id:
+                                    msg_id = hashlib.md5(str(msg.get("message", "")).encode()).hexdigest()
+                                
+                                # BỎ QUA EMAIL NẾU ĐÃ QUÉT TRƯỚC ĐÓ!
+                                if msg_id in self.seen_msg_ids:
+                                    continue
+                                
                                 subject = str(msg.get("subject", "")).lower()
                                 from_sender = str(msg.get("from", "")).lower()
                                 raw_msg = str(msg.get("message", ""))
                                 
                                 is_ig = ("instagram" in subject) or ("instagram" in from_sender)
-                                is_security_mail = any(kw in subject for kw in ["security", "bảo mật", "verify", "xác minh", "code", "mã", "factor"])
+                                is_security_mail = True 
+                                if force_8_digits:
+                                    is_security_mail = any(kw in subject for kw in ["security", "bảo mật", "verify", "xác minh", "code", "mã", "factor"])
                                 
                                 if is_ig and is_security_mail:
                                     clean_text = re.sub(r'<[^>]+>', ' ', raw_msg).replace(" ", "")
                                     code = None
                                     
                                     if force_8_digits:
-                                        # BẮT BUỘC ĐÚNG MÃ 8 CHỮ SỐ CHO 2FA META
                                         match_8 = re.search(r'(?<!\d)(\d{8})(?!\d)', clean_text)
-                                        if match_8:
-                                            code = match_8.group(1)
+                                        if match_8: code = match_8.group(1)
                                     else:
-                                        # BƯỚC ĐĂNG KÝ BAN ĐẦU CHỈ LẤY 6 SỐ
                                         match_6 = re.search(r'(?<!\d)(\d{6})(?!\d)', clean_text)
-                                        if match_6:
-                                            code = match_6.group(1)
+                                        if match_6: code = match_6.group(1)
                                     
-                                    if code and code not in self.seen_codes:
-                                        print(f"{Colors.color_text(f'[API Smail1s] ĐÃ BẮT ĐƯỢC MÃ CHUẨN: {code}', Colors.SUCCESS)}")
-                                        self.seen_codes.add(code)
+                                    if code:
+                                        self.seen_msg_ids.add(msg_id) # Lưu ID thư lại để không lấy trùng lần sau
+                                        print(f"{Colors.color_text(f'[API Smail1s] ĐÃ BẮT ĐƯỢC MÃ CHUẨN MỚI NHẤT: {code}', Colors.SUCCESS)}")
                                         return code
                 else:
                     status_err = f"Lỗi HTTP {response.status_code}"
@@ -686,15 +684,11 @@ class HotmailAPIService:
                         last_logged = status_err
                         
             except requests.exceptions.RequestException as e:
-                # Bắt gọn các lỗi liên quan đến request (Timeout, ConnectionError,...)
                 err_str = "Lỗi kết nối Smail1s. Đang thử lại..."
                 if err_str != last_logged:
                     print(f"{Colors.color_text(f'[API Smail1s] {err_str} (Chi tiết: {e})', Colors.WARNING)}")
                     last_logged = err_str
-                
-                # Khởi tạo lại session nếu lỗi mạng dai dẳng
-                try:
-                    self._init_session() 
+                try: self._init_session() 
                 except: pass
                 
             except Exception as e:
@@ -749,7 +743,6 @@ class starts(threading.Thread):
             req_proxy = format_proxy(raw_proxy)
             p_info = parse_proxy(raw_proxy)
             
-            # FIX LỖI SYNTAX F-STRING: Đưa các phần tử mảng ra biến rời để không dính lỗi \" trong cặp ngoặc nhọn
             if p_info and p_info.get("user"):
                 p_ip = p_info["ip"]
                 p_port = p_info["port"]
@@ -1217,7 +1210,6 @@ class starts(threading.Thread):
                         else:
                             print(f"{Colors.color_text(f'[{self.thread_id}] Lần {attempt+1}: Đang chờ lấy mã OTP từ Email...', Colors.INFO)}")
 
-                        # Tăng timeout lấy OTP để kiên nhẫn hơn
                         timeout_per_attempt = 100 
                         if self.mode == "1" or (self.mode == "2" and mail_service and mail_service.token):
                             otp_code = mail_service.get_otp_code(timeout=timeout_per_attempt, force_8_digits=False)
@@ -1227,7 +1219,6 @@ class starts(threading.Thread):
                             otp_code = hotmail_service.get_otp_code(timeout=120, force_8_digits=False) 
                     
                     if otp_code:
-                        # NẾU CÓ MÃ THÌ THOÁT KHỎI VÒNG LẶP RETRY
                         if self.mode in ["3", "4", "5"]:
                             elapsed = time.time() - start_otp_wait
                             remaining = target_wait - elapsed
@@ -1240,11 +1231,9 @@ class starts(threading.Thread):
                                 print(f"{Colors.color_text(f'[{self.thread_id}] Đã ngâm đủ {target_wait}s. Chuẩn bị điền mã OTP!', Colors.SUCCESS)}")
                         break 
                     
-                    # NẾU KHÔNG CÓ MÃ (VÀ CHƯA TỚI GIỚI HẠN) -> CLICK "GỬI LẠI MÃ"
                     if attempt < max_resend_attempts:
                         print(f"{Colors.color_text(f'[{self.thread_id}] Lần {attempt+1} không thấy mã. Tiến hành click yêu cầu Gửi lại mã...', Colors.WARNING)}")
                         
-                        # 1. Bấm nút "Tôi không nhận được mã"
                         clicked_didnt_receive = driver.execute_script("""
                             let btns = Array.from(document.querySelectorAll('button, div[role="button"]'));
                             for (let b of btns) {
@@ -1258,8 +1247,7 @@ class starts(threading.Thread):
                         """)
                         
                         if clicked_didnt_receive:
-                            time.sleep(3) # Đợi popup mở
-                            # 2. Bấm nút "Gửi lại mã xác nhận"
+                            time.sleep(3) 
                             clicked_resend = driver.execute_script("""
                                 let btns = Array.from(document.querySelectorAll('button, div[role="button"], a, span'));
                                 for (let b of btns) {
@@ -1275,17 +1263,12 @@ class starts(threading.Thread):
                             if clicked_resend:
                                 print(f"{Colors.color_text(f'[{self.thread_id}] Đã yêu cầu GỬI LẠI MÃ thành công. Chờ thư mới...', Colors.INFO)}")
                                 time.sleep(5)
-                                # Lấy lại mốc UID hộp thư (tránh việc đọc lại thư cũ)
-                                if self.mode in ["3", "4"] and imap_service:
-                                    uid_moc = imap_service.get_latest_uid()
-                                elif self.mode == "5" and hotmail_service:
-                                    hotmail_service.init_baseline()
+                                # LƯU Ý: KHÔNG ĐƯỢC RESET BASELINE Ở ĐÂY ĐỂ TRÁNH QUÉT BỎ QUA MÃ MỚI
                             else:
                                 print(f"{Colors.color_text(f'[{self.thread_id}] Lỗi: Không bấm được nút Gửi lại mã!', Colors.ERROR)}")
                         else:
                             print(f"{Colors.color_text(f'[{self.thread_id}] Lỗi: Không tìm thấy nút \"Tôi không nhận được mã\"!', Colors.ERROR)}")
 
-                # KIỂM TRA LẠI SAU KHI ĐÃ HẾT TOÀN BỘ SỐ LẦN RETRY
                 if not otp_code:
                     print(f"{Colors.color_text(f'[{self.thread_id}] Lỗi: Đã thử Gửi lại {max_resend_attempts} lần nhưng vẫn KHÔNG CÓ MÃ. Báo Mail Die và bỏ qua acc!', Colors.ERROR)}")
                     time.sleep(5)
