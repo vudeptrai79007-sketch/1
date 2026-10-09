@@ -1959,4 +1959,4 @@ if __name__ == "__main__":
     except KeyboardInterrupt:
         STOP_EVENT.set() 
         built_in_print(f"\n{Colors.ERROR}Đang buộc dừng các luồng...{Colors.RESET}")
-        sys.exit(0)v
+        sys.exit(0)
