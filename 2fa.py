@@ -79,6 +79,8 @@ try:
     from selenium.webdriver.support.ui import Select
     from selenium.webdriver.common.keys import Keys
     import requests
+    from requests.adapters import HTTPAdapter
+    from urllib3.util.retry import Retry
     import pyotp
 except ImportError:
     print("Đang cài đặt thư viện thiếu (undetected-chromedriver, requests, pyotp)...")
@@ -90,6 +92,8 @@ except ImportError:
     from selenium.webdriver.support.ui import Select
     from selenium.webdriver.common.keys import Keys
     import requests
+    from requests.adapters import HTTPAdapter
+    from urllib3.util.retry import Retry
     import pyotp
 
 # BIẾN TOÀN CỤC & CÁC KHÓA (LOCK)
@@ -153,7 +157,7 @@ def banner():
 ╚██████╔╝██║  ██║██║  ██║╚██████╔╝██║ ╚═╝ ██║███████╗
  ╚═════╝ ╚═╝  ╚═╝╚═╝  ╚═╝ ╚═════╝ ╚═╝     ╚═╝╚══════╝
 {Colors.RESET}""")
-    built_in_print(f"{Colors.INFO}Phiên Bản: v17.2 (Fix Syntax F-string, Bypass 8 số 2FA, Vòng lặp Gửi Lại Mã){Colors.RESET}")
+    built_in_print(f"{Colors.INFO}Phiên Bản: v17.3 (Cải thiện retry kết nối Smail1s){Colors.RESET}")
     built_in_print(f"{Colors.LINE}{'─'*70}{Colors.RESET}\n")
 
 def load_config():
@@ -567,10 +571,19 @@ class HotmailAPIService:
         self.api_mode = api_mode.strip()
         self.email = self.data_line.split('|')[0] if '|' in self.data_line else self.data_line
         self.seen_codes = set()
-        
+        self.proxy = proxy
+        self._init_session()
+
+    def _init_session(self):
         self.session = requests.Session()
-        if proxy:
-            self.session.proxies.update(proxy)
+        
+        # Cấu hình retry cho các lỗi mạng (Read timeout, Connection error)
+        retries = Retry(total=5, backoff_factor=1, status_forcelist=[500, 502, 503, 504])
+        self.session.mount('http://', HTTPAdapter(max_retries=retries))
+        self.session.mount('https://', HTTPAdapter(max_retries=retries))
+        
+        if self.proxy:
+            self.session.proxies.update(self.proxy)
 
         self.session.headers.update({
             'Content-Type': 'application/json',
@@ -578,21 +591,26 @@ class HotmailAPIService:
         })
 
     def init_baseline(self):
-        try:
-            payload = {"mode": self.api_mode, "data": self.data_line}
-            time.sleep(random.uniform(1.0, 3.0)) 
-            response = self.session.post(self.url, json=payload, timeout=15)
-            if response.status_code == 200:
-                data_array = response.json().get("data", [])
-                if data_array and len(data_array) > 0:
-                    messages = data_array[0].get("messages", [])
-                    for msg in messages:
-                        raw_msg = str(msg.get("message", ""))
-                        clean_text = re.sub(r'<[^>]+>', ' ', raw_msg)
-                        all_numbers = re.findall(r'(?<!\d)(\d{6}|\d{8})(?!\d)', clean_text.replace(" ", ""))
-                        for num in all_numbers:
-                            self.seen_codes.add(num)
-        except Exception: pass
+        payload = {"mode": self.api_mode, "data": self.data_line}
+        time.sleep(random.uniform(1.0, 3.0)) 
+        
+        # Thử lấy baseline vài lần nếu lỗi
+        for _ in range(3):
+            try:
+                response = self.session.post(self.url, json=payload, timeout=20)
+                if response.status_code == 200:
+                    data_array = response.json().get("data", [])
+                    if data_array and len(data_array) > 0:
+                        messages = data_array[0].get("messages", [])
+                        for msg in messages:
+                            raw_msg = str(msg.get("message", ""))
+                            clean_text = re.sub(r'<[^>]+>', ' ', raw_msg)
+                            all_numbers = re.findall(r'(?<!\d)(\d{6}|\d{8})(?!\d)', clean_text.replace(" ", ""))
+                            for num in all_numbers:
+                                self.seen_codes.add(num)
+                    break # Thành công thì thoát vòng lặp
+            except Exception:
+                time.sleep(3) # Đợi một chút trước khi thử lại
 
     def get_otp_code(self, timeout=180, force_8_digits=False): 
         start_time = time.time()
@@ -611,7 +629,9 @@ class HotmailAPIService:
             if STOP_EVENT.is_set():
                 return None
             try:
-                response = self.session.post(self.url, json=payload, timeout=10)
+                # Tăng timeout lên 20s để tránh "Read timed out"
+                response = self.session.post(self.url, json=payload, timeout=20)
+                
                 if response.status_code == 200:
                     res_json = response.json()
                     data_array = res_json.get("data", [])
@@ -664,8 +684,21 @@ class HotmailAPIService:
                     if status_err != last_logged:
                         print(f"{Colors.color_text(f'[API Smail1s] {status_err}', Colors.WARNING)}")
                         last_logged = status_err
+                        
+            except requests.exceptions.RequestException as e:
+                # Bắt gọn các lỗi liên quan đến request (Timeout, ConnectionError,...)
+                err_str = "Lỗi kết nối Smail1s. Đang thử lại..."
+                if err_str != last_logged:
+                    print(f"{Colors.color_text(f'[API Smail1s] {err_str} (Chi tiết: {e})', Colors.WARNING)}")
+                    last_logged = err_str
+                
+                # Khởi tạo lại session nếu lỗi mạng dai dẳng
+                try:
+                    self._init_session() 
+                except: pass
+                
             except Exception as e:
-                err_str = f"Lỗi kết nối: {str(e)}"
+                err_str = f"Lỗi không xác định: {str(e)}"
                 if err_str != last_logged:
                     print(f"{Colors.color_text(f'[API Smail1s] {err_str}', Colors.WARNING)}")
                     last_logged = err_str
@@ -687,6 +720,7 @@ def generate_dot_variants(gmail):
             variants.append(value + "@" + domain)
     random.shuffle(variants)
     return variants
+
 
 # ==================== MAIN THREAD ====================
 class starts(threading.Thread):
@@ -1183,7 +1217,7 @@ class starts(threading.Thread):
                         else:
                             print(f"{Colors.color_text(f'[{self.thread_id}] Lần {attempt+1}: Đang chờ lấy mã OTP từ Email...', Colors.INFO)}")
 
-                        # Nếu retry, giảm timeout lại để k bị treo mãi
+                        # Tăng timeout lấy OTP để kiên nhẫn hơn
                         timeout_per_attempt = 100 
                         if self.mode == "1" or (self.mode == "2" and mail_service and mail_service.token):
                             otp_code = mail_service.get_otp_code(timeout=timeout_per_attempt, force_8_digits=False)
