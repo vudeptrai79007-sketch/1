@@ -153,7 +153,7 @@ def banner():
 ╚██████╔╝██║  ██║██║  ██║╚██████╔╝██║ ╚═╝ ██║███████╗
  ╚═════╝ ╚═╝  ╚═╝╚═╝  ╚═╝ ╚═════╝ ╚═╝     ╚═╝╚══════╝
 {Colors.RESET}""")
-    built_in_print(f"{Colors.INFO}Phiên Bản: v17.0 (Fix Đúng Luồng Bắt Đầu & Quét Mã 8 Số 2FA Meta){Colors.RESET}")
+    built_in_print(f"{Colors.INFO}Phiên Bản: v17.1 (Đã Fix SyntaxError F-string & Chuẩn 2FA 8 Số){Colors.RESET}")
     built_in_print(f"{Colors.LINE}{'─'*70}{Colors.RESET}\n")
 
 def load_config():
@@ -721,11 +721,16 @@ class starts(threading.Thread):
             req_proxy = format_proxy(raw_proxy)
             p_info = parse_proxy(raw_proxy)
             if p_info and p_info.get("user"):
-                print(f"{Colors.color_text(f'[{self.thread_id}] Đã gán Proxy (Có User/Pass): {p_info[\"ip\"]}:{p_info[\"port\"]} (User: {p_info[\"user\"]})', Colors.WARNING)}")
+                p_ip = p_info["ip"]
+                p_port = p_info["port"]
+                p_user = p_info["user"]
+                print(Colors.color_text(f"[{self.thread_id}] Đã gán Proxy (Có User/Pass): {p_ip}:{p_port} (User: {p_user})", Colors.WARNING))
             elif p_info:
-                print(f"{Colors.color_text(f'[{self.thread_id}] Đã gán Proxy (IP:Port): {p_info[\"ip\"]}:{p_info[\"port\"]}', Colors.WARNING)}")
+                p_ip = p_info["ip"]
+                p_port = p_info["port"]
+                print(Colors.color_text(f"[{self.thread_id}] Đã gán Proxy (IP:Port): {p_ip}:{p_port}", Colors.WARNING))
             else:
-                print(f"{Colors.color_text(f'[{self.thread_id}] Đã gán Proxy: {raw_proxy}', Colors.WARNING)}")
+                print(Colors.color_text(f"[{self.thread_id}] Đã gán Proxy: {raw_proxy}", Colors.WARNING))
         
         def create_one_account(account_index):
             global BASE_YEAR
@@ -1484,7 +1489,7 @@ class starts(threading.Thread):
                             let all = Array.from(document.querySelectorAll('*'));
                             for(let el of all) {
                                 let txt = (el.innerText || el.textContent || '').trim().toLowerCase();
-                                if(txt.includes('authentication app') || txt.includes('ứng dụng xác thực') || txt.includes('duo mobile') || txt.includes('google authenticator')) {
+                                if(txt.includes('authentication app') || txt.includes('ứng dụng xác thực')) {
                                     let clickable = el.closest('div[role="button"], label, div[tabindex], button, [role="radio"]') || el;
                                     clickable.click();
                                     return 'CLICKED_APP';
