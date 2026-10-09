@@ -56,6 +56,8 @@ from email.header import decode_header
 import json
 import traceback
 import string
+import shutil  # Thêm thư viện dọn dẹp file
+import glob    # Thêm thư viện quét file rác
 
 # ===== THƯ VIỆN CHROME CHO PC & PYOTP =====
 try:
@@ -140,7 +142,7 @@ def banner():
 ╚██████╔╝██║  ██║██║  ██║╚██████╔╝██║ ╚═╝ ██║███████╗
  ╚═════╝ ╚═╝  ╚═╝╚═╝  ╚═╝ ╚═════╝ ╚═╝    ╚═╝╚══════╝
 {Colors.RESET}""")
-    built_in_print(f"{Colors.INFO}Phiên Bản: v16.7 (HỖ TRỢ TRỰC TIẾP IP:PORT TỪ AUTHPROXY){Colors.RESET}")
+    built_in_print(f"{Colors.INFO}Phiên Bản: v16.8 (HỖ TRỢ PROXY AUTH - USER:PASS BẰNG EXTENSION){Colors.RESET}")
     built_in_print(f"{Colors.LINE}{'─'*70}{Colors.RESET}\n")
 
 def load_config():
@@ -196,18 +198,73 @@ def VietnameseNameGenerator():
     
     return full_name, username
 
-# >>> ĐÃ TỐI ƯU LẠI HÀM format_proxy CHỈ NHẬN IP:PORT CHO AUTHPROXY <<<
+# >>> ĐÃ TỐI ƯU HÀM FORMAT PROXY CHO CẢ ĐỊNH DẠNG USER:PASS <<<
 def format_proxy(proxy_str):
     if not proxy_str: return None
-    proxy_str = proxy_str.strip()
-    if not proxy_str: return None
+    proxy_str = proxy_str.replace("http://", "").replace("https://", "").strip()
     
-    # Xóa tiền tố http:// nếu người dùng vô tình dán thừa
-    clean_proxy = proxy_str.replace("http://", "").replace("https://", "").strip()
-    
-    # Định dạng chuẩn cấp cho requests
-    formatted = f"http://{clean_proxy}"
+    parts = proxy_str.split(':')
+    if len(parts) == 4:
+        # Nếu proxy có đủ 4 phần (IP:PORT:USER:PASS)
+        ip, port, user, password = parts
+        formatted = f"http://{user}:{password}@{ip}:{port}"
+    else:
+        # Nếu proxy chỉ có IP:PORT
+        formatted = f"http://{proxy_str}"
+        
     return {"http": formatted, "https": formatted}
+
+# >>> HÀM TẠO EXTENSION VƯỢT XÁC THỰC PROXY <<<
+def create_proxy_auth_extension(proxy_str):
+    """Tạo một Chrome Extension ẩn để tự động đăng nhập Proxy."""
+    parts = proxy_str.split(':')
+    if len(parts) != 4:
+        return None
+    
+    ip, port, user, password = parts
+    
+    # Tạo một thư mục ảo duy nhất cho từng luồng
+    plugin_dir = os.path.abspath(f"temp_proxy_ext_{uuid.uuid4().hex[:8]}")
+    os.makedirs(plugin_dir, exist_ok=True)
+
+    manifest_json = """
+    {
+        "version": "1.0.0",
+        "manifest_version": 2,
+        "name": "Auto Proxy Auth",
+        "permissions": [
+            "proxy", "tabs", "unlimitedStorage", "storage",
+            "<all_urls>", "webRequest", "webRequestBlocking"
+        ],
+        "background": {"scripts": ["background.js"]},
+        "minimum_chrome_version":"22.0.0"
+    }
+    """
+
+    background_js = f"""
+    var config = {{
+            mode: "fixed_servers",
+            rules: {{
+              singleProxy: {{scheme: "http", host: "{ip}", port: parseInt({port})}},
+              bypassList: ["localhost"]
+            }}
+          }};
+    chrome.proxy.settings.set({{value: config, scope: "regular"}}, function() {{}});
+    function callbackFn(details) {{
+        return {{authCredentials: {{username: "{user}", password: "{password}"}}}};
+    }}
+    chrome.webRequest.onAuthRequired.addListener(
+        callbackFn, {{urls: ["<all_urls>"]}}, ['blocking']
+    );
+    """
+
+    with open(os.path.join(plugin_dir, "manifest.json"), "w") as f:
+        f.write(manifest_json)
+    with open(os.path.join(plugin_dir, "background.js"), "w") as f:
+        f.write(background_js)
+
+    return plugin_dir
+
 
 # ==================== CÁC CLASS XỬ LÝ EMAIL ====================
 class MailService:
@@ -620,10 +677,18 @@ class starts(threading.Thread):
                 options.add_argument('--disable-software-rasterizer')
                 options.add_argument('--disable-dev-shm-usage')
                 
-                # >>> GẮN PROXY AUTHPROXY CHUẨN IP:PORT VÀO CHROME <<<
+                # >>> GẮN PROXY CÓ USER/PASS VÀO CHROME BẰNG EXTENSION <<<
                 if raw_proxy:
-                    clean_proxy = raw_proxy.replace("http://", "").replace("https://", "").strip()
-                    options.add_argument(f'--proxy-server=http://{clean_proxy}')
+                    parts = raw_proxy.replace("http://", "").replace("https://", "").split(':')
+                    
+                    if len(parts) == 4:
+                        # Proxy dạng IP:PORT:USER:PASS - Tạo Extension
+                        proxy_ext_dir = create_proxy_auth_extension(raw_proxy)
+                        if proxy_ext_dir:
+                            options.add_argument(f'--load-extension={proxy_ext_dir}')
+                    elif len(parts) == 2:
+                        # Proxy dạng IP:PORT thường
+                        options.add_argument(f'--proxy-server=http://{parts[0]}:{parts[1]}')
                 
                 with BROWSER_LOCK:
                     driver = uc.Chrome(options=options)
@@ -1535,7 +1600,7 @@ if __name__ == "__main__":
             config_data["last_avatar_folder"] = avatar_folder_input
             save_config(config_data)
 
-    built_in_print(f"\n{Colors.KEY}Nhập đường dẫn file Proxy (.txt) (Lưu ý: Chỉ cần chứa định dạng IP:Port): {Colors.RESET}", end="")
+    built_in_print(f"\n{Colors.KEY}Nhập đường dẫn file Proxy (.txt) (Lưu ý: Hỗ trợ cả IP:PORT và IP:PORT:USER:PASS): {Colors.RESET}", end="")
     proxy_file_input = input().strip().strip('"').strip("'")
     proxies_list = []
     if proxy_file_input and os.path.isfile(proxy_file_input):
@@ -1583,12 +1648,21 @@ if __name__ == "__main__":
                         built_in_print(f"{Colors.ERROR}Vui lòng chỉ nhập y hoặc n!{Colors.RESET}")
             except: 
                 pass # Đã bị tắt tay từ trước
+        
+        # ---> DỌN DẸP CÁC FILE RÁC EXTENSION ẢO CỦA PROXY <---
+        for p in glob.glob("temp_proxy_ext_*"):
+            try: shutil.rmtree(p)
+            except: pass
                 
-        built_in_print(f"\n{Colors.SUCCESS}TOOL ĐÃ KẾT THÚC CÔNG VIỆC!{Colors.RESET}")
+        built_in_print(f"\n{Colors.SUCCESS}TOOL ĐÃ KẾT THÚC CÔNG VIỆC VÀ DỌN RÁC THÀNH CÔNG!{Colors.RESET}")
         built_in_print(f"{Colors.KEY}Nhấn Enter để thoát chương trình...{Colors.RESET}", end="")
         input()
         
     except KeyboardInterrupt:
         STOP_EVENT.set() 
-        built_in_print(f"\n{Colors.ERROR}Đang buộc dừng các luồng...{Colors.RESET}")
+        built_in_print(f"\n{Colors.ERROR}Đang buộc dừng các luồng... Dọn dẹp tệp tin rác...{Colors.RESET}")
+        # Dọn dẹp trước khi bị ép ngắt giữa chừng
+        for p in glob.glob("temp_proxy_ext_*"):
+            try: shutil.rmtree(p)
+            except: pass
         sys.exit(0)
