@@ -1,3 +1,4 @@
+# language: Python, file: auto_reg_ig.py
 # --- SHIM CHO PYTHON 3.12+ (Khắc phục hoàn toàn lỗi thiếu distutils và .version) ---
 import sys
 import socket
@@ -533,9 +534,30 @@ class GmailIMAPService:
                                 from_addr = self.decode_msg_header(msg.get("From", "")).lower()
                                 
                                 if target_email.lower() not in to_addr: continue
-                                if "instagram" in subject or "instagram" in from_addr:
+                                
+                                is_ig = "instagram" in subject or "instagram" in from_addr
+                                is_security_mail = any(kw in subject for kw in ["security", "bảo mật", "verify", "xác minh", "code", "mã"])
+                                
+                                if is_ig and is_security_mail:
                                     self.seen_uids.add(uid_bytes) 
+                                    
+                                    raw_html = ""
+                                    for part in msg.walk():
+                                        if part.get_content_type() == "text/html":
+                                            payload = part.get_payload(decode=True)
+                                            if payload:
+                                                raw_html += payload.decode(part.get_content_charset() or "utf-8", errors="replace")
+                                    
                                     body = self.get_text(msg)
+                                    
+                                    match_html = re.search(r'>\s*(\d{3}\s?\d{3})\s*<', raw_html)
+                                    if match_html:
+                                        return match_html.group(1).replace(" ", "")
+                                        
+                                    match_kw = re.search(r'(?i)(?:code(?: is)?|mã(?: của bạn là| xác nhận| bảo mật))[\s:]*(\d{3}\s?\d{3})', body)
+                                    if match_kw:
+                                        return match_kw.group(1).replace(" ", "")
+                                        
                                     match = re.search(r'(?<!\d)(\d{6}|\d{8})(?!\d)', body)
                                     if match: return match.group(1)
             except Exception: pass
@@ -623,28 +645,36 @@ class HotmailAPIService:
                                 raw_msg = str(msg.get("message", ""))
                                 code_field = str(msg.get("code", "")).strip()
                                 
-                                is_ig = ("instagram" in subject) or ("instagram" in from_sender) or ("instagram" in raw_msg.lower())
+                                is_ig = ("instagram" in subject) or ("instagram" in from_sender)
+                                is_security_mail = any(kw in subject for kw in ["security", "bảo mật", "verify", "xác minh", "code", "mã"])
                                 
-                                if is_ig:
+                                if is_ig and is_security_mail:
                                     if code_field and code_field.isdigit() and len(code_field) in [6, 8]:
                                         if code_field not in self.seen_codes:
-                                            print(f"{Colors.color_text(f'[API Smail1s] Đã tìm thấy mã MỚI: {code_field}', Colors.SUCCESS)}")
+                                            print(f"{Colors.color_text(f'[API Smail1s] Đã tìm thấy mã MỚI (Từ Field): {code_field}', Colors.SUCCESS)}")
                                             return code_field
                                     
-                                    match_subj = re.search(r'\b(\d{6}|\d{8})\b', subject)
-                                    if match_subj:
-                                        code = match_subj.group(1)
-                                        if code not in self.seen_codes:
-                                            print(f"{Colors.color_text(f'[API Smail1s] Đã tìm thấy mã MỚI: {code}', Colors.SUCCESS)}")
-                                            return code
-                                            
-                                    clean_text = re.sub(r'<[^>]+>', ' ', raw_msg)
-                                    match_body = re.search(r'\b(\d{6}|\d{8})\b', clean_text)
-                                    if match_body:
-                                        code = match_body.group(1)
-                                        if code not in self.seen_codes:
-                                            print(f"{Colors.color_text(f'[API Smail1s] Đã tìm thấy mã MỚI: {code}', Colors.SUCCESS)}")
-                                            return code
+                                    # 1. Thử lấy mã trong RAW HTML (Bắt các số nằm giữa cặp thẻ > <)
+                                    match_html = re.search(r'>\s*(\d{3}\s?\d{3})\s*<', raw_msg)
+                                    code = None
+                                    
+                                    if match_html:
+                                        code = match_html.group(1).replace(" ", "")
+                                    else:
+                                        # 2. Nếu không có thẻ, tìm theo từ khóa trong text thuần
+                                        clean_text = re.sub(r'<[^>]+>', ' ', raw_msg)
+                                        match_kw = re.search(r'(?i)(?:code(?: is)?|mã(?: của bạn là| xác nhận| bảo mật))[\s:]*(\d{3}\s?\d{3})', clean_text)
+                                        if match_kw:
+                                            code = match_kw.group(1).replace(" ", "")
+                                        else:
+                                            # 3. Fallback: Lấy số 6 chữ số xuất hiện cuối cùng
+                                            all_numbers = re.findall(r'(?<!\d)(\d{6})(?!\d)', clean_text)
+                                            if len(all_numbers) > 0:
+                                                code = all_numbers[-1]
+                                                
+                                    if code and code not in self.seen_codes:
+                                        print(f"{Colors.color_text(f'[API Smail1s] Đã vào trong thư lấy mã chuẩn: {code}', Colors.SUCCESS)}")
+                                        return code
                 else:
                     status_err = f"Lỗi HTTP {response.status_code}"
                     if status_err != last_logged:
@@ -1414,13 +1444,19 @@ class starts(threading.Thread):
 
                         if email_verify_input:
                             print(f"{Colors.color_text(f'[{self.thread_id}] Meta yêu cầu xác minh Email đệm. Đang đợi mã...', Colors.WARNING)}")
+                            
+                            if self.mode == "5" and hotmail_service:
+                                hotmail_service.init_baseline()
+                            elif self.mode in ["3", "4"] and imap_service:
+                                uid_moc = imap_service.get_latest_uid()
+
                             verify_code = None
                             if self.mode == "1" or (self.mode == "2" and mail_service and mail_service.token):
-                                verify_code = mail_service.get_otp_code(timeout=60)
+                                verify_code = mail_service.get_otp_code(timeout=120)
                             elif self.mode in ["3", "4"]:
-                                verify_code = imap_service.get_otp_code(target_email=used_email, since_uid=uid_moc, timeout=60)
+                                verify_code = imap_service.get_otp_code(target_email=used_email, since_uid=uid_moc, timeout=120)
                             elif self.mode == "5":
-                                verify_code = hotmail_service.get_otp_code(timeout=60)
+                                verify_code = hotmail_service.get_otp_code(timeout=180)
 
                             if verify_code:
                                 print(f"{Colors.color_text(f'[{self.thread_id}] Lấy thành công mã verify 2FA: {verify_code}', Colors.SUCCESS)}")
@@ -1501,7 +1537,7 @@ class starts(threading.Thread):
                             let spans = Array.from(document.querySelectorAll('span, div, p, code'));
                             for (let el of spans) {
                                 let t = (el.innerText || el.textContent || '').trim();
-                                let clean = t.replace(/\\s+/g, '').toUpperCase();
+                                let clean = t.replace(/\s+/g, '').toUpperCase();
                                 if (/^[A-Z2-7]{32}$/.test(clean)) {
                                     if (!clean.includes('FXAC') && !clean.includes('INFRA') && !clean.includes('VIEWER') && !clean.includes('META') && !clean.includes('ACCOUNT')) {
                                         return clean;
