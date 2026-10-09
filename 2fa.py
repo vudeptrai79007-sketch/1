@@ -153,7 +153,7 @@ def banner():
 ╚██████╔╝██║  ██║██║  ██║╚██████╔╝██║ ╚═╝ ██║███████╗
  ╚═════╝ ╚═╝  ╚═╝╚═╝  ╚═╝ ╚═════╝ ╚═╝     ╚═╝╚══════╝
 {Colors.RESET}""")
-    built_in_print(f"{Colors.INFO}Phiên Bản: v17.1 (Đã Fix SyntaxError F-string & Chuẩn 2FA 8 Số){Colors.RESET}")
+    built_in_print(f"{Colors.INFO}Phiên Bản: v17.2 (Fix Syntax F-string, Bypass 8 số 2FA, Vòng lặp Gửi Lại Mã){Colors.RESET}")
     built_in_print(f"{Colors.LINE}{'─'*70}{Colors.RESET}\n")
 
 def load_config():
@@ -209,7 +209,6 @@ def VietnameseNameGenerator():
     
     return full_name, username
 
-
 # >>> HỆ THỐNG XỬ LÝ PROXY ĐA NĂNG (IP:PORT, IP:PORT:USER:PASS, USER:PASS@IP:PORT) <<<
 def parse_proxy(proxy_str):
     if not proxy_str:
@@ -256,7 +255,6 @@ def format_proxy(proxy_str):
     else:
         formatted = f"http://{parsed['ip']}:{parsed['port']}"
     return {"http": formatted, "https": formatted}
-
 
 class LocalProxyForwarder:
     def __init__(self, remote_ip, remote_port, username=None, password=None):
@@ -443,7 +441,6 @@ class MailService:
             time.sleep(random.uniform(6.0, 10.0))
         return None
 
-
 class GmailIMAPService:
     def __init__(self, base_email, app_password):
         self.base_email = base_email
@@ -562,7 +559,6 @@ class GmailIMAPService:
             time.sleep(random.uniform(6.0, 10.0)) 
         return None
 
-
 # ==================== DỊCH VỤ HOTMAIL/OUTLOOK API ====================
 class HotmailAPIService:
     def __init__(self, data_line, api_mode, proxy=None):
@@ -677,7 +673,6 @@ class HotmailAPIService:
             time.sleep(random.uniform(5.0, 8.0))
         return None
 
-
 def generate_dot_variants(gmail):
     local, sep, domain = gmail.rpartition("@")
     if not sep or domain.lower() != "gmail.com": return [gmail]
@@ -692,7 +687,6 @@ def generate_dot_variants(gmail):
             variants.append(value + "@" + domain)
     random.shuffle(variants)
     return variants
-
 
 # ==================== MAIN THREAD ====================
 class starts(threading.Thread):
@@ -720,6 +714,8 @@ class starts(threading.Thread):
             raw_proxy = self.proxies_list[thread_idx_for_proxy % len(self.proxies_list)]
             req_proxy = format_proxy(raw_proxy)
             p_info = parse_proxy(raw_proxy)
+            
+            # FIX LỖI SYNTAX F-STRING: Đưa các phần tử mảng ra biến rời để không dính lỗi \" trong cặp ngoặc nhọn
             if p_info and p_info.get("user"):
                 p_ip = p_info["ip"]
                 p_port = p_info["port"]
@@ -1165,45 +1161,101 @@ class starts(threading.Thread):
                 
                 print(f"{Colors.color_text(f'[{self.thread_id}] Đã nhận diện được ô nhập OTP thành công!', Colors.SUCCESS)}")
                 
-                # ==================== CƠ CHẾ LẤY & NGÂM OTP ĐĂNG KÝ (6 SỐ) ====================
+                # ==================== CƠ CHẾ LẤY & NGÂM OTP ĐĂNG KÝ (6 SỐ) VỚI VÒNG LẶP RETRY ====================
                 otp_code = None
-                start_otp_wait = time.time()
+                max_resend_attempts = 2 # 1 Lần thử gốc + 2 lần bấm gửi lại
                 
-                if self.mode == "2" and not (mail_service and mail_service.token):
-                    with OTP_LOCK:
-                        PAUSE_FOR_INPUT.clear()
-                        built_in_print(f"\n{Colors.color_text(f'[{self.thread_id}] MỜI SẾP NHẬP OTP CHO [{used_email}] TỪ BÀN PHÍM: ', Colors.SUCCESS)}", end="")
-                        otp_code = input().strip()
-                        PAUSE_FOR_INPUT.set()
-                else:
-                    target_wait = 60 if self.mode in ["3", "4", "5"] else 0
-                    if target_wait > 0:
-                        print(f"{Colors.color_text(f'[{self.thread_id}] Bắt đầu chu trình quét OTP và ngâm form {target_wait}s...', Colors.INFO)}")
+                for attempt in range(max_resend_attempts + 1):
+                    if STOP_EVENT.is_set(): return False
+                    
+                    start_otp_wait = time.time()
+                    
+                    if self.mode == "2" and not (mail_service and mail_service.token):
+                        with OTP_LOCK:
+                            PAUSE_FOR_INPUT.clear()
+                            built_in_print(f"\n{Colors.color_text(f'[{self.thread_id}] Lần {attempt+1}: MỜI SẾP NHẬP OTP CHO [{used_email}] TỪ BÀN PHÍM: ', Colors.SUCCESS)}", end="")
+                            otp_code = input().strip()
+                            PAUSE_FOR_INPUT.set()
                     else:
-                        print(f"{Colors.color_text(f'[{self.thread_id}] Đang chờ lấy mã OTP từ Email...', Colors.INFO)}")
+                        target_wait = 60 if self.mode in ["3", "4", "5"] else 0
+                        if target_wait > 0:
+                            print(f"{Colors.color_text(f'[{self.thread_id}] Lần {attempt+1}: Bắt đầu quét OTP và ngâm form {target_wait}s...', Colors.INFO)}")
+                        else:
+                            print(f"{Colors.color_text(f'[{self.thread_id}] Lần {attempt+1}: Đang chờ lấy mã OTP từ Email...', Colors.INFO)}")
 
-                    if self.mode == "1" or (self.mode == "2" and mail_service and mail_service.token):
-                        otp_code = mail_service.get_otp_code(timeout=120, force_8_digits=False)
-                    elif self.mode in ["3", "4"]:
-                        otp_code = imap_service.get_otp_code(target_email=used_email, since_uid=uid_moc, timeout=120, force_8_digits=False)
-                    elif self.mode == "5":
-                        otp_code = hotmail_service.get_otp_code(timeout=180, force_8_digits=False) 
-                
+                        # Nếu retry, giảm timeout lại để k bị treo mãi
+                        timeout_per_attempt = 100 
+                        if self.mode == "1" or (self.mode == "2" and mail_service and mail_service.token):
+                            otp_code = mail_service.get_otp_code(timeout=timeout_per_attempt, force_8_digits=False)
+                        elif self.mode in ["3", "4"]:
+                            otp_code = imap_service.get_otp_code(target_email=used_email, since_uid=uid_moc, timeout=timeout_per_attempt, force_8_digits=False)
+                        elif self.mode == "5":
+                            otp_code = hotmail_service.get_otp_code(timeout=120, force_8_digits=False) 
+                    
+                    if otp_code:
+                        # NẾU CÓ MÃ THÌ THOÁT KHỎI VÒNG LẶP RETRY
+                        if self.mode in ["3", "4", "5"]:
+                            elapsed = time.time() - start_otp_wait
+                            remaining = target_wait - elapsed
+                            if remaining > 0:
+                                print(f"{Colors.color_text(f'[{self.thread_id}] Đã lấy được mã ({otp_code}) ở giây thứ {int(elapsed)}! Đang ngâm form đợi hết {target_wait}s...', Colors.WARNING)}")
+                                for w in range(int(remaining), 0, -5):
+                                    if STOP_EVENT.is_set(): return False
+                                    print(f"{Colors.color_text(f'[{self.thread_id}] Thời gian ngâm OTP còn lại: {w}s...', Colors.INFO)}")
+                                    time.sleep(min(5, w))
+                                print(f"{Colors.color_text(f'[{self.thread_id}] Đã ngâm đủ {target_wait}s. Chuẩn bị điền mã OTP!', Colors.SUCCESS)}")
+                        break 
+                    
+                    # NẾU KHÔNG CÓ MÃ (VÀ CHƯA TỚI GIỚI HẠN) -> CLICK "GỬI LẠI MÃ"
+                    if attempt < max_resend_attempts:
+                        print(f"{Colors.color_text(f'[{self.thread_id}] Lần {attempt+1} không thấy mã. Tiến hành click yêu cầu Gửi lại mã...', Colors.WARNING)}")
+                        
+                        # 1. Bấm nút "Tôi không nhận được mã"
+                        clicked_didnt_receive = driver.execute_script("""
+                            let btns = Array.from(document.querySelectorAll('button, div[role="button"]'));
+                            for (let b of btns) {
+                                let txt = (b.innerText || b.textContent || "").trim().toLowerCase();
+                                if (txt.includes('không nhận được mã') || txt.includes("didn't receive") || txt.includes("did not receive")) {
+                                    b.click();
+                                    return true;
+                                }
+                            }
+                            return false;
+                        """)
+                        
+                        if clicked_didnt_receive:
+                            time.sleep(3) # Đợi popup mở
+                            # 2. Bấm nút "Gửi lại mã xác nhận"
+                            clicked_resend = driver.execute_script("""
+                                let btns = Array.from(document.querySelectorAll('button, div[role="button"], a, span'));
+                                for (let b of btns) {
+                                    let txt = (b.innerText || b.textContent || "").trim().toLowerCase();
+                                    if (txt.includes('gửi lại') || txt.includes('resend')) {
+                                        let clickable = b.closest('button, [role="button"]') || b;
+                                        clickable.click();
+                                        return true;
+                                    }
+                                }
+                                return false;
+                            """)
+                            if clicked_resend:
+                                print(f"{Colors.color_text(f'[{self.thread_id}] Đã yêu cầu GỬI LẠI MÃ thành công. Chờ thư mới...', Colors.INFO)}")
+                                time.sleep(5)
+                                # Lấy lại mốc UID hộp thư (tránh việc đọc lại thư cũ)
+                                if self.mode in ["3", "4"] and imap_service:
+                                    uid_moc = imap_service.get_latest_uid()
+                                elif self.mode == "5" and hotmail_service:
+                                    hotmail_service.init_baseline()
+                            else:
+                                print(f"{Colors.color_text(f'[{self.thread_id}] Lỗi: Không bấm được nút Gửi lại mã!', Colors.ERROR)}")
+                        else:
+                            print(f"{Colors.color_text(f'[{self.thread_id}] Lỗi: Không tìm thấy nút \"Tôi không nhận được mã\"!', Colors.ERROR)}")
+
+                # KIỂM TRA LẠI SAU KHI ĐÃ HẾT TOÀN BỘ SỐ LẦN RETRY
                 if not otp_code:
-                    print(f"{Colors.color_text(f'[{self.thread_id}] Lỗi: Không lấy được mã OTP trong thời gian chờ. Bỏ qua acc!', Colors.ERROR)}")
+                    print(f"{Colors.color_text(f'[{self.thread_id}] Lỗi: Đã thử Gửi lại {max_resend_attempts} lần nhưng vẫn KHÔNG CÓ MÃ. Báo Mail Die và bỏ qua acc!', Colors.ERROR)}")
                     time.sleep(5)
                     return False
-                
-                if self.mode in ["3", "4", "5"]:
-                    elapsed = time.time() - start_otp_wait
-                    remaining = target_wait - elapsed
-                    if remaining > 0:
-                        print(f"{Colors.color_text(f'[{self.thread_id}] Đã lấy được mã ({otp_code}) ở giây thứ {int(elapsed)}! Đang ngâm form đợi hết {target_wait}s...', Colors.WARNING)}")
-                        for w in range(int(remaining), 0, -5):
-                            if STOP_EVENT.is_set(): return False
-                            print(f"{Colors.color_text(f'[{self.thread_id}] Thời gian ngâm OTP còn lại: {w}s...', Colors.INFO)}")
-                            time.sleep(min(5, w))
-                        print(f"{Colors.color_text(f'[{self.thread_id}] Đã ngâm đủ {target_wait}s. Chuẩn bị điền mã OTP!', Colors.SUCCESS)}")
 
                 # ==================== TIẾN HÀNH ĐIỀN MÃ LÊN WEB ====================
                 print(f"{Colors.color_text(f'[{self.thread_id}] Bắt đầu điền mã OTP: {otp_code} vào trang Web...', Colors.SUCCESS)}")
@@ -1489,7 +1541,7 @@ class starts(threading.Thread):
                             let all = Array.from(document.querySelectorAll('*'));
                             for(let el of all) {
                                 let txt = (el.innerText || el.textContent || '').trim().toLowerCase();
-                                if(txt.includes('authentication app') || txt.includes('ứng dụng xác thực')) {
+                                if(txt.includes('authentication app') || txt.includes('ứng dụng xác thực') || txt.includes('duo mobile') || txt.includes('google authenticator')) {
                                     let clickable = el.closest('div[role="button"], label, div[tabindex], button, [role="radio"]') || el;
                                     clickable.click();
                                     return 'CLICKED_APP';
