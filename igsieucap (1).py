@@ -1,4 +1,3 @@
-# language: Python, file: auto_reg_ig.py
 # --- SHIM CHO PYTHON 3.12+ (Khắc phục hoàn toàn lỗi thiếu distutils và .version) ---
 import sys
 import socket
@@ -154,7 +153,7 @@ def banner():
 ╚██████╔╝██║  ██║██║  ██║╚██████╔╝██║ ╚═╝ ██║███████╗
  ╚═════╝ ╚═╝  ╚═╝╚═╝  ╚═╝ ╚═════╝ ╚═╝    ╚═╝╚══════╝
 {Colors.RESET}""")
-    built_in_print(f"{Colors.INFO}Phiên Bản: v16.8 (HỖ TRỢ ĐẦY ĐỦ PROXY: IP:PORT & USER:PASS){Colors.RESET}")
+    built_in_print(f"{Colors.INFO}Phiên Bản: v16.8 (Đã Vá Lỗi Ép Đọc Thư 8 Số 2FA){Colors.RESET}")
     built_in_print(f"{Colors.LINE}{'─'*70}{Colors.RESET}\n")
 
 def load_config():
@@ -564,7 +563,7 @@ class GmailIMAPService:
             time.sleep(random.uniform(8.0, 15.0)) 
         return None
 
-# ==================== DỊCH VỤ HOTMAIL/OUTLOOK API ====================
+# ==================== DỊCH VỤ HOTMAIL/OUTLOOK API (ÉP ĐỌC THƯ + HỖ TRỢ MÃ 8 SỐ CỦA META) ====================
 class HotmailAPIService:
     def __init__(self, data_line, api_mode, proxy=None):
         self.url = "https://smail1s.com/get_messages"
@@ -592,14 +591,12 @@ class HotmailAPIService:
                 if data_array and len(data_array) > 0:
                     messages = data_array[0].get("messages", [])
                     for msg in messages:
-                        code_field = str(msg.get("code", "")).strip()
-                        if code_field and code_field.isdigit() and len(code_field) in [6, 8]:
-                            self.seen_codes.add(code_field)
-                        else:
-                            subject = str(msg.get("subject", "")).lower()
-                            match_subj = re.search(r'\b(\d{6}|\d{8})\b', subject)
-                            if match_subj: 
-                                self.seen_codes.add(match_subj.group(1))
+                        # Lưu cả mã 6 số và 8 số của thư cũ vào baseline để không bị trùng
+                        raw_msg = str(msg.get("message", ""))
+                        clean_text = re.sub(r'<[^>]+>', ' ', raw_msg)
+                        all_numbers = re.findall(r'(?<!\d)(\d{6}|\d{8})(?!\d)', clean_text.replace(" ", ""))
+                        for num in all_numbers:
+                            self.seen_codes.add(num)
         except Exception: pass
 
     def get_otp_code(self, timeout=180): 
@@ -636,44 +633,39 @@ class HotmailAPIService:
                             messages = account_data.get("messages", [])
                             msg_info = f"Tìm thấy {len(messages)} thư."
                             if msg_info != last_logged:
-                                print(f"{Colors.color_text(f'[API Smail1s] {msg_info} Đang quét mã mới...', Colors.INFO)}")
+                                print(f"{Colors.color_text(f'[API Smail1s] {msg_info} Đang MỞ SÂU NỘI DUNG THƯ để đọc mã...', Colors.INFO)}")
                                 last_logged = msg_info
                                 
                             for msg in messages:
                                 subject = str(msg.get("subject", "")).lower()
                                 from_sender = str(msg.get("from", "")).lower()
                                 raw_msg = str(msg.get("message", ""))
-                                code_field = str(msg.get("code", "")).strip()
                                 
                                 is_ig = ("instagram" in subject) or ("instagram" in from_sender)
-                                is_security_mail = any(kw in subject for kw in ["security", "bảo mật", "verify", "xác minh", "code", "mã"])
+                                is_security_mail = any(kw in subject for kw in ["security", "bảo mật", "verify", "xác minh", "code", "mã", "factor"])
                                 
                                 if is_ig and is_security_mail:
-                                    if code_field and code_field.isdigit() and len(code_field) in [6, 8]:
-                                        if code_field not in self.seen_codes:
-                                            print(f"{Colors.color_text(f'[API Smail1s] Đã tìm thấy mã MỚI (Từ Field): {code_field}', Colors.SUCCESS)}")
-                                            return code_field
-                                    
-                                    # 1. Thử lấy mã trong RAW HTML (Bắt các số nằm giữa cặp thẻ > <)
-                                    match_html = re.search(r'>\s*(\d{3}\s?\d{3})\s*<', raw_msg)
+                                    # ÉP ĐỌC SÂU VÀO RAW MESSAGE, TÌM CẢ 6 SỐ HOẶC 8 SỐ
                                     code = None
                                     
+                                    # 1. Tìm các số nằm giữa thẻ HTML > < (Hỗ trợ 6 số hoặc 8 số)
+                                    match_html = re.search(r'>\s*(\d{6}|\d{8}|\d{3}\s\d{3}|\d{4}\s\d{4})\s*<', raw_msg)
                                     if match_html:
                                         code = match_html.group(1).replace(" ", "")
                                     else:
-                                        # 2. Nếu không có thẻ, tìm theo từ khóa trong text thuần
+                                        # 2. Xóa HTML lấy text thuần, tìm lân cận từ khóa
                                         clean_text = re.sub(r'<[^>]+>', ' ', raw_msg)
-                                        match_kw = re.search(r'(?i)(?:code(?: is)?|mã(?: của bạn là| xác nhận| bảo mật))[\s:]*(\d{3}\s?\d{3})', clean_text)
+                                        match_kw = re.search(r'(?i)(?:code(?: is)?|mã(?: của bạn là| xác nhận| bảo mật))[\s:]*(\d{6}|\d{8}|\d{3}\s\d{3}|\d{4}\s\d{4})', clean_text)
                                         if match_kw:
                                             code = match_kw.group(1).replace(" ", "")
                                         else:
-                                            # 3. Fallback: Lấy số 6 chữ số xuất hiện cuối cùng
-                                            all_numbers = re.findall(r'(?<!\d)(\d{6})(?!\d)', clean_text)
+                                            # 3. Fallback: Quét toàn bộ text, lấy dãy 6 hoặc 8 số xuất hiện cuối cùng
+                                            all_numbers = re.findall(r'(?<!\d)(\d{6}|\d{8})(?!\d)', clean_text.replace(" ", ""))
                                             if len(all_numbers) > 0:
                                                 code = all_numbers[-1]
                                                 
                                     if code and code not in self.seen_codes:
-                                        print(f"{Colors.color_text(f'[API Smail1s] Đã vào trong thư lấy mã chuẩn: {code}', Colors.SUCCESS)}")
+                                        print(f"{Colors.color_text(f'[API Smail1s] Đã bóc nội dung thư, đọc được mã CHUẨN: {code}', Colors.SUCCESS)}")
                                         return code
                 else:
                     status_err = f"Lỗi HTTP {response.status_code}"
@@ -1445,11 +1437,6 @@ class starts(threading.Thread):
                         if email_verify_input:
                             print(f"{Colors.color_text(f'[{self.thread_id}] Meta yêu cầu xác minh Email đệm. Đang đợi mã...', Colors.WARNING)}")
                             
-                            if self.mode == "5" and hotmail_service:
-                                hotmail_service.init_baseline()
-                            elif self.mode in ["3", "4"] and imap_service:
-                                uid_moc = imap_service.get_latest_uid()
-
                             verify_code = None
                             if self.mode == "1" or (self.mode == "2" and mail_service and mail_service.token):
                                 verify_code = mail_service.get_otp_code(timeout=120)
@@ -1459,9 +1446,18 @@ class starts(threading.Thread):
                                 verify_code = hotmail_service.get_otp_code(timeout=180)
 
                             if verify_code:
-                                print(f"{Colors.color_text(f'[{self.thread_id}] Lấy thành công mã verify 2FA: {verify_code}', Colors.SUCCESS)}")
-                                email_verify_input.send_keys(verify_code)
-                                time.sleep(1)
+                                print(f"{Colors.color_text(f'[{self.thread_id}] Lấy thành công mã verify đệm: {verify_code}', Colors.SUCCESS)}")
+                                
+                                driver.execute_script("arguments[0].focus();", email_verify_input)
+                                time.sleep(0.5)
+                                try: email_verify_input.clear()
+                                except: pass
+                                
+                                for digit in str(verify_code):
+                                    email_verify_input.send_keys(digit)
+                                    time.sleep(0.1) 
+                                
+                                time.sleep(1.5)
                                 driver.execute_script("""
                                     let btns = document.querySelectorAll('button, div[role="button"]');
                                     for(let b of btns){
@@ -1471,8 +1467,9 @@ class starts(threading.Thread):
                                         }
                                     }
                                 """)
-                                time.sleep(5)
-                    except Exception:
+                                time.sleep(6) 
+                    except Exception as e:
+                        print(f"{Colors.color_text(f'[{self.thread_id}] Không có màn hình verify đệm hoặc xử lý gặp lỗi phụ.', Colors.WARNING)}")
                         pass
 
                     # 3. Chọn phương thức "Authentication app" / "Ứng dụng xác thực" & bấm Tiếp tục (Continue / Next)
