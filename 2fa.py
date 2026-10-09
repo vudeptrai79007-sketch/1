@@ -1,5 +1,18 @@
 # --- SHIM CHO PYTHON 3.12+ (Khắc phục hoàn toàn lỗi thiếu distutils và .version) ---
 import sys
+import socket
+import select
+import base64
+import sys
+import io
+
+# Tự động cấu hình mã hóa UTF-8 cho Windows Console tránh lỗi UnicodeEncodeError
+if sys.platform.startswith('win'):
+    try:
+        sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+        sys.stderr.reconfigure(encoding='utf-8', errors='replace')
+    except Exception:
+        pass
 import types
 import re
 if 'distutils' not in sys.modules:
@@ -87,12 +100,17 @@ BROWSER_LOCK = threading.Lock()
 INPUT_LOCK = threading.Lock()    
 TYPE_LOCK = threading.Lock() 
 SUBMIT_LOCK = threading.Lock() 
+PRINT_LOCK = threading.Lock()
+DRIVER_LOCK = threading.Lock()
+
 CONFIG_FILE = "config_gmail.json"
 BASE_YEAR = random.randint(1995, 2005)
 
+# Danh sách lưu toàn bộ Trình duyệt để hỏi đóng vào cuối cùng
+ALL_DRIVERS = []
+
 # --- CƠ CHẾ ĐÓNG BĂNG MÀN HÌNH CHỐNG TRÔI LỆNH TRONG ĐA LUỒNG ---
 built_in_print = print
-PRINT_LOCK = threading.Lock()
 PAUSE_FOR_INPUT = threading.Event()
 PAUSE_FOR_INPUT.set() 
 
@@ -133,9 +151,9 @@ def banner():
 ██║  ███╗███████║██████╔╝██║   ██║██╔████╔██║█████╗  
 ██║   ██║██╔══██║██╔══██╗██║   ██║██║╚██╔╝██║██╔══╝  
 ╚██████╔╝██║  ██║██║  ██║╚██████╔╝██║ ╚═╝ ██║███████╗
- ╚═════╝ ╚═╝  ╚═╝╚═╝  ╚═╝ ╚═════╝ ╚═╝    ╚═╝╚══════╝
+ ╚═════╝ ╚═╝  ╚═╝╚═╝  ╚═╝ ╚═════╝ ╚═╝     ╚═╝╚══════╝
 {Colors.RESET}""")
-    built_in_print(f"{Colors.INFO}Phiên Bản: v15.5 (GOM TOÀN BỘ FIX - 8 SỐ OTP, CUỘN MÃ 32 KÝ TỰ){Colors.RESET}")
+    built_in_print(f"{Colors.INFO}Phiên Bản: v17.0 (Fix Đúng Luồng Bắt Đầu & Quét Mã 8 Số 2FA Meta){Colors.RESET}")
     built_in_print(f"{Colors.LINE}{'─'*70}{Colors.RESET}\n")
 
 def load_config():
@@ -191,18 +209,180 @@ def VietnameseNameGenerator():
     
     return full_name, username
 
+
+# >>> HỆ THỐNG XỬ LÝ PROXY ĐA NĂNG (IP:PORT, IP:PORT:USER:PASS, USER:PASS@IP:PORT) <<<
+def parse_proxy(proxy_str):
+    if not proxy_str:
+        return None
+    p_str = str(proxy_str).strip()
+    if not p_str:
+        return None
+    for proto in ["http://", "https://", "socks5://", "socks4://"]:
+        if p_str.lower().startswith(proto):
+            p_str = p_str[len(proto):]
+            break
+
+    # TH 1: user:pass@ip:port
+    if "@" in p_str:
+        try:
+            auth_part, host_part = p_str.split("@", 1)
+            u, pwd = auth_part.split(":", 1)
+            ip, port = host_part.split(":", 1)
+            return {"ip": ip.strip(), "port": port.strip(), "user": u.strip(), "pass": pwd.strip()}
+        except Exception:
+            pass
+
+    # TH 2: Dấu hai chấm ':'
+    parts = [x.strip() for x in p_str.split(":") if x.strip()]
+    if len(parts) == 2:
+        return {"ip": parts[0], "port": parts[1], "user": None, "pass": None}
+    elif len(parts) == 4:
+        if parts[1].isdigit() and not parts[2].isdigit():
+            # ip:port:user:pass
+            return {"ip": parts[0], "port": parts[1], "user": parts[2], "pass": parts[3]}
+        elif parts[3].isdigit():
+            # user:pass:ip:port
+            return {"ip": parts[2], "port": parts[3], "user": parts[0], "pass": parts[1]}
+        else:
+            return {"ip": parts[0], "port": parts[1], "user": parts[2], "pass": parts[3]}
+    return None
+
+def format_proxy(proxy_str):
+    parsed = parse_proxy(proxy_str)
+    if not parsed:
+        return None
+    if parsed["user"] and parsed["pass"]:
+        formatted = f"http://{parsed['user']}:{parsed['pass']}@{parsed['ip']}:{parsed['port']}"
+    else:
+        formatted = f"http://{parsed['ip']}:{parsed['port']}"
+    return {"http": formatted, "https": formatted}
+
+
+class LocalProxyForwarder:
+    def __init__(self, remote_ip, remote_port, username=None, password=None):
+        self.remote_ip = remote_ip
+        self.remote_port = int(remote_port)
+        self.username = username
+        self.password = password
+        self.server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        self.server_socket.bind(('127.0.0.1', 0))
+        self.local_port = self.server_socket.getsockname()[1]
+        self.running = True
+        self.thread = threading.Thread(target=self._run, daemon=True)
+        self.thread.start()
+
+    def _run(self):
+        self.server_socket.listen(100)
+        while self.running:
+            try:
+                client_sock, _ = self.server_socket.accept()
+                threading.Thread(target=self._handle_client, args=(client_sock,), daemon=True).start()
+            except Exception:
+                break
+
+    def _handle_client(self, client_sock):
+        try:
+            crlf2 = bytes([13, 10, 13, 10])
+            crlf = bytes([13, 10])
+            req = b""
+            while crlf2 not in req:
+                chunk = client_sock.recv(4096)
+                if not chunk:
+                    client_sock.close()
+                    return
+                req += chunk
+
+            header_part, rest = req.split(crlf2, 1)
+            lines = header_part.split(crlf)
+            first_line = lines[0].decode("utf-8", "ignore")
+            is_connect = first_line.startswith("CONNECT")
+
+            remote_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            remote_sock.settimeout(15)
+            remote_sock.connect((self.remote_ip, self.remote_port))
+
+            auth_header = b""
+            if self.username and self.password:
+                cred = f"{self.username}:{self.password}"
+                b64_cred = base64.b64encode(cred.encode()).decode()
+                auth_header = f"Proxy-Authorization: Basic {b64_cred}".encode() + crlf
+
+            if is_connect:
+                connect_req = lines[0] + crlf
+                for line in lines[1:]:
+                    if not line.lower().startswith(b"proxy-authorization"):
+                        connect_req += line + crlf
+                if auth_header:
+                    connect_req += auth_header
+                connect_req += crlf
+                remote_sock.sendall(connect_req)
+
+                resp = b""
+                while crlf2 not in resp:
+                    c = remote_sock.recv(4096)
+                    if not c:
+                        break
+                    resp += c
+
+                resp_first_line = resp.split(crlf)[0] if resp else b""
+                if b"200" in resp_first_line:
+                    client_sock.sendall(b"HTTP/1.1 200 Connection established" + crlf2)
+                else:
+                    client_sock.sendall(resp)
+                    client_sock.close()
+                    remote_sock.close()
+                    return
+            else:
+                new_req = lines[0] + crlf
+                for line in lines[1:]:
+                    if not line.lower().startswith(b"proxy-authorization"):
+                        new_req += line + crlf
+                if auth_header:
+                    new_req += auth_header
+                new_req += crlf + rest
+                remote_sock.sendall(new_req)
+
+            remote_sock.settimeout(None)
+            client_sock.settimeout(None)
+            sockets = [client_sock, remote_sock]
+            while self.running:
+                r, _, _ = select.select(sockets, [], sockets, 30)
+                if not r:
+                    break
+                for s in r:
+                    other = remote_sock if s is client_sock else client_sock
+                    data = s.recv(16384)
+                    if not data:
+                        return
+                    other.sendall(data)
+        except Exception:
+            pass
+        finally:
+            try: client_sock.close()
+            except: pass
+            try: remote_sock.close()
+            except: pass
+
+    def close(self):
+        self.running = False
+        try: self.server_socket.close()
+        except: pass
+
+
 # ==================== CÁC CLASS XỬ LÝ EMAIL ====================
 class MailService:
-    def __init__(self):
+    def __init__(self, proxy=None):
         self.base_url = "https://api.mail.tm"
         self.token = None
         self.domain = None
         self.email_address = None
         self.seen_codes = set() 
+        self.proxy = proxy 
         
     def get_domain(self):
         try:
-            r = requests.get(f"{self.base_url}/domains", timeout=10)
+            r = requests.get(f"{self.base_url}/domains", timeout=10, proxies=self.proxy)
             if r.status_code == 200: 
                 self.domain = r.json()['hydra:member'][0]['domain']
                 return self.domain
@@ -211,8 +391,9 @@ class MailService:
     def create_account(self, address=None):
         if not self.domain and not self.get_domain(): return None
         name = address if address else f"user_{uuid.uuid4().hex[:8]}"
+        time.sleep(random.uniform(0.5, 2.0))
         try:
-            r = requests.post(f"{self.base_url}/accounts", json={"address": f"{name}@{self.domain}", "password": "TempPass123!"}, timeout=10)
+            r = requests.post(f"{self.base_url}/accounts", json={"address": f"{name}@{self.domain}", "password": "TempPass123!"}, timeout=10, proxies=self.proxy)
             if r.status_code == 201: 
                 self.email_address = r.json()['address']
                 return self.email_address
@@ -220,22 +401,26 @@ class MailService:
             
     def authenticate(self, email=None, password="TempPass123!"):
         if email: self.email_address = email
+        time.sleep(random.uniform(0.5, 2.0)) 
         try:
-            r = requests.post(f"{self.base_url}/token", json={"address": self.email_address, "password": password}, timeout=10)
+            r = requests.post(f"{self.base_url}/token", json={"address": self.email_address, "password": password}, timeout=10, proxies=self.proxy)
             if r.status_code == 200: 
                 self.token = r.json()['token']
                 return True
         except Exception: return False
             
-    def get_otp_code(self, timeout=120):
+    def get_otp_code(self, timeout=120, force_8_digits=False):
         if not self.token: return None
         headers = {"Authorization": f"Bearer {self.token}", "Accept": "application/json"}
         start_time = time.time()
         last_id = None
+        
+        time.sleep(random.uniform(1.0, 5.0))
+        
         while time.time() - start_time < timeout:
             if STOP_EVENT.is_set(): return None
             try:
-                r = requests.get(f"{self.base_url}/messages", headers=headers, timeout=10)
+                r = requests.get(f"{self.base_url}/messages", headers=headers, timeout=10, proxies=self.proxy)
                 if r.status_code == 200:
                     for msg in r.json().get('hydra:member', []):
                         sub = str(msg.get('subject', '')).lower()
@@ -243,17 +428,21 @@ class MailService:
                         if 'instagram' in sub or 'instagram' in frm:
                             if msg.get('id') != last_id:
                                 last_id = msg['id']
-                                detail = requests.get(f"{self.base_url}/messages/{last_id}", headers=headers, timeout=10).json()
+                                detail = requests.get(f"{self.base_url}/messages/{last_id}", headers=headers, timeout=10, proxies=self.proxy).json()
                                 text = detail.get('text', '') or re.sub('<[^<]+?>', '', str(detail.get('html', '')))
-                                match = re.search(r'(?<!\d)(\d{6}|\d{8})(?!\d)', text)
+                                clean_txt = text.replace(" ", "")
+                                
+                                regex_rule = r'(?<!\d)(\d{8})(?!\d)' if force_8_digits else r'(?<!\d)(\d{6})(?!\d)'
+                                match = re.search(regex_rule, clean_txt)
                                 if match: 
                                     code = match.group(1)
                                     if code not in self.seen_codes:
                                         self.seen_codes.add(code)
                                         return code
             except Exception: pass
-            time.sleep(5)
+            time.sleep(random.uniform(6.0, 10.0))
         return None
+
 
 class GmailIMAPService:
     def __init__(self, base_email, app_password):
@@ -319,10 +508,12 @@ class GmailIMAPService:
             return result
         except: return str(raw_header)
 
-    def get_otp_code(self, target_email, since_uid=0, timeout=120):
+    def get_otp_code(self, target_email, since_uid=0, timeout=120, force_8_digits=False):
         if not self.mail:
             if not self.connect(): return None
         start_time = time.time()
+        time.sleep(random.uniform(1.0, 5.0))
+        
         while time.time() - start_time < timeout:
             if STOP_EVENT.is_set(): return None
             try:
@@ -346,18 +537,35 @@ class GmailIMAPService:
                                 from_addr = self.decode_msg_header(msg.get("From", "")).lower()
                                 
                                 if target_email.lower() not in to_addr: continue
-                                if "instagram" in subject or "instagram" in from_addr:
+                                
+                                is_ig = "instagram" in subject or "instagram" in from_addr
+                                is_security_mail = any(kw in subject for kw in ["security", "bảo mật", "verify", "xác minh", "code", "mã"])
+                                
+                                if is_ig and is_security_mail:
                                     self.seen_uids.add(uid_bytes) 
+                                    
+                                    raw_html = ""
+                                    for part in msg.walk():
+                                        if part.get_content_type() == "text/html":
+                                            payload = part.get_payload(decode=True)
+                                            if payload:
+                                                raw_html += payload.decode(part.get_content_charset() or "utf-8", errors="replace")
+                                    
                                     body = self.get_text(msg)
-                                    match = re.search(r'(?<!\d)(\d{6}|\d{8})(?!\d)', body)
-                                    if match: return match.group(1)
+                                    combined = (raw_html + " " + body).replace(" ", "")
+                                    
+                                    regex_rule = r'(?<!\d)(\d{8})(?!\d)' if force_8_digits else r'(?<!\d)(\d{6})(?!\d)'
+                                    match = re.search(regex_rule, combined)
+                                    if match:
+                                        return match.group(1)
             except Exception: pass
-            time.sleep(5) 
+            time.sleep(random.uniform(6.0, 10.0)) 
         return None
+
 
 # ==================== DỊCH VỤ HOTMAIL/OUTLOOK API ====================
 class HotmailAPIService:
-    def __init__(self, data_line, api_mode):
+    def __init__(self, data_line, api_mode, proxy=None):
         self.url = "https://smail1s.com/get_messages"
         self.data_line = data_line.strip()
         self.api_mode = api_mode.strip()
@@ -365,6 +573,9 @@ class HotmailAPIService:
         self.seen_codes = set()
         
         self.session = requests.Session()
+        if proxy:
+            self.session.proxies.update(proxy)
+
         self.session.headers.update({
             'Content-Type': 'application/json',
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
@@ -380,31 +591,30 @@ class HotmailAPIService:
                 if data_array and len(data_array) > 0:
                     messages = data_array[0].get("messages", [])
                     for msg in messages:
-                        code_field = str(msg.get("code", "")).strip()
-                        if code_field and code_field.isdigit() and len(code_field) in [6, 8]:
-                            self.seen_codes.add(code_field)
-                        else:
-                            subject = str(msg.get("subject", "")).lower()
-                            match_subj = re.search(r'\b(\d{6}|\d{8})\b', subject)
-                            if match_subj: 
-                                self.seen_codes.add(match_subj.group(1))
+                        raw_msg = str(msg.get("message", ""))
+                        clean_text = re.sub(r'<[^>]+>', ' ', raw_msg)
+                        all_numbers = re.findall(r'(?<!\d)(\d{6}|\d{8})(?!\d)', clean_text.replace(" ", ""))
+                        for num in all_numbers:
+                            self.seen_codes.add(num)
         except Exception: pass
 
-    def get_otp_code(self, timeout=180): 
+    def get_otp_code(self, timeout=180, force_8_digits=False): 
         start_time = time.time()
-        print(f"{Colors.color_text(f'[API Smail1s] Đang check hộp thư {self.email} (Mode: {self.api_mode})...', Colors.INFO)}")
+        loai_ma = "ÉP ĐỌC MÃ 8 SỐ 2FA" if force_8_digits else "ĐỌC MÃ ĐĂNG KÝ 6 SỐ"
+        print(f"{Colors.color_text(f'[API Smail1s] Đang check hộp thư {self.email} ({loai_ma})...', Colors.INFO)}")
         
         payload = {
             "mode": self.api_mode,
             "data": self.data_line
         }
         
+        time.sleep(random.uniform(1.0, 5.0))
+        
         last_logged = ""
         while time.time() - start_time < timeout:
             if STOP_EVENT.is_set():
                 return None
             try:
-                time.sleep(random.uniform(0.5, 2.0))
                 response = self.session.post(self.url, json=payload, timeout=10)
                 if response.status_code == 200:
                     res_json = response.json()
@@ -423,37 +633,36 @@ class HotmailAPIService:
                             messages = account_data.get("messages", [])
                             msg_info = f"Tìm thấy {len(messages)} thư."
                             if msg_info != last_logged:
-                                print(f"{Colors.color_text(f'[API Smail1s] {msg_info} Đang quét mã mới...', Colors.INFO)}")
+                                print(f"{Colors.color_text(f'[API Smail1s] {msg_info} Đang MỞ SÂU NỘI DUNG THƯ để đọc mã...', Colors.INFO)}")
                                 last_logged = msg_info
                                 
                             for msg in messages:
                                 subject = str(msg.get("subject", "")).lower()
                                 from_sender = str(msg.get("from", "")).lower()
                                 raw_msg = str(msg.get("message", ""))
-                                code_field = str(msg.get("code", "")).strip()
                                 
-                                is_ig = ("instagram" in subject) or ("instagram" in from_sender) or ("instagram" in raw_msg.lower())
+                                is_ig = ("instagram" in subject) or ("instagram" in from_sender)
+                                is_security_mail = any(kw in subject for kw in ["security", "bảo mật", "verify", "xác minh", "code", "mã", "factor"])
                                 
-                                if is_ig:
-                                    if code_field and code_field.isdigit() and len(code_field) in [6, 8]:
-                                        if code_field not in self.seen_codes:
-                                            print(f"{Colors.color_text(f'[API Smail1s] Đã tìm thấy mã MỚI: {code_field}', Colors.SUCCESS)}")
-                                            return code_field
+                                if is_ig and is_security_mail:
+                                    clean_text = re.sub(r'<[^>]+>', ' ', raw_msg).replace(" ", "")
+                                    code = None
                                     
-                                    match_subj = re.search(r'\b(\d{6}|\d{8})\b', subject)
-                                    if match_subj:
-                                        code = match_subj.group(1)
-                                        if code not in self.seen_codes:
-                                            print(f"{Colors.color_text(f'[API Smail1s] Đã tìm thấy mã MỚI: {code}', Colors.SUCCESS)}")
-                                            return code
-                                            
-                                    clean_text = re.sub(r'<[^>]+>', ' ', raw_msg)
-                                    match_body = re.search(r'\b(\d{6}|\d{8})\b', clean_text)
-                                    if match_body:
-                                        code = match_body.group(1)
-                                        if code not in self.seen_codes:
-                                            print(f"{Colors.color_text(f'[API Smail1s] Đã tìm thấy mã MỚI: {code}', Colors.SUCCESS)}")
-                                            return code
+                                    if force_8_digits:
+                                        # BẮT BUỘC ĐÚNG MÃ 8 CHỮ SỐ CHO 2FA META
+                                        match_8 = re.search(r'(?<!\d)(\d{8})(?!\d)', clean_text)
+                                        if match_8:
+                                            code = match_8.group(1)
+                                    else:
+                                        # BƯỚC ĐĂNG KÝ BAN ĐẦU CHỈ LẤY 6 SỐ
+                                        match_6 = re.search(r'(?<!\d)(\d{6})(?!\d)', clean_text)
+                                        if match_6:
+                                            code = match_6.group(1)
+                                    
+                                    if code and code not in self.seen_codes:
+                                        print(f"{Colors.color_text(f'[API Smail1s] ĐÃ BẮT ĐƯỢC MÃ CHUẨN: {code}', Colors.SUCCESS)}")
+                                        self.seen_codes.add(code)
+                                        return code
                 else:
                     status_err = f"Lỗi HTTP {response.status_code}"
                     if status_err != last_logged:
@@ -465,8 +674,9 @@ class HotmailAPIService:
                     print(f"{Colors.color_text(f'[API Smail1s] {err_str}', Colors.WARNING)}")
                     last_logged = err_str
             
-            time.sleep(5)
+            time.sleep(random.uniform(5.0, 8.0))
         return None
+
 
 def generate_dot_variants(gmail):
     local, sep, domain = gmail.rpartition("@")
@@ -483,80 +693,10 @@ def generate_dot_variants(gmail):
     random.shuffle(variants)
     return variants
 
-# ==================== HÀM HỎI ĐÓNG TRÌNH DUYỆT ====================
-def ask_before_close(driver, thread_id):
-    if driver:
-        with INPUT_LOCK:
-            PAUSE_FOR_INPUT.clear() 
-            while True:
-                built_in_print(f"{Colors.WARNING}[{thread_id}] Bạn có muốn đóng Chrome của luồng này không? (y/n): {Colors.RESET}", end="")
-                choice = input().strip().lower()
-                if choice == 'y':
-                    try: 
-                        driver.quit()
-                        built_in_print(f"{Colors.SUCCESS}[{thread_id}] Đã đóng trình duyệt và giải phóng RAM.{Colors.RESET}")
-                    except: pass
-                    break
-                elif choice == 'n':
-                    built_in_print(f"{Colors.INFO}[{thread_id}] Đã giữ lại trình duyệt để bạn kiểm tra.{Colors.RESET}")
-                    break
-                else:
-                    built_in_print(f"{Colors.ERROR}Vui lòng chỉ nhập y hoặc n!{Colors.RESET}")
-            PAUSE_FOR_INPUT.set() 
-
-# ==================== HÀM QUẢN LÝ NHẬP FILE VÀ CHỌN DÒNG ====================
-def process_file_input(config_key, default_prompt):
-    config_data = load_config()
-    saved_file = config_data.get(config_key)
-    file_path = ""
-
-    if saved_file and os.path.isfile(saved_file):
-        built_in_print(f"{Colors.INFO}Phát hiện tệp danh sách cũ: {Colors.VALUE}{saved_file}{Colors.RESET}")
-        use_old = input(f"{Colors.KEY}Bạn có muốn sử dụng lại tệp này không? (y/n): {Colors.RESET}").strip().lower()
-        if use_old == 'y':
-            file_path = saved_file
-
-    if not file_path:
-        built_in_print(default_prompt, end="")
-        file_path = input().strip().strip('"')
-        if os.path.isfile(file_path):
-            config_data[config_key] = file_path
-            save_config(config_data)
-
-    if os.path.isfile(file_path):
-        with open(file_path, 'r', encoding='utf-8') as f:
-            lines = [line.strip() for line in f if line.strip()]
-
-        total = len(lines)
-        if total == 0:
-            built_in_print(f"{Colors.ERROR}File trống!{Colors.RESET}")
-            return []
-            
-        built_in_print(f"{Colors.SUCCESS}Đã tải {total} dòng từ tệp.{Colors.RESET}")
-
-        start_line = input(f"{Colors.KEY}Bạn muốn chạy TỪ mail số mấy? (Nhấn Enter để chạy từ đầu [1]): {Colors.RESET}").strip()
-        end_line = input(f"{Colors.KEY}Bạn muốn chạy ĐẾN mail số mấy? (Nhấn Enter để chạy đến cuối [{total}]): {Colors.RESET}").strip()
-
-        start_idx = int(start_line) if start_line.isdigit() else 1
-        end_idx = int(end_line) if end_line.isdigit() else total
-
-        start_idx = max(1, start_idx)
-        end_idx = min(total, end_idx)
-
-        if start_idx > end_idx:
-            built_in_print(f"{Colors.WARNING}Số thứ tự không hợp lệ, sẽ tự động chạy tất cả!{Colors.RESET}")
-            return lines
-        else:
-            selected_lines = lines[start_idx-1:end_idx]
-            built_in_print(f"{Colors.INFO}=> Đã chọn {len(selected_lines)} mail (Từ số {start_idx} đến {end_idx}){Colors.RESET}")
-            return selected_lines
-    else:
-        return [e.strip() for e in file_path.split(",") if e.strip()]
-
 
 # ==================== MAIN THREAD ====================
 class starts(threading.Thread):
-    def __init__(self, thread_id, mode, account_count, data_source, manual_password=None, base_gmail=None, app_password=None, api_mode=None, avatar_folder=""):
+    def __init__(self, thread_id, mode, account_count, data_source, manual_password=None, base_gmail=None, app_password=None, api_mode=None, avatar_folder="", proxies_list=None):
         super().__init__()
         self.thread_id = f"Tab-{thread_id}"
         self.mode = mode
@@ -567,9 +707,25 @@ class starts(threading.Thread):
         self.app_password = app_password
         self.api_mode = api_mode
         self.avatar_folder = avatar_folder
+        self.proxies_list = proxies_list or [] 
     
     def run(self):
         global BASE_YEAR
+        
+        # --- LẤY PROXY LOCAL DÀNH CHO LUỒNG NÀY ---
+        raw_proxy = None
+        req_proxy = None
+        if self.proxies_list:
+            thread_idx_for_proxy = int(self.thread_id.split("-")[1]) - 1
+            raw_proxy = self.proxies_list[thread_idx_for_proxy % len(self.proxies_list)]
+            req_proxy = format_proxy(raw_proxy)
+            p_info = parse_proxy(raw_proxy)
+            if p_info and p_info.get("user"):
+                print(f"{Colors.color_text(f'[{self.thread_id}] Đã gán Proxy (Có User/Pass): {p_info[\"ip\"]}:{p_info[\"port\"]} (User: {p_info[\"user\"]})', Colors.WARNING)}")
+            elif p_info:
+                print(f"{Colors.color_text(f'[{self.thread_id}] Đã gán Proxy (IP:Port): {p_info[\"ip\"]}:{p_info[\"port\"]}', Colors.WARNING)}")
+            else:
+                print(f"{Colors.color_text(f'[{self.thread_id}] Đã gán Proxy: {raw_proxy}', Colors.WARNING)}")
         
         def create_one_account(account_index):
             global BASE_YEAR
@@ -587,7 +743,7 @@ class starts(threading.Thread):
             secure_pass = "".join(random.choice(chars) for _ in range(12))
 
             if self.mode == "1":
-                mail_service = MailService()
+                mail_service = MailService(proxy=req_proxy)
                 used_email = mail_service.create_account(username)
                 if not used_email: return False
                 mail_service.authenticate()
@@ -597,7 +753,7 @@ class starts(threading.Thread):
                     if len(self.data_source) == 0: return False
                     used_email = self.data_source.pop(0)
                 if "mail.tm" in used_email.lower():
-                    mail_service = MailService()
+                    mail_service = MailService(proxy=req_proxy)
                     pass_to_use = self.manual_password if self.manual_password else "TempPass123!"
                     mail_service.authenticate(used_email, pass_to_use)
                 
@@ -618,7 +774,7 @@ class starts(threading.Thread):
                     if len(self.data_source) == 0: return False
                     data_line = self.data_source.pop(0)
                 used_email = data_line.split('|')[0]
-                hotmail_service = HotmailAPIService(data_line, self.api_mode)
+                hotmail_service = HotmailAPIService(data_line, self.api_mode, proxy=req_proxy)
 
             print(f"{Colors.color_text(f'[{self.thread_id}] Đang dùng Email: {used_email}', Colors.INFO)}")
 
@@ -627,7 +783,6 @@ class starts(threading.Thread):
                 # ========================================================
                 # MỞ CỬA SỔ DẠNG HÌNH CHỮ NHẬT DỌC ĐỂ XẾP 8 Ô
                 # ========================================================
-                
                 thread_idx = int(self.thread_id.split("-")[1]) - 1 
                 
                 win_width = 460   
@@ -641,32 +796,56 @@ class starts(threading.Thread):
                 y_pos = row * win_height
                 
                 options = uc.ChromeOptions()
-                options.add_argument('--incognito')
                 options.add_argument('--mute-audio')
                 options.add_argument('--disable-notifications')
+                options.add_argument('--disable-save-password-bubble')
+                options.add_argument('--password-store=basic')
+                
+                # TẮT TRIỆT ĐỂ BẢNG HỎI LƯU MẬT KHẨU & AUTOFILL CỦA CHROME
+                prefs = {
+                    'credentials_enable_service': False,
+                    'profile.password_manager_enabled': False,
+                    'profile.password_manager_leak_detection': False,
+                    'autofill.profile_enabled': False,
+                    'profile.default_content_setting_values.notifications': 2
+                }
+                options.add_experimental_option('prefs', prefs)
                 
                 options.add_argument(f'--window-size={win_width},{win_height}')
                 options.add_argument(f'--window-position={x_pos},{y_pos}')
-                
                 options.add_argument('--force-device-scale-factor=0.65')
-                
                 options.add_argument('--disable-gpu')
                 options.add_argument('--disable-software-rasterizer')
                 options.add_argument('--disable-dev-shm-usage')
                 
+                # >>> XỬ LÝ PROXY ĐA NĂNG & AN TOÀN CHO CHROME (CHẠY 100% TAB ẨN DANH & ĐỔI IP THẬT) <<<
+                forwarder = None
+                options.add_argument('--incognito')
+                
+                if raw_proxy:
+                    parsed_p = parse_proxy(raw_proxy)
+                    if parsed_p:
+                        if parsed_p.get("user") and parsed_p.get("pass"):
+                            # Dùng Local Proxy Forwarder để inject User/Pass ngầm, Chrome chạy thẳng cờ --incognito
+                            forwarder = LocalProxyForwarder(parsed_p["ip"], parsed_p["port"], parsed_p["user"], parsed_p["pass"])
+                            options.add_argument(f'--proxy-server=http://127.0.0.1:{forwarder.local_port}')
+                        else:
+                            options.add_argument(f'--proxy-server=http://{parsed_p["ip"]}:{parsed_p["port"]}')
+                
                 with BROWSER_LOCK:
                     driver = uc.Chrome(options=options)
+                    with DRIVER_LOCK:
+                        ALL_DRIVERS.append((self.thread_id, driver))
                     try:
                         driver.set_window_size(win_width, win_height)
                         driver.set_window_position(x_pos, y_pos)
                     except:
                         pass
                     time.sleep(1) 
-                # ========================================================
                     
                 wait = WebDriverWait(driver, 15)
                 
-                print(f"{Colors.color_text(f'[{self.thread_id}] Đang truy cập Instagram Web...', Colors.INFO)}")
+                print(f"{Colors.color_text(f'[{self.thread_id}] Đang truy cập Instagram Web qua Proxy...', Colors.INFO)}")
                 driver.get("https://www.instagram.com/accounts/emailsignup/")
                 
                 print(f"{Colors.color_text(f'[{self.thread_id}] Đang chờ trang tải hoàn tất (10s)...', Colors.WARNING)}")
@@ -843,7 +1022,6 @@ class starts(threading.Thread):
                         human_type(inputs[3], username, is_username=True)
                     else:
                         print(f"{Colors.color_text(f'[{self.thread_id}] Lỗi: Giao diện IG bị thay đổi!', Colors.ERROR)}")
-                        ask_before_close(driver, self.thread_id)
                         return False
                     
                     print(f"{Colors.color_text(f'[{self.thread_id}] Đã điền xong. Ngâm form 10s trước khi bấm nút Đăng Ký...', Colors.WARNING)}")
@@ -948,7 +1126,6 @@ class starts(threading.Thread):
                 except Exception as e:
                     print(f"{Colors.color_text(f'[{self.thread_id}] Lỗi quá trình điền form: {e}', Colors.ERROR)}")
                     time.sleep(5)
-                    ask_before_close(driver, self.thread_id)
                     return False
 
                 # ==================== NHẬN DIỆN Ô NHẬP OTP ĐA LỚP ====================
@@ -979,12 +1156,11 @@ class starts(threading.Thread):
                 if not otp_input:
                     print(f"{Colors.color_text(f'[{self.thread_id}] Lỗi: Không thể tìm thấy ô nhập OTP trên giao diện.', Colors.ERROR)}")
                     time.sleep(5)
-                    ask_before_close(driver, self.thread_id)
                     return False
                 
                 print(f"{Colors.color_text(f'[{self.thread_id}] Đã nhận diện được ô nhập OTP thành công!', Colors.SUCCESS)}")
                 
-                # ==================== CƠ CHẾ LẤY & NGÂM OTP ====================
+                # ==================== CƠ CHẾ LẤY & NGÂM OTP ĐĂNG KÝ (6 SỐ) ====================
                 otp_code = None
                 start_otp_wait = time.time()
                 
@@ -1002,16 +1178,15 @@ class starts(threading.Thread):
                         print(f"{Colors.color_text(f'[{self.thread_id}] Đang chờ lấy mã OTP từ Email...', Colors.INFO)}")
 
                     if self.mode == "1" or (self.mode == "2" and mail_service and mail_service.token):
-                        otp_code = mail_service.get_otp_code(timeout=120)
+                        otp_code = mail_service.get_otp_code(timeout=120, force_8_digits=False)
                     elif self.mode in ["3", "4"]:
-                        otp_code = imap_service.get_otp_code(target_email=used_email, since_uid=uid_moc, timeout=120)
+                        otp_code = imap_service.get_otp_code(target_email=used_email, since_uid=uid_moc, timeout=120, force_8_digits=False)
                     elif self.mode == "5":
-                        otp_code = hotmail_service.get_otp_code(timeout=180) 
+                        otp_code = hotmail_service.get_otp_code(timeout=180, force_8_digits=False) 
                 
                 if not otp_code:
                     print(f"{Colors.color_text(f'[{self.thread_id}] Lỗi: Không lấy được mã OTP trong thời gian chờ. Bỏ qua acc!', Colors.ERROR)}")
                     time.sleep(5)
-                    ask_before_close(driver, self.thread_id)
                     return False
                 
                 if self.mode in ["3", "4", "5"]:
@@ -1078,8 +1253,7 @@ class starts(threading.Thread):
                     target_input.send_keys(Keys.ENTER)
                     click_success = True
                     time.sleep(1)
-                except Exception as e:
-                    pass
+                except Exception: pass
 
                 if not click_success:
                     try:
@@ -1090,8 +1264,7 @@ class starts(threading.Thread):
                         time.sleep(0.5)
                         driver.execute_script("arguments[0].click();", submit_btn)
                         click_success = True
-                    except Exception as e:
-                        pass
+                    except Exception: pass
 
                 if not click_success:
                     try:
@@ -1109,10 +1282,8 @@ class starts(threading.Thread):
                             }
                             return "NOT_FOUND";
                         """)
-                        if click_result == "CLICKED":
-                            click_success = True
-                    except:
-                        pass
+                        if click_result == "CLICKED": click_success = True
+                    except: pass
 
                 if click_success:
                     print(f"{Colors.color_text(f'[{self.thread_id}] ĐÃ BẤM GỬI OTP THÀNH CÔNG!', Colors.SUCCESS)}")
@@ -1143,7 +1314,6 @@ class starts(threading.Thread):
                     print(f"\n{Colors.color_text('─'*70, Colors.LINE)}")
                     print(f"{Colors.color_text(f'[{self.thread_id}] LỖI: TÀI KHOẢN ĐÃ DIE / CHECKPOINT!', Colors.ERROR)}")
                     print(f"{Colors.color_text('─'*70, Colors.LINE)}\n")
-                    ask_before_close(driver, self.thread_id)
                     return "DEAD" 
 
                 print(f"{Colors.color_text(f'[{self.thread_id}] TÀI KHOẢN SỐNG! Chuẩn bị up Avatar...', Colors.SUCCESS)}")
@@ -1207,157 +1377,254 @@ class starts(threading.Thread):
                 else:
                     print(f"{Colors.color_text(f'[{self.thread_id}] Không cấu hình Up Avatar, bỏ qua bước này.', Colors.INFO)}")
 
-                # ==================== TÍCH HỢP TỰ ĐỘNG BẬT 2FA (AUTHENTICATOR) ====================
-                print(f"{Colors.color_text(f'[{self.thread_id}] Đang tiến hành cài đặt 2FA...', Colors.INFO)}")
+                # ==================== TÍCH HỢP TỰ ĐỘNG BẬT 2FA (AUTHENTICATOR APP) ====================
+                print(f"{Colors.color_text(f'[{self.thread_id}] Đang tiến hành cài đặt 2FA (Hỗ trợ song ngữ Anh - Việt)...', Colors.INFO)}")
                 two_fa_secret = ""
                 try:
                     driver.get("https://accountscenter.instagram.com/password_and_security/two_factor/")
-                    time.sleep(8)
-                    
-                    print(f"{Colors.color_text(f'[{self.thread_id}] Đang xử lý các màn hình đệm của Meta...', Colors.INFO)}")
+                    time.sleep(7)
+
+                    # 1. Chọn tài khoản / Màn hình đệm
+                    print(f"{Colors.color_text(f'[{self.thread_id}] Xử lý chọn tài khoản / màn hình đệm Meta...', Colors.INFO)}")
                     for _ in range(4):
                         try:
-                            driver.execute_script("""
+                            clicked_buffer = driver.execute_script("""
                                 let targetUser = arguments[0].toLowerCase();
-                                let allElements = document.querySelectorAll('*');
+                                let allElements = Array.from(document.querySelectorAll('*'));
                                 
                                 for(let el of allElements) {
-                                    let txt = el.innerText ? el.innerText.trim().toLowerCase() : '';
-                                    if(txt === 'bắt đầu' || txt === 'get started') {
-                                        let btn = el.closest('button, [role="button"]');
-                                        if(btn) { btn.click(); return; }
-                                    }
-                                }
-                                
-                                for(let el of allElements) {
-                                    let txt = el.innerText ? el.innerText.trim().toLowerCase() : '';
+                                    let txt = (el.innerText || el.textContent || '').trim().toLowerCase();
                                     if(txt.includes(targetUser) && txt.length < 50) {
-                                         let clickable = el.closest('div[role="button"], a[role="link"]');
-                                         if(clickable) { clickable.click(); return; }
+                                        let clickable = el.closest('div[role="button"], a[role="link"], button');
+                                        if(clickable) { clickable.click(); return 'CLICK_USER'; }
                                     }
                                 }
+                                return 'NOT_FOUND';
                             """, username)
-                            time.sleep(3)
-                        except:
-                            pass
-                        
-                    try:
-                        email_verify_check = driver.find_elements(By.XPATH, "//*[contains(text(), 'Kiểm tra email của bạn') or contains(text(), 'Check your email')]")
-                        if email_verify_check:
-                            print(f"{Colors.color_text(f'[{self.thread_id}] IG yêu cầu xác minh Email để vào 2FA. Đang đợi mã...', Colors.WARNING)}")
-                            time.sleep(10) 
-                            
-                            verify_code = None
-                            if self.mode == "1" or (self.mode == "2" and mail_service and mail_service.token):
-                                verify_code = mail_service.get_otp_code(timeout=60)
-                            elif self.mode in ["3", "4"]:
-                                verify_code = imap_service.get_otp_code(target_email=used_email, since_uid=uid_moc, timeout=60)
-                            elif self.mode == "5":
-                                verify_code = hotmail_service.get_otp_code(timeout=60)
-                                
-                            if verify_code:
-                                print(f"{Colors.color_text(f'[{self.thread_id}] Lấy thành công mã verify 2FA: {verify_code}', Colors.SUCCESS)}")
-                                inputs = driver.find_elements(By.TAG_NAME, "input")
-                                for inp in inputs:
-                                    if inp.is_displayed():
-                                        inp.send_keys(verify_code)
-                                        time.sleep(1)
-                                        inp.send_keys(Keys.ENTER)
-                                        break
-                                time.sleep(5)
-                            else:
-                                print(f"{Colors.color_text(f'[{self.thread_id}] Quá hạn lấy mã xác minh. Bỏ qua 2FA!', Colors.ERROR)}")
-                    except:
-                        pass
-                    
-                    try:
-                        auth_app_btn = WebDriverWait(driver, 10).until(
-                            EC.presence_of_element_located((By.XPATH, "//*[contains(text(), 'Ứng dụng xác thực') or contains(text(), 'Authentication app')]"))
-                        )
-                        driver.execute_script("arguments[0].click();", auth_app_btn)
-                        time.sleep(2)
-                        
-                        driver.execute_script("""
-                            let allElements = document.querySelectorAll('*');
+                            if clicked_buffer != 'NOT_FOUND':
+                                time.sleep(4)
+                                break
+                            time.sleep(2)
+                        except Exception: pass
+
+                    # 2. BẮT ĐẦU: Nhận diện nút "Bắt đầu" (Get started) theo đúng giao diện Thiết lập bảo vệ tăng cường
+                    print(f"{Colors.color_text(f'[{self.thread_id}] Chờ và bấm nút \"Bắt đầu\" (Get started)...', Colors.INFO)}")
+                    for _ in range(6):
+                        clicked_start = driver.execute_script("""
+                            let allElements = Array.from(document.querySelectorAll('button, div[role="button"], span'));
                             for(let el of allElements) {
-                                if(el.innerText && (el.innerText.trim().toLowerCase() === 'tiếp tục' || el.innerText.trim().toLowerCase() === 'next')) {
-                                    let clickable = el.closest('button, [role="button"]');
-                                    if(clickable && !clickable.disabled) { 
-                                        clickable.click(); 
-                                        return; 
+                                let txt = (el.innerText || el.textContent || '').trim().toLowerCase();
+                                if(txt === 'bắt đầu' || txt === 'get started') {
+                                    let btn = el.closest('button, [role="button"]') || el;
+                                    btn.click();
+                                    return true;
+                                }
+                            }
+                            return false;
+                        """)
+                        if clicked_start:
+                            print(f"{Colors.color_text(f'[{self.thread_id}] ĐÃ BẤM NÚT \"Bắt đầu\" THÀNH CÔNG!', Colors.SUCCESS)}")
+                            time.sleep(4)
+                            break
+                        time.sleep(1.5)
+
+                    # 3. KIỂM TRA EMAIL CỦA BẠN: Chỉ quét thư khi thấy màn hình này và ÉP ĐỌC MÃ 8 CHỮ SỐ
+                    is_email_check_screen = False
+                    for _ in range(6):
+                        is_email_check_screen = driver.execute_script("""
+                            let txt = (document.body.innerText || document.body.textContent || '').toLowerCase();
+                            return txt.includes('kiểm tra email') || txt.includes('check your email');
+                        """)
+                        if is_email_check_screen: break
+                        time.sleep(1.5)
+
+                    if is_email_check_screen:
+                        print(f"{Colors.color_text(f'[{self.thread_id}] ĐÃ HIỆN MÀN HÌNH \"Kiểm tra email của bạn\". Bắt đầu quét MÃ 8 SỐ...', Colors.WARNING)}")
+                        
+                        verify_code = None
+                        if self.mode == "1" or (self.mode == "2" and mail_service and mail_service.token):
+                            verify_code = mail_service.get_otp_code(timeout=120, force_8_digits=True)
+                        elif self.mode in ["3", "4"]:
+                            verify_code = imap_service.get_otp_code(target_email=used_email, since_uid=uid_moc, timeout=120, force_8_digits=True)
+                        elif self.mode == "5":
+                            verify_code = hotmail_service.get_otp_code(timeout=180, force_8_digits=True)
+
+                        if verify_code:
+                            print(f"{Colors.color_text(f'[{self.thread_id}] ĐÃ LẤY ĐƯỢC MÃ 8 SỐ CHUẨN XÁC: {verify_code}', Colors.SUCCESS)}")
+                            
+                            driver.execute_script("""
+                                let val = arguments[0];
+                                let inp = document.querySelector('input');
+                                if (inp) {
+                                    let nativeInputValueSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value").set;
+                                    nativeInputValueSetter.call(inp, val);
+                                    inp.dispatchEvent(new Event('input', { bubbles: true }));
+                                    inp.dispatchEvent(new Event('change', { bubbles: true }));
+                                }
+                            """, verify_code)
+                            time.sleep(1.5)
+                            
+                            driver.execute_script("""
+                                let btns = Array.from(document.querySelectorAll('button, div[role="button"]'));
+                                for(let b of btns){
+                                    let t = (b.innerText || b.textContent || "").trim().toLowerCase();
+                                    if(['tiếp tục', 'next', 'continue', 'gửi', 'tiếp', 'xác nhận', 'submit'].includes(t)){
+                                        if(!b.disabled) { b.click(); return; }
                                     }
                                 }
-                            }
-                        """)
-                        time.sleep(5)
-                    except:
-                        print(f"{Colors.color_text(f'[{self.thread_id}] Không tìm thấy lựa chọn Ứng dụng xác thực hoặc nút Tiếp tục.', Colors.WARNING)}")
-                        
-                    # 5. Cào mã Secret Key & Sinh OTP nhập vào (ĐÃ FIX: Cuộn hộp thoại & Xóa khoảng trắng)
+                            """)
+                            time.sleep(6) 
+                        else:
+                            print(f"{Colors.color_text(f'[{self.thread_id}] Không nhận được mã 8 số từ email!', Colors.ERROR)}")
+
+                    # 4. Chọn phương thức "Authentication app" / "Ứng dụng xác thực" & bấm Tiếp tục (Continue / Next)
+                    print(f"{Colors.color_text(f'[{self.thread_id}] Chọn phương thức Authentication App...', Colors.INFO)}")
                     try:
                         driver.execute_script("""
-                            let dialogs = document.querySelectorAll('div[role="dialog"]');
-                            if (dialogs.length > 0) {
-                                let scrollContainers = dialogs[0].querySelectorAll('div[style*="overflow-y: auto"], div[style*="overflow: hidden auto"]');
-                                for (let sc of scrollContainers) {
-                                    sc.scrollTop = sc.scrollHeight;
+                            let all = Array.from(document.querySelectorAll('*'));
+                            for(let el of all) {
+                                let txt = (el.innerText || el.textContent || '').trim().toLowerCase();
+                                if(txt.includes('authentication app') || txt.includes('ứng dụng xác thực') || txt.includes('duo mobile') || txt.includes('google authenticator')) {
+                                    let clickable = el.closest('div[role="button"], label, div[tabindex], button, [role="radio"]') || el;
+                                    clickable.click();
+                                    return 'CLICKED_APP';
                                 }
                             }
-                            let allElements = document.querySelectorAll('*');
-                            for(let el of allElements) {
-                                let txt = el.innerText ? el.innerText.trim().toLowerCase() : '';
-                                if(txt === 'nhập mã' || txt === 'enter code') {
-                                    el.scrollIntoView({block: "end", inline: "nearest"});
-                                    break;
+                            return 'NOT_FOUND';
+                        """)
+                        time.sleep(2)
+
+                        # Bấm nút Continue / Tiếp tục / Next
+                        for _ in range(3):
+                            clicked_continue = driver.execute_script("""
+                                let btns = Array.from(document.querySelectorAll('button, div[role="button"], span'));
+                                for(let b of btns) {
+                                    let txt = (b.innerText || b.textContent || '').trim().toLowerCase();
+                                    if(['continue', 'next', 'tiếp tục', 'tiếp'].includes(txt)) {
+                                        let clickable = b.closest('button, [role="button"]') || b;
+                                        let rect = clickable.getBoundingClientRect();
+                                        if(rect.width > 0 && rect.height > 0 && !clickable.disabled) {
+                                            clickable.click();
+                                            return 'CLICKED';
+                                        }
+                                    }
+                                }
+                                return 'NOT_FOUND';
+                            """)
+                            if clicked_continue == 'CLICKED':
+                                time.sleep(5)
+                                break
+                            time.sleep(2)
+                    except Exception: pass
+
+                    # 5. Trích xuất mã Secret Key CHUẨN XÁC (Loại bỏ triệt để chuỗi rác Meta)
+                    print(f"{Colors.color_text(f'[{self.thread_id}] Đang tìm và bóc tách Secret Key 2FA...', Colors.INFO)}")
+                    for attempt in range(8):
+                        driver.execute_script("""
+                            let els = Array.from(document.querySelectorAll('button, div[role="button"], span, a'));
+                            for(let el of els) {
+                                let txt = (el.innerText || el.textContent || '').trim().toLowerCase();
+                                if(txt.includes("can't scan") || txt.includes("cant scan") || txt.includes("không thể quét") || txt.includes("không quét được") || txt.includes("copy key") || txt.includes("sao chép")) {
+                                    el.click();
+                                    return;
                                 }
                             }
                         """)
                         time.sleep(2)
 
-                        page_text = driver.find_element(By.TAG_NAME, "body").text
-                        
-                        clean_text = re.sub(r'[\s\n\r]', '', page_text)
-                        
-                        match = re.search(r'([A-Z2-7]{32})', clean_text)
-                        if not match:
-                            match = re.search(r'([A-Z2-7]{16,40})', clean_text)
-                            
-                        if match:
-                            two_fa_secret = match.group(1)
-                            print(f"{Colors.color_text(f'[{self.thread_id}] Đã sao chép chuẩn Secret Key: {two_fa_secret}', Colors.SUCCESS)}")
-                            
-                            driver.execute_script("""
-                                let allElements = document.querySelectorAll('*');
-                                for(let el of allElements) {
-                                    let txt = el.innerText ? el.innerText.trim().toLowerCase() : '';
-                                    if(txt === 'nhập mã' || txt === 'enter code') {
-                                        let btn = el.closest('button, [role="button"]');
-                                        if(btn && !btn.disabled) { btn.click(); return; }
+                        # 1) Thử bóc tách từ các thẻ text
+                        extracted_key = driver.execute_script("""
+                            let spans = Array.from(document.querySelectorAll('span, div, p, code'));
+                            for (let el of spans) {
+                                let t = (el.innerText || el.textContent || '').trim();
+                                let clean = t.replace(/\\s+/g, '').toUpperCase();
+                                if (/^[A-Z2-7]{32}$/.test(clean)) {
+                                    if (!clean.includes('FXAC') && !clean.includes('INFRA') && !clean.includes('VIEWER') && !clean.includes('META') && !clean.includes('ACCOUNT')) {
+                                        return clean;
                                     }
                                 }
-                            """)
-                            time.sleep(3)
-                            
-                            totp = pyotp.TOTP(two_fa_secret)
-                            current_otp = totp.now()
-                            print(f"{Colors.color_text(f'[{self.thread_id}] Đã xử lý Key ra mã OTP ({current_otp}). Đang điền...', Colors.INFO)}")
-                            
-                            inputs = driver.find_elements(By.TAG_NAME, "input")
-                            for inp in inputs:
-                                if inp.is_displayed():
-                                    inp.send_keys(current_otp)
-                                    time.sleep(1)
-                                    inp.send_keys(Keys.ENTER)
-                                    break
-                            time.sleep(5)
-                            print(f"{Colors.color_text(f'[{self.thread_id}] LÊN 2FA THÀNH CÔNG RỰC RỠ!', Colors.SUCCESS)}")
-                        else:
-                            print(f"{Colors.color_text(f'[{self.thread_id}] Không nhận diện được Secret Key trên giao diện.', Colors.WARNING)}")
-                    except Exception as e:
-                        print(f"{Colors.color_text(f'[{self.thread_id}] Lỗi lúc lấy/điền 2FA: {e}', Colors.WARNING)}")
-                        
+                            }
+                            return null;
+                        """)
+
+                        if extracted_key:
+                            two_fa_secret = extracted_key
+                            break
+
+                        # 2) Fallback regex cụm 8 nhóm 4 ký tự (XXXX XXXX XXXX...)
+                        page_text = driver.execute_script("return document.body.innerText || document.body.textContent;")
+                        grouped_match = re.search(r'\b([A-Z2-7]{4}(?:\s+[A-Z2-7]{4}){7})\b', page_text)
+                        if grouped_match:
+                            candidate = re.sub(r'\s+', '', grouped_match.group(1)).upper()
+                            if not any(bad in candidate for bad in ['FXAC', 'INFRA', 'VIEWER']):
+                                two_fa_secret = candidate
+                                break
+
+                        time.sleep(2)
+
+                    if two_fa_secret:
+                        print(f"{Colors.color_text(f'[{self.thread_id}] ĐÃ LẤY CHUẨN XÁC SECRET KEY 2FA: {two_fa_secret}', Colors.SUCCESS)}")
+
+                        # Bấm nút chuyển sang màn nhập 6 số OTP
+                        driver.execute_script("""
+                            let btns = Array.from(document.querySelectorAll('button, div[role="button"], span'));
+                            for(let b of btns) {
+                                let txt = (b.innerText || b.textContent || '').trim().toLowerCase();
+                                if(['next', 'continue', 'tiếp tục', 'tiếp', 'nhập mã', 'enter code'].includes(txt)) {
+                                    let clickable = b.closest('button, [role="button"]') || b;
+                                    let rect = clickable.getBoundingClientRect();
+                                    if(rect.width > 0 && rect.height > 0 && !clickable.disabled) {
+                                        clickable.click();
+                                        return;
+                                    }
+                                }
+                            }
+                        """)
+                        time.sleep(4)
+
+                        # Sinh mã OTP 6 số từ pyotp
+                        totp = pyotp.TOTP(two_fa_secret)
+                        current_otp = totp.now()
+                        print(f"{Colors.color_text(f'[{self.thread_id}] Đã sinh mã OTP ({current_otp}) từ Key. Đang điền...', Colors.INFO)}")
+
+                        # Điền mã OTP vào ô nhập
+                        inputs = driver.find_elements(By.TAG_NAME, "input")
+                        for inp in inputs:
+                            if inp.is_displayed():
+                                try: inp.clear()
+                                except Exception: pass
+                                for digit in current_otp:
+                                    inp.send_keys(digit)
+                                    time.sleep(0.08)
+                                time.sleep(1)
+                                try: inp.send_keys(Keys.ENTER)
+                                except Exception: pass
+                                driver.execute_script("document.body.click();")
+                                break
+
+                        time.sleep(2)
+
+                        # Bấm xác nhận hoàn tất 2FA
+                        driver.execute_script("""
+                            let btns = Array.from(document.querySelectorAll('button, div[role="button"]'));
+                            btns.reverse();
+                            for(let b of btns){
+                                let t = (b.innerText || b.textContent || "").trim().toLowerCase();
+                                if(['tiếp', 'tiếp tục', 'next', 'continue', 'xong', 'done', 'submit', 'xác nhận'].includes(t)){
+                                    let rect = b.getBoundingClientRect();
+                                    if(rect.width > 0 && rect.height > 0 && !b.disabled && b.getAttribute('aria-disabled') !== 'true') {
+                                        b.click();
+                                        return;
+                                    }
+                                }
+                            }
+                        """)
+                        time.sleep(5)
+                        print(f"{Colors.color_text(f'[{self.thread_id}] BẬT 2FA THÀNH CÔNG RỰC RỠ!', Colors.SUCCESS)}")
+                    else:
+                        print(f"{Colors.color_text(f'[{self.thread_id}] Không nhận diện được Secret Key 2FA trên giao diện.', Colors.WARNING)}")
                 except Exception as e:
-                    print(f"{Colors.color_text(f'[{self.thread_id}] Quá trình 2FA bị gián đoạn: {e}', Colors.WARNING)}")
+                    print(f"{Colors.color_text(f'[{self.thread_id}] Quá trình 2FA gặp lỗi: {e}', Colors.WARNING)}")
 
                 # ==================== LẤY LẠI COOKIE LẦN CUỐI & LƯU ACC ====================
                 print(f"{Colors.color_text(f'[{self.thread_id}] Đang tiến hành lấy Cookie lưu tài khoản...', Colors.INFO)}")
@@ -1388,12 +1655,10 @@ class starts(threading.Thread):
                 
                 save_account(self.thread_id, used_email, secure_pass, username, full_name, f"mode_{self.mode}", cookie_str, two_fa_secret)
                 
-                ask_before_close(driver, self.thread_id)
                 return True
                 
             except Exception as e:
                 print(f"{Colors.color_text(f'[{self.thread_id}] Gặp Lỗi Ngoại Lệ: {e}', Colors.ERROR)}")
-                ask_before_close(driver, self.thread_id)
                 return False
         
         success_count = 0
@@ -1402,18 +1667,19 @@ class starts(threading.Thread):
             
             status = create_one_account(i)
             
-            if status == True:
+            if status == True: 
                 success_count += 1
             elif status == "DEAD":
                 print(f"{Colors.color_text(f'[{self.thread_id}] Dừng luồng này vì acc đã Die, bảo toàn các Mail còn lại!', Colors.WARNING)}")
-                break
+                break 
             else:
                 print(f"{Colors.color_text(f'[{self.thread_id}] Dừng luồng do lỗi quá trình tạo, bảo toàn Mail!', Colors.WARNING)}")
-                break
+                break 
                 
             time.sleep(random.uniform(5, 10))
         
         print(f"\n{Colors.color_text(f'[{self.thread_id}] TỔNG KẾT TAB: {success_count}/{self.account_count} THÀNH CÔNG', Colors.TITLE)}")
+
 
 # ==================== MENU CHÍNH ====================
 def select_mode():
@@ -1426,6 +1692,7 @@ def select_mode():
         built_in_print(f"{Colors.KEY}Nhập lựa chọn [1-5]: {Colors.RESET}", end="")
         choice = input().strip()
         if choice in ["1", "2", "3", "4", "5"]: return choice
+
 
 def process_file_input(config_key, default_prompt):
     config_data = load_config()
@@ -1448,6 +1715,15 @@ def process_file_input(config_key, default_prompt):
     if os.path.isfile(file_path):
         with open(file_path, 'r', encoding='utf-8') as f:
             lines = [line.strip() for line in f if line.strip()]
+
+        if config_key == 'last_file_mode2':
+            is_proxy_format = any(':' in l and '@' not in l for l in lines)
+            if is_proxy_format:
+                built_in_print(f"{Colors.ERROR}LỖI: Tệp này chứa Proxy, KHÔNG PHẢI danh sách Email!{Colors.RESET}")
+                built_in_print(f"{Colors.WARNING}Gợi ý: Nếu không có sẵn file Email, hãy chạy Mode 1 (Tự động tạo email tạm thời).{Colors.RESET}")
+                config_data.pop(config_key, None)
+                save_config(config_data)
+                return []
 
         total = len(lines)
         if total == 0:
@@ -1541,6 +1817,14 @@ if __name__ == "__main__":
             config_data["last_avatar_folder"] = avatar_folder_input
             save_config(config_data)
 
+    built_in_print(f"\n{Colors.KEY}Nhập đường dẫn file Proxy (.txt) (Hỗ trợ định dạng: IP:Port, IP:Port:User:Pass, User:Pass@IP:Port): {Colors.RESET}", end="")
+    proxy_file_input = input().strip().strip('"').strip("'")
+    proxies_list = []
+    if proxy_file_input and os.path.isfile(proxy_file_input):
+        with open(proxy_file_input, 'r', encoding='utf-8') as f_proxy:
+            proxies_list = [line.strip() for line in f_proxy if line.strip()]
+        built_in_print(f"{Colors.SUCCESS}Đã tải {len(proxies_list)} Proxy từ tệp.{Colors.RESET}")
+
     built_in_print(f"\n{Colors.KEY}Nhập số luồng (số tab Chrome chạy cùng lúc): {Colors.RESET}", end="")
     threads_count = int(input().strip())
     
@@ -1549,17 +1833,44 @@ if __name__ == "__main__":
     
     threads = []
     for i in range(threads_count):
-        t = starts(i+1, mode, accs_per_thread, data_source, manual_password, base_gmail, app_password, api_mode, avatar_folder_input)
+        t = starts(i+1, mode, accs_per_thread, data_source, manual_password, base_gmail, app_password, api_mode, avatar_folder_input, proxies_list)
         threads.append(t)
         
     for t in threads: t.start()
     
     try:
+        # CHỜ TẤT CẢ CÁC LUỒNG CHẠY XONG XUÔI HẾT MỚI ĐI TIẾP
         for t in threads: t.join()
-        built_in_print(f"\n{Colors.color_text('AUTO HOÀN THÀNH TOÀN BỘ CÁC LUỒNG!', Colors.SUCCESS)}")
+        
+        built_in_print(f"\n{Colors.LINE}={'='*68}{Colors.RESET}")
+        built_in_print(f"{Colors.color_text('AUTO ĐÃ HOÀN THÀNH TOÀN BỘ NHIỆM VỤ!', Colors.SUCCESS)}")
+        built_in_print(f"{Colors.TITLE}TIẾN HÀNH RÀ SOÁT VÀ ĐÓNG TRÌNH DUYỆT CỦA TỪNG TAB:{Colors.RESET}")
+        
+        # --- HỎI TẮT TRÌNH DUYỆT TẠI ĐÂY ---
+        for tid, drv in ALL_DRIVERS:
+            try:
+                drv.title # Test xem Chrome có lỡ tay bị tắt trước đó chưa
+                while True:
+                    built_in_print(f"{Colors.WARNING}[{tid}] Bạn có muốn đóng Chrome của luồng này không? (y/n): {Colors.RESET}", end="")
+                    choice = input().strip().lower()
+                    if choice == 'y':
+                        try: drv.quit()
+                        except: pass
+                        built_in_print(f"{Colors.SUCCESS}>> Đã đóng trình duyệt của {tid}.{Colors.RESET}")
+                        break
+                    elif choice == 'n':
+                        built_in_print(f"{Colors.INFO}>> Đã giữ lại trình duyệt của {tid}.{Colors.RESET}")
+                        break
+                    else:
+                        built_in_print(f"{Colors.ERROR}Vui lòng chỉ nhập y hoặc n!{Colors.RESET}")
+            except: 
+                pass # Đã bị tắt tay từ trước
+                
+        built_in_print(f"\n{Colors.SUCCESS}TOOL ĐÃ KẾT THÚC CÔNG VIỆC!{Colors.RESET}")
         built_in_print(f"{Colors.KEY}Nhấn Enter để thoát chương trình...{Colors.RESET}", end="")
         input()
+        
     except KeyboardInterrupt:
         STOP_EVENT.set() 
-        built_in_print(f"\n{Colors.color_text('Đang đóng các luồng an toàn...', Colors.WARNING)}")
+        built_in_print(f"\n{Colors.ERROR}Đang buộc dừng các luồng...{Colors.RESET}")
         sys.exit(0)
