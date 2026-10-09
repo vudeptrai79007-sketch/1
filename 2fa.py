@@ -158,7 +158,7 @@ def banner():
 ╚██████╔╝██║  ██║██║  ██║╚██████╔╝██║ ╚═╝ ██║███████╗
  ╚═════╝ ╚═╝  ╚═╝╚═╝  ╚═╝ ╚═════╝ ╚═╝     ╚═╝╚══════╝
 {Colors.RESET}""")
-    built_in_print(f"{Colors.INFO}Phiên Bản: v17.4 (Fix triệt để lỗi bỏ qua mã OTP khi Gửi Lại){Colors.RESET}")
+    built_in_print(f"{Colors.INFO}Phiên Bản: v17.5 (Bypass 100% bốc nhầm số trong Tên Email){Colors.RESET}")
     built_in_print(f"{Colors.LINE}{'─'*70}{Colors.RESET}\n")
 
 def load_config():
@@ -216,36 +216,29 @@ def VietnameseNameGenerator():
 
 # >>> HỆ THỐNG XỬ LÝ PROXY ĐA NĂNG (IP:PORT, IP:PORT:USER:PASS, USER:PASS@IP:PORT) <<<
 def parse_proxy(proxy_str):
-    if not proxy_str:
-        return None
+    if not proxy_str: return None
     p_str = str(proxy_str).strip()
-    if not p_str:
-        return None
+    if not p_str: return None
     for proto in ["http://", "https://", "socks5://", "socks4://"]:
         if p_str.lower().startswith(proto):
             p_str = p_str[len(proto):]
             break
 
-    # TH 1: user:pass@ip:port
     if "@" in p_str:
         try:
             auth_part, host_part = p_str.split("@", 1)
             u, pwd = auth_part.split(":", 1)
             ip, port = host_part.split(":", 1)
             return {"ip": ip.strip(), "port": port.strip(), "user": u.strip(), "pass": pwd.strip()}
-        except Exception:
-            pass
+        except Exception: pass
 
-    # TH 2: Dấu hai chấm ':'
     parts = [x.strip() for x in p_str.split(":") if x.strip()]
     if len(parts) == 2:
         return {"ip": parts[0], "port": parts[1], "user": None, "pass": None}
     elif len(parts) == 4:
         if parts[1].isdigit() and not parts[2].isdigit():
-            # ip:port:user:pass
             return {"ip": parts[0], "port": parts[1], "user": parts[2], "pass": parts[3]}
         elif parts[3].isdigit():
-            # user:pass:ip:port
             return {"ip": parts[2], "port": parts[3], "user": parts[0], "pass": parts[1]}
         else:
             return {"ip": parts[0], "port": parts[1], "user": parts[2], "pass": parts[3]}
@@ -253,8 +246,7 @@ def parse_proxy(proxy_str):
 
 def format_proxy(proxy_str):
     parsed = parse_proxy(proxy_str)
-    if not parsed:
-        return None
+    if not parsed: return None
     if parsed["user"] and parsed["pass"]:
         formatted = f"http://{parsed['user']}:{parsed['pass']}@{parsed['ip']}:{parsed['port']}"
     else:
@@ -281,8 +273,7 @@ class LocalProxyForwarder:
             try:
                 client_sock, _ = self.server_socket.accept()
                 threading.Thread(target=self._handle_client, args=(client_sock,), daemon=True).start()
-            except Exception:
-                break
+            except Exception: break
 
     def _handle_client(self, client_sock):
         try:
@@ -324,8 +315,7 @@ class LocalProxyForwarder:
                 resp = b""
                 while crlf2 not in resp:
                     c = remote_sock.recv(4096)
-                    if not c:
-                        break
+                    if not c: break
                     resp += c
 
                 resp_first_line = resp.split(crlf)[0] if resp else b""
@@ -351,16 +341,13 @@ class LocalProxyForwarder:
             sockets = [client_sock, remote_sock]
             while self.running:
                 r, _, _ = select.select(sockets, [], sockets, 30)
-                if not r:
-                    break
+                if not r: break
                 for s in r:
                     other = remote_sock if s is client_sock else client_sock
                     data = s.recv(16384)
-                    if not data:
-                        return
+                    if not data: return
                     other.sendall(data)
-        except Exception:
-            pass
+        except Exception: pass
         finally:
             try: client_sock.close()
             except: pass
@@ -373,14 +360,14 @@ class LocalProxyForwarder:
         except: pass
 
 
-# ==================== CÁC CLASS XỬ LÝ EMAIL (TRACKING THEO ID THAY VÌ TEXT OTP) ====================
+# ==================== CÁC CLASS XỬ LÝ EMAIL ====================
 class MailService:
     def __init__(self, proxy=None):
         self.base_url = "https://api.mail.tm"
         self.token = None
         self.domain = None
         self.email_address = None
-        self.seen_msg_ids = set() # Track Message ID
+        self.seen_msg_ids = set() 
         self.proxy = proxy 
         
     def get_domain(self):
@@ -428,18 +415,30 @@ class MailService:
                         if not msg_id or msg_id in self.seen_msg_ids:
                             continue
                             
-                        sub = str(msg.get('subject', '')).lower()
+                        subject = str(msg.get('subject', '')).lower()
                         frm = str(msg.get('from', {}).get('address', '')).lower()
                         if 'instagram' in sub or 'instagram' in frm:
                             detail = requests.get(f"{self.base_url}/messages/{msg_id}", headers=headers, timeout=10, proxies=self.proxy).json()
-                            text = detail.get('text', '') or re.sub('<[^<]+?>', '', str(detail.get('html', '')))
-                            clean_txt = text.replace(" ", "")
+                            raw_text = detail.get('text', '') or re.sub('<[^<]+?>', ' ', str(detail.get('html', '')))
                             
-                            regex_rule = r'(?<!\d)(\d{8})(?!\d)' if force_8_digits else r'(?<!\d)(\d{6})(?!\d)'
-                            match = re.search(regex_rule, clean_txt)
-                            if match: 
-                                code = match.group(1)
-                                self.seen_msg_ids.add(msg_id) # Mark this specific email as processed
+                            code = None
+                            if force_8_digits:
+                                clean_txt = raw_text.replace(" ", "")
+                                match = re.search(r'(?<!\d)(\d{8})(?!\d)', clean_txt)
+                                if match: code = match.group(1)
+                            else:
+                                # Ưu tiên lấy từ Subject trước
+                                match_sub = re.search(r'(?<!\d)(\d{6})(?!\d)', subject)
+                                if match_sub:
+                                    code = match_sub.group(1)
+                                else:
+                                    # Lọc bỏ email ra khỏi raw_text để tránh bốc nhầm số trong tên email
+                                    safe_text = raw_text.lower().replace(str(self.email_address).lower(), "")
+                                    match_body = re.search(r'(?<!\d)(\d{6})(?!\d)', safe_text.replace(" ", ""))
+                                    if match_body: code = match_body.group(1)
+
+                            if code:
+                                self.seen_msg_ids.add(msg_id)
                                 return code
             except Exception: pass
             time.sleep(random.uniform(6.0, 10.0))
@@ -546,21 +545,24 @@ class GmailIMAPService:
                                 is_security_mail = any(kw in subject for kw in ["security", "bảo mật", "verify", "xác minh", "code", "mã"])
                                 
                                 if is_ig and is_security_mail:
-                                    raw_html = ""
-                                    for part in msg.walk():
-                                        if part.get_content_type() == "text/html":
-                                            payload = part.get_payload(decode=True)
-                                            if payload:
-                                                raw_html += payload.decode(part.get_content_charset() or "utf-8", errors="replace")
-                                    
                                     body = self.get_text(msg)
-                                    combined = (raw_html + " " + body).replace(" ", "")
+                                    code = None
                                     
-                                    regex_rule = r'(?<!\d)(\d{8})(?!\d)' if force_8_digits else r'(?<!\d)(\d{6})(?!\d)'
-                                    match = re.search(regex_rule, combined)
-                                    if match:
-                                        self.seen_uids.add(uid_bytes) # Mark email as processed
-                                        return match.group(1)
+                                    if force_8_digits:
+                                        match_8 = re.search(r'(?<!\d)(\d{8})(?!\d)', body.replace(" ", ""))
+                                        if match_8: code = match_8.group(1)
+                                    else:
+                                        match_sub = re.search(r'(?<!\d)(\d{6})(?!\d)', subject)
+                                        if match_sub:
+                                            code = match_sub.group(1)
+                                        else:
+                                            safe_text = body.lower().replace(target_email.lower(), "")
+                                            match_body = re.search(r'(?<!\d)(\d{6})(?!\d)', safe_text.replace(" ", ""))
+                                            if match_body: code = match_body.group(1)
+
+                                    if code:
+                                        self.seen_uids.add(uid_bytes) 
+                                        return code
             except Exception: pass
             time.sleep(random.uniform(6.0, 10.0)) 
         return None
@@ -572,7 +574,7 @@ class HotmailAPIService:
         self.data_line = data_line.strip()
         self.api_mode = api_mode.strip()
         self.email = self.data_line.split('|')[0] if '|' in self.data_line else self.data_line
-        self.seen_msg_ids = set() # Track by unique message ID, not code text!
+        self.seen_msg_ids = set() # Phân biệt thư theo ID để không bị kẹt khi có nhiều mã 6 số giống nhau
         self.proxy = proxy
         self._init_session()
 
@@ -591,6 +593,7 @@ class HotmailAPIService:
         })
 
     def init_baseline(self):
+        # Hàm này chỉ chạy 1 lần ở đầu đăng ký để bỏ qua các thư cũ
         payload = {"mode": self.api_mode, "data": self.data_line}
         time.sleep(random.uniform(1.0, 3.0)) 
         
@@ -603,7 +606,7 @@ class HotmailAPIService:
                         messages = data_array[0].get("messages", [])
                         for msg in messages:
                             msg_id = str(msg.get("id", msg.get("uid", "")))
-                            if not msg_id: # Fallback hash if API has no ID
+                            if not msg_id: 
                                 msg_id = hashlib.md5(str(msg.get("message", "")).encode()).hexdigest()
                             self.seen_msg_ids.add(msg_id)
                     break 
@@ -641,7 +644,7 @@ class HotmailAPIService:
                             messages = account_data.get("messages", [])
                             msg_info = f"Tìm thấy {len(messages)} thư."
                             if msg_info != last_logged:
-                                print(f"{Colors.color_text(f'[API Smail1s] {msg_info} Đang MỞ SÂU NỘI DUNG THƯ để đọc mã...', Colors.INFO)}")
+                                print(f"{Colors.color_text(f'[API Smail1s] {msg_info} Đang check từng thư lấy mã...', Colors.INFO)}")
                                 last_logged = msg_info
                                 
                             for msg in messages:
@@ -649,7 +652,7 @@ class HotmailAPIService:
                                 if not msg_id:
                                     msg_id = hashlib.md5(str(msg.get("message", "")).encode()).hexdigest()
                                 
-                                # BỎ QUA EMAIL NẾU ĐÃ QUÉT TRƯỚC ĐÓ!
+                                # BỎ QUA EMAIL NẾU ID ĐÃ NẰM TRONG BLACKLIST (ĐÃ QUÉT)!
                                 if msg_id in self.seen_msg_ids:
                                     continue
                                 
@@ -663,19 +666,27 @@ class HotmailAPIService:
                                     is_security_mail = any(kw in subject for kw in ["security", "bảo mật", "verify", "xác minh", "code", "mã", "factor"])
                                 
                                 if is_ig and is_security_mail:
-                                    clean_text = re.sub(r'<[^>]+>', ' ', raw_msg).replace(" ", "")
                                     code = None
                                     
                                     if force_8_digits:
+                                        clean_text = re.sub(r'<[^>]+>', ' ', raw_msg).replace(" ", "")
                                         match_8 = re.search(r'(?<!\d)(\d{8})(?!\d)', clean_text)
                                         if match_8: code = match_8.group(1)
                                     else:
-                                        match_6 = re.search(r'(?<!\d)(\d{6})(?!\d)', clean_text)
-                                        if match_6: code = match_6.group(1)
+                                        # TUYỆT CHIÊU CHỐNG BỐC NHẦM TÊN EMAIL: Ưu tiên Subject trước
+                                        match_sub = re.search(r'(?<!\d)(\d{6})(?!\d)', subject)
+                                        if match_sub:
+                                            code = match_sub.group(1)
+                                        else:
+                                            # Nếu không có ở Subject, thay thế Tên Email bằng rỗng rồi mới quét Body
+                                            safe_msg = raw_msg.lower().replace(self.email.lower(), "")
+                                            clean_text = re.sub(r'<[^>]+>', ' ', safe_msg).replace(" ", "")
+                                            match_6 = re.search(r'(?<!\d)(\d{6})(?!\d)', clean_text)
+                                            if match_6: code = match_6.group(1)
                                     
                                     if code:
                                         self.seen_msg_ids.add(msg_id) # Lưu ID thư lại để không lấy trùng lần sau
-                                        print(f"{Colors.color_text(f'[API Smail1s] ĐÃ BẮT ĐƯỢC MÃ CHUẨN MỚI NHẤT: {code}', Colors.SUCCESS)}")
+                                        print(f"{Colors.color_text(f'[API Smail1s] ĐÃ BẮT ĐƯỢC MÃ CHUẨN: {code}', Colors.SUCCESS)}")
                                         return code
                 else:
                     status_err = f"Lỗi HTTP {response.status_code}"
@@ -1059,7 +1070,7 @@ class starts(threading.Thread):
                     if self.mode in ["3", "4"] and imap_service:
                         uid_moc = imap_service.get_latest_uid()
                     elif self.mode == "5" and hotmail_service:
-                        print(f"{Colors.color_text(f'[{self.thread_id}] Đang quét hộp thư để loại trừ mã cũ...', Colors.INFO)}")
+                        print(f"{Colors.color_text(f'[{self.thread_id}] Khởi tạo mốc hộp thư để tránh đọc thư cũ...', Colors.INFO)}")
                         hotmail_service.init_baseline()
 
                     print(f"{Colors.color_text(f'[{self.thread_id}] Cuộn trang xuống cuối để tìm nút Gửi...', Colors.INFO)}")
@@ -1210,13 +1221,14 @@ class starts(threading.Thread):
                         else:
                             print(f"{Colors.color_text(f'[{self.thread_id}] Lần {attempt+1}: Đang chờ lấy mã OTP từ Email...', Colors.INFO)}")
 
+                        # Tăng timeout lấy OTP để kiên nhẫn hơn
                         timeout_per_attempt = 100 
                         if self.mode == "1" or (self.mode == "2" and mail_service and mail_service.token):
                             otp_code = mail_service.get_otp_code(timeout=timeout_per_attempt, force_8_digits=False)
                         elif self.mode in ["3", "4"]:
                             otp_code = imap_service.get_otp_code(target_email=used_email, since_uid=uid_moc, timeout=timeout_per_attempt, force_8_digits=False)
                         elif self.mode == "5":
-                            otp_code = hotmail_service.get_otp_code(timeout=120, force_8_digits=False) 
+                            otp_code = hotmail_service.get_otp_code(timeout=100, force_8_digits=False) 
                     
                     if otp_code:
                         if self.mode in ["3", "4", "5"]:
@@ -1947,4 +1959,4 @@ if __name__ == "__main__":
     except KeyboardInterrupt:
         STOP_EVENT.set() 
         built_in_print(f"\n{Colors.ERROR}Đang buộc dừng các luồng...{Colors.RESET}")
-        sys.exit(0)
+        sys.exit(0)v
