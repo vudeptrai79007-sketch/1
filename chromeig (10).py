@@ -1,5 +1,9 @@
+# language: Python, file: auto_reg_ig.py
 # --- SHIM CHO PYTHON 3.12+ (Khắc phục hoàn toàn lỗi thiếu distutils và .version) ---
 import sys
+import socket
+import select
+import base64
 import types
 import re
 if 'distutils' not in sys.modules:
@@ -45,9 +49,7 @@ if 'distutils' not in sys.modules:
 import os
 import time
 import threading
-import sys
 import random
-import re
 from datetime import datetime
 import uuid
 import imaplib
@@ -56,6 +58,14 @@ from email.header import decode_header
 import json
 import traceback
 import string
+
+# Tự động cấu hình mã hóa UTF-8 cho Windows Console tránh lỗi UnicodeEncodeError
+if sys.platform.startswith('win'):
+    try:
+        sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+        sys.stderr.reconfigure(encoding='utf-8', errors='replace')
+    except Exception:
+        pass
 
 # ===== THƯ VIỆN CHROME CHO PC =====
 try:
@@ -87,6 +97,9 @@ TYPE_LOCK = threading.Lock()
 SUBMIT_LOCK = threading.Lock() 
 CONFIG_FILE = "config_gmail.json"
 BASE_YEAR = random.randint(1995, 2005)
+
+# Danh sách lưu toàn bộ Trình duyệt để hỏi đóng vào cuối cùng
+ALL_DRIVERS = []
 
 # --- CƠ CHẾ ĐÓNG BĂNG MÀN HÌNH CHỐNG TRÔI LỆNH TRONG ĐA LUỒNG ---
 built_in_print = print
@@ -133,7 +146,7 @@ def banner():
 ╚██████╔╝██║  ██║██║  ██║╚██████╔╝██║ ╚═╝ ██║███████╗
  ╚═════╝ ╚═╝  ╚═╝╚═╝  ╚═╝ ╚═════╝ ╚═╝    ╚═╝╚══════╝
 {Colors.RESET}""")
-    built_in_print(f"{Colors.INFO}Phiên Bản: v14.4 (LƯU THƯ MỤC AVATAR - HỎI DÙNG LẠI (y/n)){Colors.RESET}")
+    built_in_print(f"{Colors.INFO}Phiên Bản: v14.4 (LƯU THƯ MỤC AVATAR & PROXY TÍCH HỢP){Colors.RESET}")
     built_in_print(f"{Colors.LINE}{'─'*70}{Colors.RESET}\n")
 
 def load_config():
@@ -188,17 +201,172 @@ def VietnameseNameGenerator():
     
     return full_name, username
 
+# ==================== HỆ THỐNG PROXY ====================
+def parse_proxy(proxy_str):
+    if not proxy_str:
+        return None
+    p_str = str(proxy_str).strip()
+    if not p_str:
+        return None
+    for proto in ["http://", "https://", "socks5://", "socks4://"]:
+        if p_str.lower().startswith(proto):
+            p_str = p_str[len(proto):]
+            break
+
+    if "@" in p_str:
+        try:
+            auth_part, host_part = p_str.split("@", 1)
+            u, pwd = auth_part.split(":", 1)
+            ip, port = host_part.split(":", 1)
+            return {"ip": ip.strip(), "port": port.strip(), "user": u.strip(), "pass": pwd.strip()}
+        except Exception:
+            pass
+
+    parts = [x.strip() for x in p_str.split(":") if x.strip()]
+    if len(parts) == 2:
+        return {"ip": parts[0], "port": parts[1], "user": None, "pass": None}
+    elif len(parts) == 4:
+        if parts[1].isdigit() and not parts[2].isdigit():
+            return {"ip": parts[0], "port": parts[1], "user": parts[2], "pass": parts[3]}
+        elif parts[3].isdigit():
+            return {"ip": parts[2], "port": parts[3], "user": parts[0], "pass": parts[1]}
+        else:
+            return {"ip": parts[0], "port": parts[1], "user": parts[2], "pass": parts[3]}
+    return None
+
+def format_proxy(proxy_str):
+    parsed = parse_proxy(proxy_str)
+    if not parsed:
+        return None
+    if parsed["user"] and parsed["pass"]:
+        formatted = f"http://{parsed['user']}:{parsed['pass']}@{parsed['ip']}:{parsed['port']}"
+    else:
+        formatted = f"http://{parsed['ip']}:{parsed['port']}"
+    return {"http": formatted, "https": formatted}
+
+class LocalProxyForwarder:
+    def __init__(self, remote_ip, remote_port, username=None, password=None):
+        self.remote_ip = remote_ip
+        self.remote_port = int(remote_port)
+        self.username = username
+        self.password = password
+        self.server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        self.server_socket.bind(('127.0.0.1', 0))
+        self.local_port = self.server_socket.getsockname()[1]
+        self.running = True
+        self.thread = threading.Thread(target=self._run, daemon=True)
+        self.thread.start()
+
+    def _run(self):
+        self.server_socket.listen(100)
+        while self.running:
+            try:
+                client_sock, _ = self.server_socket.accept()
+                threading.Thread(target=self._handle_client, args=(client_sock,), daemon=True).start()
+            except Exception:
+                break
+
+    def _handle_client(self, client_sock):
+        try:
+            crlf2 = bytes([13, 10, 13, 10])
+            crlf = bytes([13, 10])
+            req = b""
+            while crlf2 not in req:
+                chunk = client_sock.recv(4096)
+                if not chunk:
+                    client_sock.close()
+                    return
+                req += chunk
+
+            header_part, rest = req.split(crlf2, 1)
+            lines = header_part.split(crlf)
+            first_line = lines[0].decode("utf-8", "ignore")
+            is_connect = first_line.startswith("CONNECT")
+
+            remote_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            remote_sock.settimeout(15)
+            remote_sock.connect((self.remote_ip, self.remote_port))
+
+            auth_header = b""
+            if self.username and self.password:
+                cred = f"{self.username}:{self.password}"
+                b64_cred = base64.b64encode(cred.encode()).decode()
+                auth_header = f"Proxy-Authorization: Basic {b64_cred}".encode() + crlf
+
+            if is_connect:
+                connect_req = lines[0] + crlf
+                for line in lines[1:]:
+                    if not line.lower().startswith(b"proxy-authorization"):
+                        connect_req += line + crlf
+                if auth_header:
+                    connect_req += auth_header
+                connect_req += crlf
+                remote_sock.sendall(connect_req)
+
+                resp = b""
+                while crlf2 not in resp:
+                    c = remote_sock.recv(4096)
+                    if not c:
+                        break
+                    resp += c
+
+                resp_first_line = resp.split(crlf)[0] if resp else b""
+                if b"200" in resp_first_line:
+                    client_sock.sendall(b"HTTP/1.1 200 Connection established" + crlf2)
+                else:
+                    client_sock.sendall(resp)
+                    client_sock.close()
+                    remote_sock.close()
+                    return
+            else:
+                new_req = lines[0] + crlf
+                for line in lines[1:]:
+                    if not line.lower().startswith(b"proxy-authorization"):
+                        new_req += line + crlf
+                if auth_header:
+                    new_req += auth_header
+                new_req += crlf + rest
+                remote_sock.sendall(new_req)
+
+            remote_sock.settimeout(None)
+            client_sock.settimeout(None)
+            sockets = [client_sock, remote_sock]
+            while self.running:
+                r, _, _ = select.select(sockets, [], sockets, 30)
+                if not r:
+                    break
+                for s in r:
+                    other = remote_sock if s is client_sock else client_sock
+                    data = s.recv(16384)
+                    if not data:
+                        return
+                    other.sendall(data)
+        except Exception:
+            pass
+        finally:
+            try: client_sock.close()
+            except: pass
+            try: remote_sock.close()
+            except: pass
+
+    def close(self):
+        self.running = False
+        try: self.server_socket.close()
+        except: pass
+
 # ==================== CÁC CLASS XỬ LÝ EMAIL ====================
 class MailService:
-    def __init__(self):
+    def __init__(self, proxy=None):
         self.base_url = "https://api.mail.tm"
         self.token = None
         self.domain = None
         self.email_address = None
+        self.proxy = proxy
         
     def get_domain(self):
         try:
-            r = requests.get(f"{self.base_url}/domains", timeout=10)
+            r = requests.get(f"{self.base_url}/domains", timeout=10, proxies=self.proxy)
             if r.status_code == 200: 
                 self.domain = r.json()['hydra:member'][0]['domain']
                 return self.domain
@@ -208,7 +376,7 @@ class MailService:
         if not self.domain and not self.get_domain(): return None
         name = address if address else f"user_{uuid.uuid4().hex[:8]}"
         try:
-            r = requests.post(f"{self.base_url}/accounts", json={"address": f"{name}@{self.domain}", "password": "TempPass123!"}, timeout=10)
+            r = requests.post(f"{self.base_url}/accounts", json={"address": f"{name}@{self.domain}", "password": "TempPass123!"}, timeout=10, proxies=self.proxy)
             if r.status_code == 201: 
                 self.email_address = r.json()['address']
                 return self.email_address
@@ -217,7 +385,7 @@ class MailService:
     def authenticate(self, email=None, password="TempPass123!"):
         if email: self.email_address = email
         try:
-            r = requests.post(f"{self.base_url}/token", json={"address": self.email_address, "password": password}, timeout=10)
+            r = requests.post(f"{self.base_url}/token", json={"address": self.email_address, "password": password}, timeout=10, proxies=self.proxy)
             if r.status_code == 200: 
                 self.token = r.json()['token']
                 return True
@@ -231,7 +399,7 @@ class MailService:
         while time.time() - start_time < timeout:
             if STOP_EVENT.is_set(): return None
             try:
-                r = requests.get(f"{self.base_url}/messages", headers=headers, timeout=10)
+                r = requests.get(f"{self.base_url}/messages", headers=headers, timeout=10, proxies=self.proxy)
                 if r.status_code == 200:
                     for msg in r.json().get('hydra:member', []):
                         sub = str(msg.get('subject', '')).lower()
@@ -239,7 +407,7 @@ class MailService:
                         if 'instagram' in sub or 'instagram' in frm:
                             if msg.get('id') != last_id:
                                 last_id = msg['id']
-                                detail = requests.get(f"{self.base_url}/messages/{last_id}", headers=headers, timeout=10).json()
+                                detail = requests.get(f"{self.base_url}/messages/{last_id}", headers=headers, timeout=10, proxies=self.proxy).json()
                                 text = detail.get('text', '') or re.sub('<[^<]+?>', '', str(detail.get('html', '')))
                                 match = re.search(r'(?<!\d)(\d{6})(?!\d)', text)
                                 if match: return match.group(1)
@@ -349,7 +517,7 @@ class GmailIMAPService:
 
 # ==================== DỊCH VỤ HOTMAIL/OUTLOOK API (ĐÃ TỐI ƯU ĐA LUỒNG) ====================
 class HotmailAPIService:
-    def __init__(self, data_line, api_mode):
+    def __init__(self, data_line, api_mode, proxy=None):
         self.url = "https://smail1s.com/get_messages"
         self.data_line = data_line.strip()
         self.api_mode = api_mode.strip()
@@ -357,6 +525,8 @@ class HotmailAPIService:
         self.seen_codes = set()
         
         self.session = requests.Session()
+        if proxy:
+            self.session.proxies.update(proxy)
         self.session.headers.update({
             'Content-Type': 'application/json',
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
@@ -547,7 +717,7 @@ def process_file_input(config_key, default_prompt):
 
 # ==================== MAIN THREAD ====================
 class starts(threading.Thread):
-    def __init__(self, thread_id, mode, account_count, data_source, manual_password=None, base_gmail=None, app_password=None, api_mode=None, avatar_folder=""):
+    def __init__(self, thread_id, mode, account_count, data_source, manual_password=None, base_gmail=None, app_password=None, api_mode=None, avatar_folder="", proxies_list=None):
         super().__init__()
         self.thread_id = f"Tab-{thread_id}"
         self.mode = mode
@@ -558,9 +728,24 @@ class starts(threading.Thread):
         self.app_password = app_password
         self.api_mode = api_mode
         self.avatar_folder = avatar_folder
+        self.proxies_list = proxies_list or []
     
     def run(self):
         global BASE_YEAR
+
+        raw_proxy = None
+        req_proxy = None
+        if self.proxies_list:
+            thread_idx_for_proxy = int(self.thread_id.split("-")[1]) - 1
+            raw_proxy = self.proxies_list[thread_idx_for_proxy % len(self.proxies_list)]
+            req_proxy = format_proxy(raw_proxy)
+            p_info = parse_proxy(raw_proxy)
+            if p_info and p_info.get("user"):
+                print(f"{Colors.color_text(f'[{self.thread_id}] Đã gán Proxy (Có User/Pass): {p_info["ip"]}:{p_info["port"]} (User: {p_info["user"]})', Colors.WARNING)}")
+            elif p_info:
+                print(f"{Colors.color_text(f'[{self.thread_id}] Đã gán Proxy (IP:Port): {p_info["ip"]}:{p_info["port"]}', Colors.WARNING)}")
+            else:
+                print(f"{Colors.color_text(f'[{self.thread_id}] Đã gán Proxy: {raw_proxy}', Colors.WARNING)}")
         
         def create_one_account(account_index):
             global BASE_YEAR
@@ -578,7 +763,7 @@ class starts(threading.Thread):
             secure_pass = "".join(random.choice(chars) for _ in range(12))
 
             if self.mode == "1":
-                mail_service = MailService()
+                mail_service = MailService(proxy=req_proxy)
                 used_email = mail_service.create_account(username)
                 if not used_email: return False
                 mail_service.authenticate()
@@ -588,7 +773,7 @@ class starts(threading.Thread):
                     if len(self.data_source) == 0: return False
                     used_email = self.data_source.pop(0)
                 if "mail.tm" in used_email.lower():
-                    mail_service = MailService()
+                    mail_service = MailService(proxy=req_proxy)
                     pass_to_use = self.manual_password if self.manual_password else "TempPass123!"
                     mail_service.authenticate(used_email, pass_to_use)
                 
@@ -609,7 +794,7 @@ class starts(threading.Thread):
                     if len(self.data_source) == 0: return False
                     data_line = self.data_source.pop(0)
                 used_email = data_line.split('|')[0]
-                hotmail_service = HotmailAPIService(data_line, self.api_mode)
+                hotmail_service = HotmailAPIService(data_line, self.api_mode, proxy=req_proxy)
 
             print(f"{Colors.color_text(f'[{self.thread_id}] Đang dùng Email: {used_email}', Colors.INFO)}")
 
@@ -647,9 +832,20 @@ class starts(threading.Thread):
                 options.add_argument('--disable-gpu')
                 options.add_argument('--disable-software-rasterizer')
                 options.add_argument('--disable-dev-shm-usage')
+
+                forwarder = None
+                if raw_proxy:
+                    parsed_p = parse_proxy(raw_proxy)
+                    if parsed_p:
+                        if parsed_p.get("user") and parsed_p.get("pass"):
+                            forwarder = LocalProxyForwarder(parsed_p["ip"], parsed_p["port"], parsed_p["user"], parsed_p["pass"])
+                            options.add_argument(f'--proxy-server=http://127.0.0.1:{forwarder.local_port}')
+                        else:
+                            options.add_argument(f'--proxy-server=http://{parsed_p["ip"]}:{parsed_p["port"]}')
                 
                 with BROWSER_LOCK:
                     driver = uc.Chrome(options=options)
+                    ALL_DRIVERS.append((self.thread_id, driver))
                     try:
                         driver.set_window_size(win_width, win_height)
                         driver.set_window_position(x_pos, y_pos)
@@ -838,6 +1034,7 @@ class starts(threading.Thread):
                     else:
                         print(f"{Colors.color_text(f'[{self.thread_id}] Lỗi: Giao diện IG bị thay đổi!', Colors.ERROR)}")
                         ask_before_close(driver, self.thread_id)
+                        if forwarder: forwarder.close()
                         return False
                     
                     print(f"{Colors.color_text(f'[{self.thread_id}] Đã điền xong. Ngâm form 10s trước khi bấm nút Đăng Ký...', Colors.WARNING)}")
@@ -943,6 +1140,7 @@ class starts(threading.Thread):
                     print(f"{Colors.color_text(f'[{self.thread_id}] Lỗi quá trình điền form: {e}', Colors.ERROR)}")
                     time.sleep(5)
                     ask_before_close(driver, self.thread_id)
+                    if forwarder: forwarder.close()
                     return False
 
                 # ==================== NHẬN DIỆN Ô NHẬP OTP ĐA LỚP ====================
@@ -974,6 +1172,7 @@ class starts(threading.Thread):
                     print(f"{Colors.color_text(f'[{self.thread_id}] Lỗi: Không thể tìm thấy ô nhập OTP trên giao diện.', Colors.ERROR)}")
                     time.sleep(5)
                     ask_before_close(driver, self.thread_id)
+                    if forwarder: forwarder.close()
                     return False
                 
                 print(f"{Colors.color_text(f'[{self.thread_id}] Đã nhận diện được ô nhập OTP thành công!', Colors.SUCCESS)}")
@@ -1006,6 +1205,7 @@ class starts(threading.Thread):
                     print(f"{Colors.color_text(f'[{self.thread_id}] Lỗi: Không lấy được mã OTP trong thời gian chờ. Bỏ qua acc!', Colors.ERROR)}")
                     time.sleep(5)
                     ask_before_close(driver, self.thread_id)
+                    if forwarder: forwarder.close()
                     return False
                 
                 if self.mode in ["3", "4", "5"]:
@@ -1138,6 +1338,7 @@ class starts(threading.Thread):
                     print(f"{Colors.color_text(f'[{self.thread_id}] LỖI: TÀI KHOẢN ĐÃ DIE / CHECKPOINT!', Colors.ERROR)}")
                     print(f"{Colors.color_text('─'*70, Colors.LINE)}\n")
                     ask_before_close(driver, self.thread_id)
+                    if forwarder: forwarder.close()
                     return "DEAD" 
 
                 print(f"{Colors.color_text(f'[{self.thread_id}] TÀI KHOẢN SỐNG! Chuẩn bị up Avatar...', Colors.SUCCESS)}")
@@ -1240,11 +1441,13 @@ class starts(threading.Thread):
                 save_account(self.thread_id, used_email, secure_pass, username, full_name, f"mode_{self.mode}", cookie_str)
                 
                 ask_before_close(driver, self.thread_id)
+                if forwarder: forwarder.close()
                 return True
                 
             except Exception as e:
                 print(f"{Colors.color_text(f'[{self.thread_id}] Gặp Lỗi Ngoại Lệ: {e}', Colors.ERROR)}")
                 ask_before_close(driver, self.thread_id)
+                if forwarder: forwarder.close()
                 return False
         
         # --- VÒNG LẶP ĐÃ ĐƯỢC CHẶN LẤY THÊM MAIL (DỪNG LUỒNG NẾU ACC DIE HOẶC LỖI) ---
@@ -1350,6 +1553,14 @@ if __name__ == "__main__":
             config_data["last_avatar_folder"] = avatar_folder_input
             save_config(config_data)
 
+    built_in_print(f"\n{Colors.KEY}Nhập đường dẫn file Proxy (.txt) (Hỗ trợ IP:Port, IP:Port:User:Pass, User:Pass@IP:Port) [Bỏ trống nếu không dùng]: {Colors.RESET}", end="")
+    proxy_file_input = input().strip().strip('"').strip("'")
+    proxies_list = []
+    if proxy_file_input and os.path.isfile(proxy_file_input):
+        with open(proxy_file_input, 'r', encoding='utf-8') as f_proxy:
+            proxies_list = [line.strip() for line in f_proxy if line.strip()]
+        built_in_print(f"{Colors.SUCCESS}Đã tải {len(proxies_list)} Proxy từ tệp.{Colors.RESET}")
+
     built_in_print(f"\n{Colors.KEY}Nhập số luồng (số tab Chrome chạy cùng lúc): {Colors.RESET}", end="")
     threads_count = int(input().strip())
     
@@ -1358,7 +1569,7 @@ if __name__ == "__main__":
     
     threads = []
     for i in range(threads_count):
-        t = starts(i+1, mode, accs_per_thread, data_source, manual_password, base_gmail, app_password, api_mode, avatar_folder_input)
+        t = starts(i+1, mode, accs_per_thread, data_source, manual_password, base_gmail, app_password, api_mode, avatar_folder_input, proxies_list)
         threads.append(t)
         
     for t in threads: t.start()
