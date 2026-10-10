@@ -174,33 +174,33 @@ def save_config(data):
     except Exception: pass
 
 def save_account(thread_id, email_str, password, username, full_name, mode="auto", cookie="", two_fa=""):
-    folder_name = "Instagram_reg_PC"
-    if not os.path.exists(folder_name): os.makedirs(folder_name)
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    filename = f"{folder_name}/account_{thread_id}_{timestamp}.txt"
+    # Lấy vị trí thư mục chính xác nơi đang chứa file code
+    current_dir = os.path.dirname(os.path.abspath(__file__))
     
-    content = f"""========================================
-THÔNG TIN TÀI KHOẢN INSTAGRAM (PC CHROME)
-========================================
-Ngày tạo: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
-Luồng:    {thread_id}
-Chế độ:   {mode}
-----------------------------------------
-Email/SĐT: {email_str}
-Password: {password}
-Username: {username}
-Họ tên:   {full_name}
-2FA Key:  {two_fa if two_fa else 'Không có'}
-Cookie:   {cookie}
-----------------------------------------
-Định dạng nhanh: {email_str}|{password}|{username}|{two_fa}|{cookie}
-========================================
-"""
+    # Tạo đường dẫn cho file TỔNG nằm ngay sát cạnh file code
+    file_tong = os.path.join(current_dir, "danh_sach_acc_ig.txt")
+    
+    # Tạo đường dẫn cho thư mục chứa các file lẻ
+    folder_name = os.path.join(current_dir, "Instagram_reg_PC")
+    if not os.path.exists(folder_name): os.makedirs(folder_name)
+    
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    filename = os.path.join(folder_name, f"account_{thread_id}_{timestamp}.txt")
+    
+    # Định dạng lưu acc (Ví dụ: Email|Pass|User|2FA|Cookie)
+    dinh_dang_luu = f"{email_str}|{password}|{username}|{two_fa}|{cookie}\n"
+    
     try:
-        with open(filename, 'w', encoding='utf-8') as f: f.write(content)
-        with open(f"{folder_name}/ALL_ACCOUNTS.txt", 'a', encoding='utf-8') as f: 
-            f.write(f"{email_str}|{password}|{username}|{full_name}|{two_fa}|{cookie}\n")
-    except Exception: pass
+        # GHI VÀO FILE TỔNG
+        with open(file_tong, 'a', encoding='utf-8') as f: 
+            f.write(dinh_dang_luu)
+            
+        # Ghi file lẻ (bạn có thể xóa đoạn này nếu thấy rác máy)
+        content = f"Luồng: {thread_id}\nEmail: {email_str}\nPass: {password}\nUser: {username}\n2FA: {two_fa}\nCookie: {cookie}\n"
+        with open(filename, 'w', encoding='utf-8') as f: 
+            f.write(content)
+    except Exception as e: 
+        print(f"Lỗi khi lưu file: {e}")
 
 def VietnameseNameGenerator():
     first = random.choice(["Nguyen", "Tran", "Le", "Pham", "Hoang", "Huynh", "Vu", "Dang", "Bui", "Do"])
@@ -214,7 +214,7 @@ def VietnameseNameGenerator():
     
     return full_name, username
 
-# >>> HỆ THỐNG XỬ LÝ PROXY ĐA NĂNG (IP:PORT, IP:PORT:USER:PASS, USER:PASS@IP:PORT) <<<
+# >>> HỆ THỐNG XỬ LÝ PROXY ĐA NĂNG <<<
 def parse_proxy(proxy_str):
     if not proxy_str: return None
     p_str = str(proxy_str).strip()
@@ -417,7 +417,8 @@ class MailService:
                             
                         subject = str(msg.get('subject', '')).lower()
                         frm = str(msg.get('from', {}).get('address', '')).lower()
-                        if 'instagram' in subject or 'instagram' in frm:
+                        # ĐÃ FIX NHẬN DIỆN THƯ CỦA META
+                        if 'instagram' in subject or 'instagram' in frm or 'meta' in subject or 'meta' in frm:
                             detail = requests.get(f"{self.base_url}/messages/{msg_id}", headers=headers, timeout=10, proxies=self.proxy).json()
                             raw_text = detail.get('text', '') or re.sub('<[^<]+?>', ' ', str(detail.get('html', '')))
                             
@@ -427,12 +428,10 @@ class MailService:
                                 match = re.search(r'(?<!\d)(\d{8})(?!\d)', clean_txt)
                                 if match: code = match.group(1)
                             else:
-                                # Ưu tiên lấy từ Subject trước
                                 match_sub = re.search(r'(?<!\d)(\d{6})(?!\d)', subject)
                                 if match_sub:
                                     code = match_sub.group(1)
                                 else:
-                                    # Lọc bỏ email ra khỏi raw_text để tránh bốc nhầm số trong tên email
                                     safe_text = raw_text.lower().replace(str(self.email_address).lower(), "")
                                     match_body = re.search(r'(?<!\d)(\d{6})(?!\d)', safe_text.replace(" ", ""))
                                     if match_body: code = match_body.group(1)
@@ -541,8 +540,9 @@ class GmailIMAPService:
                                 
                                 if target_email.lower() not in to_addr: continue
                                 
-                                is_ig = "instagram" in subject or "instagram" in from_addr
-                                is_security_mail = any(kw in subject for kw in ["security", "bảo mật", "verify", "xác minh", "code", "mã"])
+                                # ĐÃ FIX NHẬN DIỆN THƯ CỦA META
+                                is_ig = "instagram" in subject or "instagram" in from_addr or "meta" in subject or "meta" in from_addr
+                                is_security_mail = any(kw in subject for kw in ["security", "bảo mật", "verify", "xác minh", "code", "mã", "authenticate", "profile"])
                                 
                                 if is_ig and is_security_mail:
                                     body = self.get_text(msg)
@@ -574,7 +574,7 @@ class HotmailAPIService:
         self.data_line = data_line.strip()
         self.api_mode = api_mode.strip()
         self.email = self.data_line.split('|')[0] if '|' in self.data_line else self.data_line
-        self.seen_msg_ids = set() # Phân biệt thư theo ID để không bị kẹt khi có nhiều mã 6 số giống nhau
+        self.seen_msg_ids = set()
         self.proxy = proxy
         self._init_session()
 
@@ -593,7 +593,6 @@ class HotmailAPIService:
         })
 
     def init_baseline(self):
-        # Hàm này chỉ chạy 1 lần ở đầu đăng ký để bỏ qua các thư cũ
         payload = {"mode": self.api_mode, "data": self.data_line}
         time.sleep(random.uniform(1.0, 3.0)) 
         
@@ -652,7 +651,6 @@ class HotmailAPIService:
                                 if not msg_id:
                                     msg_id = hashlib.md5(str(msg.get("message", "")).encode()).hexdigest()
                                 
-                                # BỎ QUA EMAIL NẾU ID ĐÃ NẰM TRONG BLACKLIST (ĐÃ QUÉT)!
                                 if msg_id in self.seen_msg_ids:
                                     continue
                                 
@@ -660,10 +658,11 @@ class HotmailAPIService:
                                 from_sender = str(msg.get("from", "")).lower()
                                 raw_msg = str(msg.get("message", ""))
                                 
-                                is_ig = ("instagram" in subject) or ("instagram" in from_sender)
+                                # ĐÃ FIX NHẬN DIỆN THƯ CỦA META
+                                is_ig = ("instagram" in subject) or ("instagram" in from_sender) or ("meta" in subject) or ("meta" in from_sender)
                                 is_security_mail = True 
                                 if force_8_digits:
-                                    is_security_mail = any(kw in subject for kw in ["security", "bảo mật", "verify", "xác minh", "code", "mã", "factor"])
+                                    is_security_mail = any(kw in subject for kw in ["security", "bảo mật", "verify", "xác minh", "code", "mã", "factor", "authenticate", "profile"])
                                 
                                 if is_ig and is_security_mail:
                                     code = None
@@ -673,19 +672,17 @@ class HotmailAPIService:
                                         match_8 = re.search(r'(?<!\d)(\d{8})(?!\d)', clean_text)
                                         if match_8: code = match_8.group(1)
                                     else:
-                                        # TUYỆT CHIÊU CHỐNG BỐC NHẦM TÊN EMAIL: Ưu tiên Subject trước
                                         match_sub = re.search(r'(?<!\d)(\d{6})(?!\d)', subject)
                                         if match_sub:
                                             code = match_sub.group(1)
                                         else:
-                                            # Nếu không có ở Subject, thay thế Tên Email bằng rỗng rồi mới quét Body
                                             safe_msg = raw_msg.lower().replace(self.email.lower(), "")
                                             clean_text = re.sub(r'<[^>]+>', ' ', safe_msg).replace(" ", "")
                                             match_6 = re.search(r'(?<!\d)(\d{6})(?!\d)', clean_text)
                                             if match_6: code = match_6.group(1)
                                     
                                     if code:
-                                        self.seen_msg_ids.add(msg_id) # Lưu ID thư lại để không lấy trùng lần sau
+                                        self.seen_msg_ids.add(msg_id)
                                         print(f"{Colors.color_text(f'[API Smail1s] ĐÃ BẮT ĐƯỢC MÃ CHUẨN: {code}', Colors.SUCCESS)}")
                                         return code
                 else:
@@ -921,7 +918,6 @@ class starts(threading.Thread):
                     parsed_p = parse_proxy(raw_proxy)
                     if parsed_p:
                         if parsed_p.get("user") and parsed_p.get("pass"):
-                            # Dùng Local Proxy Forwarder để inject User/Pass ngầm, Chrome chạy thẳng cờ --incognito
                             forwarder = LocalProxyForwarder(parsed_p["ip"], parsed_p["port"], parsed_p["user"], parsed_p["pass"])
                             options.add_argument(f'--proxy-server=http://127.0.0.1:{forwarder.local_port}')
                         else:
