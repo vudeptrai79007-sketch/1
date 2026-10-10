@@ -436,9 +436,9 @@ class MailService:
                                     match_body = re.search(r'(?<!\d)(\d{6})(?!\d)', safe_text.replace(" ", ""))
                                     if match_body: code = match_body.group(1)
 
-                            if code:
-                                self.seen_msg_ids.add(msg_id)
-                                return code
+                        if code:
+                            self.seen_msg_ids.add(msg_id)
+                            return code
             except Exception: pass
             time.sleep(random.uniform(6.0, 10.0))
         return None
@@ -1571,12 +1571,14 @@ class starts(threading.Thread):
                             break
                         time.sleep(1.5)
 
-                    # 3. KIỂM TRA EMAIL CỦA BẠN: Chỉ quét thư khi thấy màn hình này và ÉP ĐỌC MÃ 8 CHỮ SỐ
+                    # ========================================================================
+                    # 3. XỬ LÝ MÀN HÌNH "KIỂM TRA EMAIL CỦA BẠN" (BẮT XÁC MINH 8 SỐ NẾU CÓ)
+                    # ========================================================================
                     is_email_check_screen = False
                     for _ in range(6):
                         is_email_check_screen = driver.execute_script("""
                             let txt = (document.body.innerText || document.body.textContent || '').toLowerCase();
-                            return txt.includes('kiểm tra email') || txt.includes('check your email');
+                            return txt.includes('kiểm tra email') || txt.includes('check your email') || txt.includes('mã bảo mật');
                         """)
                         if is_email_check_screen: break
                         time.sleep(1.5)
@@ -1595,8 +1597,7 @@ class starts(threading.Thread):
                             verify_code = autosms_service.get_otp_code(timeout=120)
 
                         if verify_code:
-                            print(f"{Colors.color_text(f'[{self.thread_id}] ĐÃ LẤY ĐƯỢC MÃ 8 SỐ CHUẨN XÁC: {verify_code}', Colors.SUCCESS)}")
-                            
+                            print(f"{Colors.color_text(f'[{self.thread_id}] ĐÃ LẤY ĐƯỢC MÃ 8 SỐ CHUẨN XÁC: {verify_code}. Tiến hành điền...', Colors.SUCCESS)}")
                             driver.execute_script("""
                                 let val = arguments[0];
                                 let inp = document.querySelector('input');
@@ -1609,6 +1610,7 @@ class starts(threading.Thread):
                             """, verify_code)
                             time.sleep(1.5)
                             
+                            # Bấm Tiếp tục/Xác nhận để vượt qua màn hình 8 số
                             driver.execute_script("""
                                 let btns = Array.from(document.querySelectorAll('button, div[role="button"]'));
                                 for(let b of btns){
@@ -1618,104 +1620,109 @@ class starts(threading.Thread):
                                     }
                                 }
                             """)
-                            time.sleep(6) 
+                            print(f"{Colors.color_text(f'[{self.thread_id}] Đã gửi mã 8 số! Chờ chuyển sang trang lấy QR Code 2FA...', Colors.INFO)}")
+                            time.sleep(8) 
                         else:
-                            print(f"{Colors.color_text(f'[{self.thread_id}] Không nhận được mã 8 số từ email/sim!', Colors.ERROR)}")
-
-                    # 4. Chọn phương thức "Authentication app" / "Ứng dụng xác thực" & bấm Tiếp tục (Continue / Next)
-                    print(f"{Colors.color_text(f'[{self.thread_id}] Chọn phương thức Authentication App...', Colors.INFO)}")
+                            print(f"{Colors.color_text(f'[{self.thread_id}] Không nhận được mã 8 số từ email/sim! Bỏ qua 2FA.', Colors.ERROR)}")
+                    
+                    # ========================================================================
+                    # 4. ĐẢM BẢO CHỌN PHƯƠNG THỨC "AUTHENTICATION APP" (Nếu nó chưa tự nhảy)
+                    # ========================================================================
                     try:
-                        driver.execute_script("""
+                        clicked_app = driver.execute_script("""
                             let all = Array.from(document.querySelectorAll('*'));
                             for(let el of all) {
                                 let txt = (el.innerText || el.textContent || '').trim().toLowerCase();
-                                if(txt.includes('authentication app') || txt.includes('ứng dụng xác thực') || txt.includes('duo mobile') || txt.includes('google authenticator')) {
+                                if(txt.includes('authentication app') || txt.includes('ứng dụng xác thực') || txt.includes('duo mobile')) {
                                     let clickable = el.closest('div[role="button"], label, div[tabindex], button, [role="radio"]') || el;
                                     clickable.click();
-                                    return 'CLICKED_APP';
+                                    return true;
                                 }
                             }
-                            return 'NOT_FOUND';
+                            return false;
                         """)
-                        time.sleep(2)
-
-                        # Bấm nút Continue / Tiếp tục / Next
-                        for _ in range(3):
-                            clicked_continue = driver.execute_script("""
+                        if clicked_app:
+                            time.sleep(2)
+                            # Bấm Tiếp tục
+                            driver.execute_script("""
                                 let btns = Array.from(document.querySelectorAll('button, div[role="button"], span'));
                                 for(let b of btns) {
                                     let txt = (b.innerText || b.textContent || '').trim().toLowerCase();
                                     if(['continue', 'next', 'tiếp tục', 'tiếp'].includes(txt)) {
                                         let clickable = b.closest('button, [role="button"]') || b;
-                                        let rect = clickable.getBoundingClientRect();
-                                        if(rect.width > 0 && rect.height > 0 && !clickable.disabled) {
-                                            clickable.click();
-                                            return 'CLICKED';
-                                        }
+                                        if(!clickable.disabled) { clickable.click(); return; }
                                     }
                                 }
-                                return 'NOT_FOUND';
                             """)
-                            if clicked_continue == 'CLICKED':
-                                time.sleep(5)
-                                break
-                            time.sleep(2)
-                    except Exception: pass
+                            time.sleep(5)
+                    except: pass
 
-                    # 5. Trích xuất mã Secret Key CHUẨN XÁC (Loại bỏ triệt để chuỗi rác Meta)
-                    print(f"{Colors.color_text(f'[{self.thread_id}] Đang tìm và bóc tách Secret Key 2FA...', Colors.INFO)}")
-                    for attempt in range(8):
+                    # ========================================================================
+                    # 5. TRÍCH XUẤT SECRET KEY VÀ NHẬP OTP LÊN MÀN HÌNH "HƯỚNG DẪN THIẾT LẬP"
+                    # ========================================================================
+                    print(f"{Colors.color_text(f'[{self.thread_id}] Đang tìm và bóc tách Secret Key 2FA bằng Clipboard Hook...', Colors.INFO)}")
+                    
+                    # Bơm Hook chặn sự kiện Clipboard
+                    driver.execute_script("""
+                        window.hooked2FAKey = "";
+                        if (navigator.clipboard && !window.clipboardHooked) {
+                            const originalWriteText = navigator.clipboard.writeText;
+                            navigator.clipboard.writeText = function(text) {
+                                let clean = (text || '').replace(/\\s+/g, '').toUpperCase();
+                                if (clean.length >= 16 && /^[A-Z2-7]+$/.test(clean)) {
+                                    window.hooked2FAKey = clean;
+                                }
+                                return originalWriteText.apply(this, arguments);
+                            };
+                            window.clipboardHooked = true;
+                        }
+                    """)
+
+                    for attempt in range(6):
+                        if STOP_EVENT.is_set(): return False
+                        
+                        # Click ép các nút "Sao chép khóa" hoặc "Copy key"
                         driver.execute_script("""
-                            let els = Array.from(document.querySelectorAll('button, div[role="button"], span, a'));
+                            let els = Array.from(document.querySelectorAll('span, div, button, a'));
                             for(let el of els) {
                                 let txt = (el.innerText || el.textContent || '').trim().toLowerCase();
-                                if(txt.includes("can't scan") || txt.includes("cant scan") || txt.includes("không thể quét") || txt.includes("không quét được") || txt.includes("copy key") || txt.includes("sao chép")) {
-                                    el.click();
-                                    return;
+                                if(txt === 'sao chép khóa' || txt === 'copy key' || txt.includes('sao chép') || txt.includes("can't scan") || txt.includes("không quét được")) {
+                                    try { el.click(); } catch(e) {}
                                 }
                             }
                         """)
                         time.sleep(2)
 
-                        # 1) Thử bóc tách từ các thẻ text
+                        # Check Hook Clipboard
+                        key_from_clipboard = driver.execute_script("return window.hooked2FAKey;")
+                        if key_from_clipboard and len(key_from_clipboard) >= 16:
+                            two_fa_secret = key_from_clipboard
+                            break
+
+                        # Fallback Regex quét Text
                         extracted_key = driver.execute_script("""
-                            let spans = Array.from(document.querySelectorAll('span, div, p, code'));
-                            for (let el of spans) {
-                                let t = (el.innerText || el.textContent || '').trim();
-                                let clean = t.replace(/\\s+/g, '').toUpperCase();
-                                if (/^[A-Z2-7]{32}$/.test(clean)) {
-                                    if (!clean.includes('FXAC') && !clean.includes('INFRA') && !clean.includes('VIEWER') && !clean.includes('META') && !clean.includes('ACCOUNT')) {
-                                        return clean;
-                                    }
-                                }
+                            let text = document.body.innerText || "";
+                            let match = text.match(/\\b([A-Z2-7]{4}[\\s-]*){8}\\b/i);
+                            if (match) {
+                                return match[0].replace(/[^A-Z2-7]/gi, '').toUpperCase();
                             }
                             return null;
                         """)
-
-                        if extracted_key:
+                        if extracted_key and len(extracted_key) >= 16:
                             two_fa_secret = extracted_key
                             break
-
-                        # 2) Fallback regex cụm 8 nhóm 4 ký tự (XXXX XXXX XXXX...)
-                        page_text = driver.execute_script("return document.body.innerText || document.body.textContent;")
-                        grouped_match = re.search(r'\b([A-Z2-7]{4}(?:\s+[A-Z2-7]{4}){7})\b', page_text)
-                        if grouped_match:
-                            candidate = re.sub(r'\s+', '', grouped_match.group(1)).upper()
-                            if not any(bad in candidate for bad in ['FXAC', 'INFRA', 'VIEWER']):
-                                two_fa_secret = candidate
-                                break
 
                         time.sleep(2)
 
                     if two_fa_secret:
                         print(f"{Colors.color_text(f'[{self.thread_id}] ĐÃ LẤY CHUẨN XÁC SECRET KEY 2FA: {two_fa_secret}', Colors.SUCCESS)}")
 
-                        # Bấm nút chuyển sang màn nhập 6 số OTP
+                        # Bấm nút màu xanh "Nhập mã"
                         driver.execute_script("""
                             let btns = Array.from(document.querySelectorAll('button, div[role="button"], span'));
                             for(let b of btns) {
                                 let txt = (b.innerText || b.textContent || '').trim().toLowerCase();
-                                if(['next', 'continue', 'tiếp tục', 'tiếp', 'nhập mã', 'enter code'].includes(txt)) {
+                                if(['nhập mã', 'enter code', 'next', 'continue', 'tiếp tục', 'tiếp'].includes(txt)) {
                                     let clickable = b.closest('button, [role="button"]') || b;
                                     let rect = clickable.getBoundingClientRect();
                                     if(rect.width > 0 && rect.height > 0 && !clickable.disabled) {
@@ -1730,32 +1737,32 @@ class starts(threading.Thread):
                         # Sinh mã OTP 6 số từ pyotp
                         totp = pyotp.TOTP(two_fa_secret)
                         current_otp = totp.now()
-                        print(f"{Colors.color_text(f'[{self.thread_id}] Đã sinh mã OTP ({current_otp}) từ Key. Đang điền...', Colors.INFO)}")
+                        print(f"{Colors.color_text(f'[{self.thread_id}] Đã sinh mã OTP 6 số ({current_otp}). Đang điền...', Colors.INFO)}")
 
-                        # Điền mã OTP vào ô nhập
+                        # Điền mã OTP vào các ô
                         inputs = driver.find_elements(By.TAG_NAME, "input")
                         for inp in inputs:
-                            if inp.is_displayed():
+                            if inp.is_displayed() and inp.get_attribute("type") != "file":
                                 try: inp.clear()
-                                except Exception: pass
+                                except: pass
                                 for digit in current_otp:
                                     inp.send_keys(digit)
                                     time.sleep(0.08)
                                 time.sleep(1)
                                 try: inp.send_keys(Keys.ENTER)
-                                except Exception: pass
+                                except: pass
                                 driver.execute_script("document.body.click();")
                                 break
 
-                        time.sleep(2)
+                        time.sleep(3)
 
-                        # Bấm xác nhận hoàn tất 2FA
+                        # Bấm nút Xong / Tiếp tục cuối cùng
                         driver.execute_script("""
                             let btns = Array.from(document.querySelectorAll('button, div[role="button"]'));
                             btns.reverse();
                             for(let b of btns){
                                 let t = (b.innerText || b.textContent || "").trim().toLowerCase();
-                                if(['tiếp', 'tiếp tục', 'next', 'continue', 'xong', 'done', 'submit', 'xác nhận'].includes(t)){
+                                if(['xong', 'done', 'tiếp', 'tiếp tục', 'next', 'continue', 'submit', 'xác nhận'].includes(t)){
                                     let rect = b.getBoundingClientRect();
                                     if(rect.width > 0 && rect.height > 0 && !b.disabled && b.getAttribute('aria-disabled') !== 'true') {
                                         b.click();
