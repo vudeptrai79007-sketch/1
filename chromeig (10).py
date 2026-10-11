@@ -6,6 +6,7 @@ import select
 import base64
 import types
 import re
+
 if 'distutils' not in sys.modules:
     distutils_mod = types.ModuleType('distutils')
     distutils_version_mod = types.ModuleType('distutils.version')
@@ -146,7 +147,7 @@ def banner():
 ╚██████╔╝██║  ██║██║  ██║╚██████╔╝██║ ╚═╝ ██║███████╗
  ╚═════╝ ╚═╝  ╚═╝╚═╝  ╚═╝ ╚═════╝ ╚═╝    ╚═╝╚══════╝
 {Colors.RESET}""")
-    built_in_print(f"{Colors.INFO}Phiên Bản: v14.4 (LƯU THƯ MỤC AVATAR & PROXY TÍCH HỢP){Colors.RESET}")
+    built_in_print(f"{Colors.INFO}Phiên Bản: v14.4 - Nâng cấp chờ lấy OTP thông minh & Giảm thời gian ngâm{Colors.RESET}")
     built_in_print(f"{Colors.LINE}{'─'*70}{Colors.RESET}\n")
 
 def load_config():
@@ -355,7 +356,7 @@ class LocalProxyForwarder:
         try: self.server_socket.close()
         except: pass
 
-# ==================== CÁC CLASS XỬ LÝ EMAIL ====================
+# ==================== CÁC CLASS XỬ LÝ EMAIL (ĐÃ NÂNG CẤP CHỐNG LẤY MÃ CŨ) ====================
 class MailService:
     def __init__(self, proxy=None):
         self.base_url = "https://api.mail.tm"
@@ -396,6 +397,10 @@ class MailService:
         headers = {"Authorization": f"Bearer {self.token}", "Accept": "application/json"}
         start_time = time.time()
         last_id = None
+        
+        potential_code = None
+        found_time = 0
+        
         while time.time() - start_time < timeout:
             if STOP_EVENT.is_set(): return None
             try:
@@ -410,10 +415,23 @@ class MailService:
                                 detail = requests.get(f"{self.base_url}/messages/{last_id}", headers=headers, timeout=10, proxies=self.proxy).json()
                                 text = detail.get('text', '') or re.sub('<[^<]+?>', '', str(detail.get('html', '')))
                                 match = re.search(r'(?<!\d)(\d{6})(?!\d)', text)
-                                if match: return match.group(1)
+                                if match: 
+                                    code = match.group(1)
+                                    if not potential_code:
+                                        potential_code = code
+                                        found_time = time.time()
+                                        print(f"{Colors.color_text(f'Đã thấy mã {code}, chờ 8s bắt mã mới (đề phòng IG gửi 2 thư)...', Colors.WARNING)}")
+                                    else:
+                                        potential_code = code
+                                        print(f"{Colors.color_text(f'Đã cập nhật mã MỚI NHẤT: {code}', Colors.SUCCESS)}")
             except Exception: pass
-            time.sleep(5)
-        return None
+            
+            # Đợi 8 giây để chốt mã
+            if potential_code and (time.time() - found_time >= 8):
+                return potential_code
+                
+            time.sleep(4)
+        return potential_code
 
 class GmailIMAPService:
     def __init__(self, base_email, app_password):
@@ -483,6 +501,10 @@ class GmailIMAPService:
         if not self.mail:
             if not self.connect(): return None
         start_time = time.time()
+        
+        potential_code = None
+        found_time = 0
+        
         while time.time() - start_time < timeout:
             if STOP_EVENT.is_set(): return None
             try:
@@ -494,6 +516,7 @@ class GmailIMAPService:
                         try: uid_int = int(uid_bytes)
                         except ValueError: continue
                         if uid_int <= since_uid or uid_bytes in self.seen_uids: continue
+                        
                         status, fetch_data = self.mail.uid("fetch", uid_bytes, "(RFC822)")
                         if status == "OK" and fetch_data:
                             raw = None
@@ -510,12 +533,23 @@ class GmailIMAPService:
                                     self.seen_uids.add(uid_bytes) 
                                     body = self.get_text(msg)
                                     match = re.search(r'(?<!\d)(\d{6})(?!\d)', body)
-                                    if match: return match.group(1)
+                                    if match: 
+                                        code = match.group(1)
+                                        if not potential_code:
+                                            potential_code = code
+                                            found_time = time.time()
+                                            print(f"{Colors.color_text(f'Đã thấy mã Gmail {code}, chờ 8s bắt mã mới...', Colors.WARNING)}")
+                                        else:
+                                            potential_code = code
+                                            print(f"{Colors.color_text(f'Đã cập nhật mã Gmail MỚI NHẤT: {code}', Colors.SUCCESS)}")
             except Exception: pass
-            time.sleep(5) 
-        return None
+            
+            if potential_code and (time.time() - found_time >= 8):
+                return potential_code
+                
+            time.sleep(4) 
+        return potential_code
 
-# ==================== DỊCH VỤ HOTMAIL/OUTLOOK API (ĐÃ TỐI ƯU ĐA LUỒNG) ====================
 class HotmailAPIService:
     def __init__(self, data_line, api_mode, proxy=None):
         self.url = "https://smail1s.com/get_messages"
@@ -562,6 +596,9 @@ class HotmailAPIService:
         }
         
         last_logged = ""
+        potential_code = None
+        found_time = 0
+        
         while time.time() - start_time < timeout:
             if STOP_EVENT.is_set():
                 return None
@@ -597,25 +634,28 @@ class HotmailAPIService:
                                 is_ig = ("instagram" in subject) or ("instagram" in from_sender) or ("instagram" in raw_msg.lower())
                                 
                                 if is_ig:
+                                    code_to_check = None
                                     if code_field and code_field.isdigit() and len(code_field) == 6:
-                                        if code_field not in self.seen_codes:
-                                            print(f"{Colors.color_text(f'[API Smail1s] Đã tìm thấy mã MỚI: {code_field}', Colors.SUCCESS)}")
-                                            return code_field
-                                    
-                                    match_subj = re.search(r'\b(\d{6})\b', subject)
-                                    if match_subj:
-                                        code = match_subj.group(1)
-                                        if code not in self.seen_codes:
-                                            print(f"{Colors.color_text(f'[API Smail1s] Đã tìm thấy mã MỚI: {code}', Colors.SUCCESS)}")
-                                            return code
-                                            
-                                    clean_text = re.sub(r'<[^>]+>', ' ', raw_msg)
-                                    match_body = re.search(r'\b(\d{6})\b', clean_text)
-                                    if match_body:
-                                        code = match_body.group(1)
-                                        if code not in self.seen_codes:
-                                            print(f"{Colors.color_text(f'[API Smail1s] Đã tìm thấy mã MỚI: {code}', Colors.SUCCESS)}")
-                                            return code
+                                        code_to_check = code_field
+                                    else:
+                                        match_subj = re.search(r'\b(\d{6})\b', subject)
+                                        if match_subj:
+                                            code_to_check = match_subj.group(1)
+                                        else:
+                                            clean_text = re.sub(r'<[^>]+>', ' ', raw_msg)
+                                            match_body = re.search(r'\b(\d{6})\b', clean_text)
+                                            if match_body:
+                                                code_to_check = match_body.group(1)
+
+                                    if code_to_check and code_to_check not in self.seen_codes:
+                                        self.seen_codes.add(code_to_check)
+                                        if not potential_code:
+                                            potential_code = code_to_check
+                                            found_time = time.time()
+                                            print(f"{Colors.color_text(f'[API Smail1s] Đã thấy mã {code_to_check}, chờ 8s bắt mã mới...', Colors.WARNING)}")
+                                        else:
+                                            potential_code = code_to_check
+                                            print(f"{Colors.color_text(f'[API Smail1s] Đã cập nhật mã MỚI NHẤT: {code_to_check}', Colors.SUCCESS)}")
                 else:
                     status_err = f"Lỗi HTTP {response.status_code}"
                     if status_err != last_logged:
@@ -627,8 +667,11 @@ class HotmailAPIService:
                     print(f"{Colors.color_text(f'[API Smail1s] {err_str}', Colors.WARNING)}")
                     last_logged = err_str
             
-            time.sleep(5)
-        return None
+            if potential_code and (time.time() - found_time >= 8):
+                return potential_code
+                
+            time.sleep(4)
+        return potential_code
 
 def generate_dot_variants(gmail):
     local, sep, domain = gmail.rpartition("@")
@@ -741,9 +784,9 @@ class starts(threading.Thread):
             req_proxy = format_proxy(raw_proxy)
             p_info = parse_proxy(raw_proxy)
             if p_info and p_info.get("user"):
-                print(f"{Colors.color_text(f'[{self.thread_id}] Đã gán Proxy (Có User/Pass): {p_info["ip"]}:{p_info["port"]} (User: {p_info["user"]})', Colors.WARNING)}")
+                print(f"{Colors.color_text(f'[{self.thread_id}] Đã gán Proxy (Có User/Pass): {p_info['ip']}:{p_info['port']} (User: {p_info['user']})', Colors.WARNING)}")
             elif p_info:
-                print(f"{Colors.color_text(f'[{self.thread_id}] Đã gán Proxy (IP:Port): {p_info["ip"]}:{p_info["port"]}', Colors.WARNING)}")
+                print(f"{Colors.color_text(f'[{self.thread_id}] Đã gán Proxy (IP:Port): {p_info['ip']}:{p_info['port']}', Colors.WARNING)}")
             else:
                 print(f"{Colors.color_text(f'[{self.thread_id}] Đã gán Proxy: {raw_proxy}', Colors.WARNING)}")
         
@@ -1188,7 +1231,8 @@ class starts(threading.Thread):
                         otp_code = input().strip()
                         PAUSE_FOR_INPUT.set()
                 else:
-                    target_wait = 60 if self.mode in ["3", "4", "5"] else 0
+                    # Mức chờ ngâm form đã được điều chỉnh thành 30s
+                    target_wait = 30 if self.mode in ["3", "4", "5"] else 0
                     if target_wait > 0:
                         print(f"{Colors.color_text(f'[{self.thread_id}] Bắt đầu chu trình quét OTP và ngâm form {target_wait}s...', Colors.INFO)}")
                     else:
