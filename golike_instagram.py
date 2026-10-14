@@ -1,4 +1,3 @@
-
 from __future__ import annotations
 
 import base64
@@ -51,10 +50,16 @@ MAX_ERRORS = 5
 MAX_EMPTY = 5
 RECEIVE_DELAY = (15, 20)
 COMPLETE_DELAY = (10, 15)
+RECAPTCHA_COOLDOWN = (180, 300)  # Nghỉ 3 - 5 phút (180 - 300 giây) khi gặp reCAPTCHA v2
+MAX_RECAPTCHA_RETRIES = 3        # Tối đa 3 lần nghỉ 5 phút liên tiếp nếu vẫn bị hỏi lại ngay
 
 
 class StopRun(Exception):
     """Lỗi cần dừng: xác thực, captcha, hạn chế, hoặc kết quả không rõ."""
+
+
+class StopGolike(StopRun):
+    """Lỗi cấp độ tài khoản GoLike: thoát toàn bộ phiên chạy, không chuyển nick IG."""
 
 
 class SkipJob(Exception):
@@ -98,7 +103,7 @@ def obj_data(root: dict) -> dict:
 
 def new_session() -> requests.Session:
     session = requests.Session()
-    session.trust_env = False 
+    session.trust_env = False
     return session
 
 
@@ -229,9 +234,9 @@ class SolverCF:
     def turnstile(self, site_key: str, user_agent: str, budget: float = 45) -> tuple[str, str]:
         if not site_key or not self.key:
             raise StopRun("Turnstile cần API key SolverCF và site key; nhập ở mục 4.")
-        
+
         root = self.call("createTask", {"task": {"type": "TurnstileTask", "websiteUrl": ORIGIN,
-                                               "websiteKey": site_key, "userAgent": user_agent}})
+                                                 "websiteKey": site_key, "userAgent": user_agent}})
         task_id = root.get("taskId")
         if not isinstance(task_id, (str, int)) or not task_id:
             raise StopRun("SolverCF không trả taskId; không tự tạo thêm tác vụ có phí.")
@@ -283,13 +288,29 @@ class Job:
                    first(data, "link", "url"), message, first(data, "comment_id"), price, raw)
 
 
+def random_wait(interval: tuple[int, int], label: str = ""):
+    low = min(interval[0], interval[1])
+    high = max(interval[0], interval[1])
+    diff = high - low
+    sec = low + (secrets.randbelow(diff + 1) if diff > 0 else 0)
+    if sec <= 0:
+        return
+    for remaining in range(sec, 0, -1):
+        if label:
+            print(f"\r  ⏳ {label}: còn {remaining}s... ", end="", flush=True)
+        else:
+            print(f"\r  ⏳ Đang chờ: còn {remaining}s... ", end="", flush=True)
+        time.sleep(1)
+    print("\r" + " " * 55 + "\r", end="", flush=True)
+
+
 class GoLike:
-    def __init__(self, token: str, session=None):
+    def __init__(self, token: str, session=None, device_id: str = ""):
         self.token = re.sub(r"^Bearer\s+", "", token.strip(), flags=re.I)
         if not self.token or re.search(r"\s", self.token):
             raise StopRun("Token GoLike trống hoặc chứa khoảng trắng.")
         self.session = session if session is not None else new_session()
-        self.device = str(uuid.uuid4())
+        self.device = device_id.strip() if device_id and device_id.strip() else str(uuid.uuid4())
         self.user_id = 0
         self.username = ""
         self.name = ""
@@ -298,12 +319,21 @@ class GoLike:
         self.key = b""
         self.expires = 0.0
         self.scheme = "gweb-v3"
-        self.events = secrets.randbelow(3) + 2
+        self.events = secrets.randbelow(5) + 4
         self.solver: SolverCF | None = None
-        self.handled: set[str] = set()  
+        self.handled: set[str] = set()
+        self.last_mint_ts: float = 0.0
+        self.recaptcha_strikes: int = 0
 
     def close(self):
         self.session.close()
+
+    def reset_security_session(self):
+        """Làm mới phiên kết nối giống như người dùng đóng tab và mở lại trang web."""
+        self.key = b""
+        self.expires = 0.0
+        self.events = secrets.randbelow(6) + 5
+        self.last_mint_ts = 0.0
 
     def format_balance(self) -> str:
         coin = amount(self.coin)
@@ -373,11 +403,11 @@ class GoLike:
     def guard_action(root: dict, data: dict):
         actions = [first(x, key).lower() for x in (root, data) for key in ("action", "reason")]
         if any(action in ("update", "update_required", "retry", "rejected", "blocked") for action in actions):
-            raise StopRun("GoLike từ chối phiên hoặc yêu cầu cập nhật; không bỏ qua xác thực.")
+            raise StopGolike("GoLike từ chối phiên hoặc yêu cầu cập nhật; không bỏ qua xác thực.")
         if "captcha" not in actions and any(
                 x.get("success") is False or ("status" in x and x["status"] not in (200, "200", "success", "ok"))
                 for x in (root, data)):
-            raise StopRun("GoLike trả lỗi bảo mật; không sử dụng token từ phản hồi lỗi.")
+            raise StopGolike("GoLike trả lỗi bảo mật; không sử dụng token từ phản hồi lỗi.")
 
     def signed_security(self, path: str, body: str, ua: str = "") -> dict:
         auth = gweb_auth(self.key, self.scheme, self.device, self.user_id, "POST", path, body)
@@ -387,75 +417,123 @@ class GoLike:
         return request_json(self.session, "POST", SECURITY + path, label="Bảo mật GoLike", data=body, headers=headers,
                             captcha_response=path == "/api/v1/security/token")
 
-    def solve_captcha(self):
+    def cooldown_recaptcha_and_reopen(self):
+        """Mô phỏng người thật: nhìn thấy reCAPTCHA v2 vài giây -> chán tắt tab nghỉ 3-5 phút -> tải lại trang."""
+        self.recaptcha_strikes += 1
+        if self.recaptcha_strikes > MAX_RECAPTCHA_RETRIES:
+            raise StopGolike(
+                f"Đã nghỉ 3-5 phút tới {MAX_RECAPTCHA_RETRIES} lần liên tiếp nhưng vẫn bị hỏi reCAPTCHA v2 ngay. "
+                "Tài khoản đang bị gắn cờ gắt, dừng hẳn để bảo vệ nick."
+            )
+        look_sec = 4 + secrets.randbelow(5)
+        print(
+            f" -> [!] Gặp Google reCAPTCHA v2 (Lần {self.recaptcha_strikes}/{MAX_RECAPTCHA_RETRIES})! "
+            f"Giả lập nhìn bảng ảnh {look_sec}s rồi đóng tab...",
+            flush=True,
+        )
+        time.sleep(look_sec)
+        print(" -> [⏳] Tạm nghỉ 3 - 5 phút cho nguội tần suất request rồi tự động vào lại...", flush=True)
+        random_wait(RECAPTCHA_COOLDOWN, "Nghỉ tránh reCAPTCHA v2")
+        print(" -> [🔄] Đang tải lại phiên làm việc mới như vừa mở lại ứng dụng...", flush=True)
+        self.reset_security_session()
+        self.verify()
+        self.ensure_key()
+
+    def solve_captcha(self) -> bool:
+        """Trả về True nếu đã giải Captcha xong, trả về False nếu đã nghỉ 3-5 phút và làm mới phiên."""
         print("\n[!] GoLike yêu cầu xác minh Captcha!", flush=True)
         root = self.signed_security("/api/v1/security/captcha/challenge", "{}")
         data = obj_data(root)
         challenge = data.get("challenge", data)
         if not isinstance(challenge, dict):
-            raise StopRun("GoLike không trả challenge hợp lệ.")
+            raise StopGolike("GoLike không trả challenge hợp lệ.")
         cid = first(challenge, "challengeId", "challenge_id", "id")
         if not cid:
-            raise StopRun("Captcha thiếu challengeId.")
+            raise StopGolike("Captcha thiếu challengeId.")
+
+        kind = first(challenge, "kind", "type", "provider", "captcha_type").lower()
         site_key = first(challenge, "siteKey", "site_key")
+
+        # Phát hiện Google reCAPTCHA v2 -> giả lập nhìn bảng 4-8s, đóng tab nghỉ 3-5 phút rồi mở lại phiên
+        if any(k in kind for k in ("recaptcha", "google", "v2", "hcaptcha")) or (
+            site_key and (site_key.startswith("6L") or (kind and kind != "turnstile"))
+        ):
+            self.cooldown_recaptcha_and_reopen()
+            return False
+
         ua = ""
-        if site_key or first(challenge, "kind").lower() == "turnstile":
+        if kind == "turnstile" or (site_key and site_key.startswith("0x")):
             if self.solver is None:
-                raise StopRun("Gặp Turnstile: nhập API key SolverCF ở mục 4 trước.")
+                raise StopGolike("Gặp Turnstile: nhập API key SolverCF ở mục 4 trước.")
             print(" -> Đang giải Cloudflare Turnstile qua SolverCF...", flush=True)
             solved, ua = self.solver.turnstile(site_key, GOLIKE_UA)
             payload = {"challengeId": cid, "token": solved}
         else:
-            print(" -> Đang tự động giải Captcha kéo", flush=True)
             geometry = challenge.get("geometry", challenge)
-            if not isinstance(geometry, dict):
-                raise StopRun("Loại captcha chưa hỗ trợ.")
+            if not isinstance(geometry, dict) or "start" not in geometry:
+                self.cooldown_recaptcha_and_reopen()
+                return False
+            print(" -> Đang tự động giải Captcha kéo", flush=True)
             points = drag_points(geometry)
             time.sleep(points[-1][0] / 1000)
             payload = {"challengeId": cid, "points": points}
+
         result = self.signed_security("/api/v1/security/captcha/verify", compact(payload), ua)
         verified = obj_data(result)
         self.guard_action(result, verified)
         if verified.get("ok") is not True and verified.get("success") is not True:
-            raise StopRun("GoLike không chấp nhận kết quả captcha; đã dừng.")
+            raise StopGolike("GoLike không chấp nhận kết quả captcha; đã dừng.")
         print("[✓] Xác minh Captcha thành công! Tiếp tục làm job...", flush=True)
+        return True
 
     def mint(self, method: str, path_query: str, body: str, price: Decimal) -> str:
-        self.ensure_key()
         parts = urlsplit(path_query)
         path = parts.path if parts.path.startswith("/api/") else "/api/" + parts.path.lstrip("/")
-        tel = {"trg": "click", "aut": 0, "idle": 25 + secrets.randbelow(71),
-               "iev": self.events, "vis": 1, "foc": 1}
-        self.events += secrets.randbelow(3) + 1
-        if price > 0:
-            tel["val"] = int(price)
-        payload = {"plt": "instagram", "act": "get_job" if method == "GET" else "complete_job",
-                   "req": {"method": method, "path": path, "query": parts.query, "body": body}, "tel": tel}
-        exact = compact(payload)
-        for attempt in range(2):
+
+        for attempt in range(MAX_RECAPTCHA_RETRIES + 2):
+            self.ensure_key()
+            now_mono = time.monotonic()
+            if self.last_mint_ts > 0:
+                actual_idle = int(max(5, min(180, now_mono - self.last_mint_ts)))
+                jitter = secrets.randbelow(7) - 3
+                idle_val = max(5, actual_idle + jitter)
+            else:
+                idle_val = 15 + secrets.randbelow(25)
+
+            tel = {"trg": "click", "aut": 0, "idle": idle_val,
+                   "iev": self.events, "vis": 1, "foc": 1}
+            self.events += secrets.randbelow(6) + 3
+            if price > 0:
+                tel["val"] = int(price)
+            payload = {"plt": "instagram", "act": "get_job" if method == "GET" else "complete_job",
+                       "req": {"method": method, "path": path, "query": parts.query, "body": body}, "tel": tel}
+            exact = compact(payload)
+
             root = self.signed_security("/api/v1/security/token", exact)
             data = obj_data(root)
             self.guard_action(root, data)
             actions = [first(x, "action").lower() for x in (root, data)]
             reasons = [first(x, "reason").lower() for x in (root, data)]
             if "captcha" in actions + reasons:
-                if attempt:
-                    raise StopRun("GoLike vẫn yêu cầu captcha sau verify; đã dừng.")
-                self.solve_captcha()
-                continue  
+                solved_directly = self.solve_captcha()
+                if solved_directly and attempt >= MAX_RECAPTCHA_RETRIES + 1:
+                    raise StopGolike("GoLike vẫn yêu cầu captcha sau verify; đã dừng.")
+                continue
             sig = first(data, "token", "sig")
             if not sig:
-                raise StopRun("GoLike không trả sig; không gửi job thiếu xác thực.")
+                raise StopGolike("GoLike không trả sig; không gửi job thiếu xác thực.")
+            self.last_mint_ts = time.monotonic()
             return sig
-        raise StopRun("Không cấp được sig GoLike.")
+        raise StopGolike("Không cấp được sig GoLike sau khi thử lại.")
 
     def gateway(self, method: str, path: str, payload: dict | None = None,
                 *, signed: bool = False, price: Decimal = Decimal(0),
                 allow_status: tuple[int, ...] = (), check_accepted: bool = True) -> dict:
         body = compact(payload) if payload is not None else ""
+        sig_val = self.mint(method, path, body, price) if signed else ""
         headers = self.headers()
         if signed:
-            headers["sig"] = self.mint(method, path, body, price)
+            headers["sig"] = sig_val
         root = request_json(self.session, method, GATEWAY + "/" + path.lstrip("/"),
                             label="GoLike", uncertain=method == "POST",
                             headers=headers, data=body if method == "POST" else None,
@@ -687,7 +765,7 @@ class Instagram:
             raise StopRun("IG trả dữ liệu không hợp lệ; không coi HTTP 200 là thành công.") from None
         if not isinstance(root, dict):
             raise StopRun("IG trả cấu trúc dữ liệu lạ.")
-       
+
         message = compact({k: root[k] for k in ("message", "error", "errors", "error_type", "feedback_message") if k in root}).lower()
         if any(code in message for code in ("login_required", "challenge_required", "checkpoint_required",
                                             "feedback_required", "please wait a few minutes", "spam")):
@@ -779,7 +857,7 @@ class Instagram:
             if len(parts) != 1 or not re.fullmatch(r"[A-Za-z0-9_.]{1,30}", parts[0]) or parts[0] in ("p", "reel", "tv", "accounts"):
                 raise SkipJob("Job follow không có link profile hợp lệ.")
             username = parts[0]
-            
+
             try:
                 response = self.read_response("GET", "/api/v1/users/web_profile_info/?" + urlencode({"username": username}))
                 if response.status_code == 200:
@@ -796,10 +874,10 @@ class Instagram:
                 raise
             except Exception:
                 pass
-           
+
             if job.object_id.isdigit():
                 return job.object_id
-           
+
             try:
                 headers = {**self.headers(), "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"}
                 res = self.session.get(f"{IG_ORIGIN}/{username}/", headers=headers, timeout=TIMEOUT, allow_redirects=True)
@@ -816,7 +894,7 @@ class Instagram:
 
     @staticmethod
     def media_id(job: Job) -> str:
-        link = ig_url(job.link)  
+        link = ig_url(job.link)
         value = job.object_id.split("_")[0]
         if re.fullmatch(r"\d{8,}", value):
             return value
@@ -848,7 +926,6 @@ class Instagram:
             }, job.link)
             node = obj_data(root).get("xdt_create_friendship")
             if not isinstance(node, dict):
-                
                 try:
                     fb_root = self.graphql("usePolarisFollowMutation", "9663809173698092", {
                         "target_user_id": uid, "container_module": "profile",
@@ -907,7 +984,7 @@ class Instagram:
                     isinstance(media_node, dict) and media_node.get("has_liked") is True)
             else:
                 response = self.read_response("POST", f"/web/likes/{media}/like/", referer=job.link, data={})
-                
+
                 if response.status_code in (404, 405):
                     response = self.read_response("POST", f"/api/v1/web/likes/{media}/like/", referer=job.link, data={})
                 root = self.decode(response)
@@ -939,22 +1016,6 @@ def parse_delay(val: str, default: tuple[int, int]) -> tuple[int, int]:
     return default
 
 
-def random_wait(interval: tuple[int, int], label: str = ""):
-    low = min(interval[0], interval[1])
-    high = max(interval[0], interval[1])
-    diff = high - low
-    sec = low + (secrets.randbelow(diff + 1) if diff > 0 else 0)
-    if sec <= 0:
-        return
-    for remaining in range(sec, 0, -1):
-        if label:
-            print(f"\r  ⏳ {label}: còn {remaining}s... ", end="", flush=True)
-        else:
-            print(f"\r  ⏳ Đang chờ: còn {remaining}s... ", end="", flush=True)
-        time.sleep(1)
-    print("\r" + " " * 45 + "\r", end="", flush=True)
-
-
 def run_jobs(golike: GoLike, instagram: Instagram, maximum: int, max_errors: int = MAX_ERRORS,
              receive_delay: tuple[int, int] = RECEIVE_DELAY,
              complete_delay: tuple[int, int] = COMPLETE_DELAY, *, progress=None):
@@ -963,7 +1024,8 @@ def run_jobs(golike: GoLike, instagram: Instagram, maximum: int, max_errors: int
         raise StopRun("Giới hạn thành công phải lớn hơn 0.")
     if max_errors < 1:
         raise StopRun("Giới hạn lỗi phải lớn hơn 0.")
-    golike.verify()
+    if not golike.user_id:
+        golike.verify()
     if hasattr(instagram, "sync_tokens"):
         try:
             instagram.sync_tokens()
@@ -971,6 +1033,8 @@ def run_jobs(golike: GoLike, instagram: Instagram, maximum: int, max_errors: int
             pass
     try:
         account_id = golike.linked_account(instagram.username, instagram.uid)
+    except StopGolike:
+        raise
     except StopRun as exc:
         if "chưa liên kết" in str(exc).lower():
             account_id = golike.auto_link(instagram)
@@ -999,10 +1063,12 @@ def run_jobs(golike: GoLike, instagram: Instagram, maximum: int, max_errors: int
         try:
             instagram.perform(job)
         except SkipJob as exc:
-            golike.skip(job, account_id) 
+            golike.skip(job, account_id)
             progress.errors += 1
             print(f"[!] Bỏ qua job: {exc} | Số lỗi liên tiếp {progress.errors}/{max_errors}", flush=True)
             continue
+        except StopGolike:
+            raise
         except StopRun as exc:
             if "chưa xác nhận thao tác thành công" in str(exc) or "bị nhả" in str(exc):
                 try:
@@ -1028,7 +1094,8 @@ def run_jobs(golike: GoLike, instagram: Instagram, maximum: int, max_errors: int
             print(f"[!] Bỏ qua job: {exc} | Số lỗi liên tiếp {progress.errors}/{max_errors}", flush=True)
             continue
         progress.completed += 1
-        progress.errors = 0  # Đã hoàn thành job 
+        progress.errors = 0
+        golike.recaptcha_strikes = 0  # Làm thành công job thì xóa bộ đếm cảnh báo reCAPTCHA
         progress.earned += reward
         print(f"[+] THÀNH CÔNG! Job {job.job_id} | +{reward:,.0f}đ | Đã làm: {progress.completed}/{maximum} (Tổng kiếm: {progress.earned:,.0f}đ)", flush=True)
     if progress.completed >= maximum:
@@ -1053,7 +1120,8 @@ def run_multi_accounts(golike: GoLike, accounts: list[Instagram], maximum_per_ac
     if max_errors < 1:
         raise StopRun("Giới hạn lỗi mỗi nick phải lớn hơn 0.")
 
-    golike.verify()
+    if not golike.user_id:
+        golike.verify()
     total_acc = len(accounts)
     round_idx = 0
     is_infinite = (rounds == 0)
@@ -1077,6 +1145,9 @@ def run_multi_accounts(golike: GoLike, accounts: list[Instagram], maximum_per_ac
                 run_jobs(golike, acc, maximum_per_acc, max_errors,
                          receive_delay=receive_delay, complete_delay=complete_delay,
                          progress=acc_progress)
+            except StopGolike as exc:
+                print(f"\n[!] DỪNG TOÀN BỘ PHIÊN CHẠY: {exc}", flush=True)
+                raise
             except StopRun as exc:
                 stop_reason = str(exc)
                 print(f"[!] Nick {name} dừng ({stop_reason}). Bỏ qua chuyển sang nick tiếp theo...", flush=True)
@@ -1143,7 +1214,6 @@ def save_config(key: str, value: Any):
 
 
 def credential_input(prompt: str) -> str:
-    
     return input(prompt).strip()
 
 
@@ -1151,9 +1221,14 @@ def main():
     golike = instagram = solver = None
     instagram_accounts = []
     saved = load_config()
+    saved_device = str(saved.get("device_id") or "").strip()
+    if not saved_device:
+        saved_device = str(uuid.uuid4())
+        save_config("device_id", saved_device)
+
     if saved.get("golike_token"):
         try:
-            golike = GoLike(saved["golike_token"])
+            golike = GoLike(saved["golike_token"], device_id=saved_device)
             try:
                 golike.verify()
             except Exception:
@@ -1227,7 +1302,7 @@ def main():
                     break
                 if choice == "1":
                     raw_token = credential_input("Token GoLike: ")
-                    candidate = GoLike(raw_token)
+                    candidate = GoLike(raw_token, device_id=saved_device)
                     try:
                         candidate.verify()
                     except BaseException:
@@ -1238,6 +1313,7 @@ def main():
                     golike = candidate
                     golike.solver = solver
                     save_config("golike_token", raw_token)
+                    save_config("device_id", golike.device)
                     info_str = f": {golike.format_info()}" if (hasattr(golike, "format_info") and isinstance(getattr(golike, "username", None), str) and golike.username) else ""
                     print(f"Đã xác minh tài khoản GoLike{info_str} (đã lưu tự động).")
                 elif choice == "2":
@@ -1347,6 +1423,7 @@ def main():
                     save_config("complete_delay", raw_cpl)
 
                     progress = Progress()
+                    golike.recaptcha_strikes = 0
                     try:
                         if len(instagram_accounts) == 1:
                             run_jobs(golike, instagram_accounts[0], int(count), int(max_err),
@@ -1389,9 +1466,9 @@ def main():
                         print("=" * 45)
                         print(f"  • Tên đăng nhập : @{u_str}")
                         if n_str:
-                            print(f"  • Họ và tên    : {n_str}")
+                            print(f"  • Họ và tên     : {n_str}")
                         print(f"  • ID người dùng : {uid_str}")
-                        print(f"  • Số dư ví     : {coin_str}")
+                        print(f"  • Số dư ví      : {coin_str}")
                         print(f"  • Tiền chờ duyệt: {temp_str}")
                         print("=" * 45 + "\n")
                 elif choice.lower() in ("nicks", "accounts", "danhsach"):
