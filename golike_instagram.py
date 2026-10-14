@@ -324,6 +324,7 @@ class GoLike:
         self.handled: set[str] = set()
         self.last_mint_ts: float = 0.0
         self.recaptcha_strikes: int = 0
+        self.last_matched_username: str = ""
 
     def close(self):
         self.session.close()
@@ -577,18 +578,38 @@ class GoLike:
 
     def auto_link(self, instagram: Instagram) -> str:
         if not getattr(instagram, "username", ""):
-            if hasattr(instagram, "verify"):
-                try:
-                    instagram.verify()
-                except Exception:
-                    pass
+            for fn in ("resolve_username", "sync_tokens", "verify"):
+                if hasattr(instagram, fn) and not getattr(instagram, "username", ""):
+                    try:
+                        getattr(instagram, fn)()
+                    except Exception:
+                        pass
         handle = (getattr(instagram, "username", "") or "").lstrip("@").strip()
         uid = getattr(instagram, "uid", "")
-        name = f"@{handle}" if handle else f"UID {uid}"
+
+        # Nếu vừa lấy được @username, kiểm tra lại xem đã liên kết trên GoLike chưa trước khi tạo mới
+        if handle:
+            try:
+                acc_id = self.linked_account(handle, uid)
+                return acc_id
+            except Exception:
+                pass
+
+        if not handle:
+            raise StopRun(
+                f"Không tự lấy được @username từ cookie UID {uid}. "
+                "Vui lòng liên kết thủ công tài khoản này trên web GoLike trước."
+            )
+
+        name = f"@{handle}"
         print(f"\n[!] Nick {name} chưa có liên kết trên GoLike. Đang tiến hành tự động liên kết...", flush=True)
 
         root = self.gateway("GET", "instagram-account?limit=200")
-        link_verify = root.get("link_verify_follow") or root.get("link") or ""
+        data_obj = obj_data(root)
+        link_verify = (
+            first(root, "link_verify_follow", "link")
+            or (first(data_obj, "link_verify_follow", "link") if isinstance(data_obj, dict) else "")
+        )
         target_follow = "james111119999"
         if link_verify:
             clean = re.sub(r"^https?://(?:www\.)?instagram\.com/", "", str(link_verify).strip(), flags=re.I)
@@ -607,26 +628,31 @@ class GoLike:
             except Exception as exc:
                 print(f"  [!] Lưu ý khi follow @{target_follow}: {exc}", flush=True)
 
-        target_name = handle or uid
-        print(f"  -> Đang gửi yêu cầu xác minh liên kết @{target_name} lên GoLike...", flush=True)
+        print(f"  -> Đang gửi yêu cầu xác minh liên kết @{handle} lên GoLike...", flush=True)
         candidates = [
-            ("instagram-account/verify-account", {"object_id": target_name}),
-            ("instagram-account/verify-account-id", {"unique_id": target_name}),
-            ("instagram-account", {"instagram_username": target_name, "link": f"https://www.instagram.com/{target_name}/"}),
+            ("instagram-account/verify-account", {"object_id": handle}),
+            ("instagram-account/verify-account", {"object_id": f"https://www.instagram.com/{handle}/"}),
+            ("instagram-account/verify-account-id", {"unique_id": handle}),
         ]
         last_msg = ""
         for path, payload in candidates:
             try:
-                res = self.gateway("POST", path, payload, allow_status=(200, 201, 400, 422), check_accepted=False)
+                res = self.gateway(
+                    "POST", path, payload,
+                    allow_status=(200, 201, 400, 404, 405, 422),
+                    check_accepted=False,
+                )
                 msg = first(res, "message", "error") or first(obj_data(res), "message", "error") or ""
                 if accepted(res) or res.get("status") in (200, 201, "200", "201") or any(
-                    k in str(res) for k in ("thành công", "phê duyệt", "đã tồn tại", "đã được thêm")
+                    k in str(res).lower() for k in ("thành công", "phê duyệt", "đã tồn tại", "đã được thêm")
                 ):
                     break
-                if msg:
+                if msg and "an error has occurred" not in msg.lower():
                     last_msg = msg
             except Exception as e:
-                last_msg = str(e)
+                err_s = str(e)
+                if "HTTP 405" not in err_s and "HTTP 404" not in err_s:
+                    last_msg = err_s
 
         time.sleep(2)
         try:
@@ -787,6 +813,9 @@ class Instagram:
             self.username = first(user, "username")
             self.sync_tokens()
             return
+        self.sync_tokens()
+        if self.username:
+            return
         raise StopRun("API xác minh IG không khả dụng; cần cập nhật trước khi chạy.")
 
     def sync_tokens(self):
@@ -819,8 +848,41 @@ class Instagram:
                 if m:
                     self.lsd = m.group(1)
                     break
+            if not self.username:
+                for u_pat in (
+                    rf'"id"\s*:\s*"{self.uid}"[^}}]*"username"\s*:\s*"([A-Za-z0-9_.]{1,30})"',
+                    rf'"username"\s*:\s*"([A-Za-z0-9_.]{1,30})"[^}}]*"id"\s*:\s*"{self.uid}"',
+                    rf'"pk"\s*:\s*"{self.uid}"[^}}]*"username"\s*:\s*"([A-Za-z0-9_.]{1,30})"',
+                    r'"viewer"\s*:\s*\{[^}]*"username"\s*:\s*"([A-Za-z0-9_.]{1,30})"',
+                ):
+                    m = re.search(u_pat, html)
+                    if m:
+                        self.username = m.group(1)
+                        break
         if not self.lsd:
             self.lsd = "9zei3OjvTBQ-9YG6E0OMzm"
+        if not self.username:
+            self.resolve_username()
+
+    def resolve_username(self):
+        if self.username:
+            return
+        for path in (
+            "/api/v1/accounts/current_user/?edit=true",
+            f"/api/v1/users/{self.uid}/info/",
+        ):
+            try:
+                res = self.read_response("GET", path)
+                if res.status_code == 200:
+                    root = self.decode(res)
+                    user = root.get("user") or root.get("form_data") or obj_data(root).get("user")
+                    if isinstance(user, dict):
+                        uname = first(user, "username")
+                        if uname:
+                            self.username = uname
+                            return
+            except Exception:
+                pass
 
     def graphql(self, friendly: str, doc_id: str, variables: dict, referer: str = "", *, comment=False) -> dict:
         form = {"av": self.uid if comment else "178414" + self.uid, "__d": "www", "__user": "0",
@@ -882,9 +944,18 @@ class Instagram:
                 headers = {**self.headers(), "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"}
                 res = self.session.get(f"{IG_ORIGIN}/{username}/", headers=headers, timeout=TIMEOUT, allow_redirects=True)
                 if res.status_code == 200:
-                    match = re.search(r'"(?:profile_id|user_id|id|pk)"\s*:\s*"?(\d+)"?', res.text)
-                    if match and match.group(1).isdigit():
-                        return match.group(1)
+                    for pat in (
+                        r'"profile_id"\s*:\s*"?(\d+)"?',
+                        r'"profilePage_(\d+)"',
+                        rf'"username"\s*:\s*"{re.escape(username)}"[^}}]*"(?:id|pk)"\s*:\s*"?(\d+)"?',
+                        rf'"(?:id|pk)"\s*:\s*"?(\d+)"?[^}}]*"username"\s*:\s*"{re.escape(username)}"',
+                    ):
+                        match = re.search(pat, res.text, flags=re.I)
+                        if match and match.group(1).isdigit() and match.group(1) != self.uid:
+                            return match.group(1)
+                    for m in re.finditer(r'"(?:profile_id|user_id)"\s*:\s*"?(\d+)"?', res.text):
+                        if m.group(1).isdigit() and m.group(1) != self.uid:
+                            return m.group(1)
             except Exception:
                 pass
             raise SkipJob(f"Không lấy được UID của @{username}.")
