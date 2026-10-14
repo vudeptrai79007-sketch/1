@@ -9,6 +9,7 @@ import threading
 import sqlite3
 import base64
 import urllib.parse
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timedelta
 from urllib.parse import unquote
 import keyboard
@@ -188,7 +189,7 @@ def parse_real_earned_points(response_data, default_points=10):
     return 0, "Phản hồi từ server không hợp lệ"
 
 class INSTAGRAM:
-    """Class xử lý trực tiếp Instagram (Đã vá lỗi thiếu cookie ở COMMENT & lỗi báo ảo)"""
+    """Class xử lý trực tiếp Instagram (Check Live chính xác + Like + Follow + Comment)"""
     def __init__(self, cookies_str, proxy=None):
         self.cookies_str = cookies_str
         self.cookies_dict = parse_cookie_string(cookies_str)
@@ -196,39 +197,92 @@ class INSTAGRAM:
         self.proxies = format_proxy(proxy)
             
     def GETINFO(self):
+        """
+        Kiểm tra phiên đăng nhập thực tế trên Instagram.
+        Trả về: (userID, fb_dtsg, status_code_str, ig_username)
+        status_code_str: "LIVE", "CHECKPOINT", "DIE", hoặc "PROXY_ERR"
+        """
         try:
             headers = {
                 'accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
                 'accept-language': 'vi-VN,vi;q=0.9,en-US;q=0.8,en;q=0.7',
                 'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36',
             }
-            response = requests.get(
+            resp_obj = requests.get(
                 "https://www.instagram.com/",
                 headers=headers,
                 cookies=self.cookies_dict,
                 proxies=self.proxies,
-                timeout=12
-            ).text
-            
+                timeout=12,
+                allow_redirects=True
+            )
+            final_url = str(resp_obj.url)
+            response = resp_obj.text
+
+            # Kiểm tra nếu bị chuyển hướng sang trang Challenge / Checkpoint
+            if "/challenge/" in final_url or "checkpoint_required" in response or "challenge_required" in response:
+                return False, False, "CHECKPOINT", False
+
+            # Kiểm tra nếu bị đá về trang Login
+            if "/accounts/login" in final_url:
+                return False, False, "DIE", False
+
+            userID1 = None
             userID_match = re.search(r'"viewerId":"(\d+)"', response)
-            if not userID_match:
-                userID_match = re.findall(r'userID":.*?,', response)
-                userID1 = userID_match[0].split(':"')[1].split('",')[0] if userID_match else self.cookies_dict.get('ds_user_id')
-            else:
+            if userID_match and userID_match.group(1) != "0":
                 userID1 = userID_match.group(1)
+            else:
+                uid_matches = re.findall(r'"userID":"(\d+)"', response)
+                for uid_candidate in uid_matches:
+                    if uid_candidate != "0":
+                        userID1 = uid_candidate
+                        break
+
+            # Nếu không có viewerId hợp lệ trên trang chủ -> Cookie đã Die
+            if not userID1 or str(userID1) == "0":
+                return False, False, "DIE", False
                 
-            username_match = re.search(r'"username":"([^"]+)"', response)
-            ig_username = username_match.group(1) if username_match else userID1
+            # Tìm username thực tế của tài khoản đang đăng nhập
+            username_match = (
+                re.search(r'"viewer":\{[^}]*?"username":"([^"]+)"', response)
+                or re.search(r'\\"viewer\\":\{[^}]*?\\"username\\":\\"([^\\"]+)\\"', response)
+                or re.search(r'"username":"([^"]+)"', response)
+            )
+            ig_username = username_match.group(1) if username_match else None
             
             dtsg_match = re.search(r'"dtsg":\s*\{"token":"([^"]+)"', response) or re.search(r'name="fb_dtsg" value="([^"]+)"', response)
             fb_dtsg = dtsg_match.group(1) if dtsg_match else ""
+
+            # Nếu trang chủ chỉ có userID mà ẩn username, gọi thêm API web_form_data để lấy đúng username
+            if not ig_username:
+                try:
+                    api_headers = {
+                        'x-ig-app-id': '936619743392459',
+                        'x-csrftoken': self.csrftoken,
+                        'user-agent': USER_AGENT,
+                        'referer': 'https://www.instagram.com/accounts/edit/'
+                    }
+                    r_form = requests.get(
+                        "https://www.instagram.com/api/v1/accounts/edit/web_form_data/",
+                        headers=api_headers,
+                        cookies=self.cookies_dict,
+                        proxies=self.proxies,
+                        timeout=10
+                    )
+                    if r_form.status_code == 200:
+                        j_form = r_form.json()
+                        ig_username = j_form.get("form_data", {}).get("username")
+                except Exception:
+                    pass
+
+            if not ig_username:
+                ig_username = str(userID1)
             
-            return userID1, fb_dtsg, "", ig_username
+            return str(userID1), fb_dtsg, "LIVE", ig_username
+        except (requests.exceptions.ProxyError, requests.exceptions.ConnectTimeout, requests.exceptions.ReadTimeout, requests.exceptions.ConnectionError):
+            return False, False, "PROXY_ERR", False
         except Exception:
-            fallback_id = self.cookies_dict.get('ds_user_id', '')
-            if fallback_id:
-                return fallback_id, "", "", fallback_id
-            return False, False, False, False
+            return False, False, "DIE", False
 
     def LIKE(self, av, dtsg, post_id, cookies, link, lsd_token=""):
         """Thực hiện Like bài viết (Ưu tiên Web API an toàn + Fallback Mobile API)"""
@@ -350,7 +404,7 @@ class INSTAGRAM:
         return False
 
     def COMMENT(self, av, dtsg, target_id, target_url, comment_content):
-        """Thực hiện Comment bài viết (Đã bổ sung cookies=self.cookies_dict và json.dumps an toàn)"""
+        """Thực hiện Comment bài viết"""
         url = "https://www.instagram.com/api/graphql"
         media_id = get_media_id(target_url if target_url else target_id)
         if not media_id or not str(media_id).isdigit():
@@ -570,25 +624,66 @@ def gui_nhan_xu(job_type, task_ids, uid, cookie_check="", xsmm_obj=None):
     return {"error": "Thất bại"}
 
 def check_cookie_ig(cookie, proxy=None):
+    """
+    Hàm Check Live Cookie IG chuẩn xác:
+    1. Kiểm tra qua API /api/v1/accounts/edit/web_form_data/
+    2. Kiểm tra qua INSTAGRAM.GETINFO() (xác thực viewerId != 0 & lấy fb_dtsg)
+    Trả về chuỗi JSON chứa trạng thái: live / checkpoint / die / proxy_error
+    """
+    if not cookie or not cookie.strip():
+        return json.dumps({"status_check": "DIE", "error": "Cookie trống"})
+
+    fallback_uid = (re.search(r'ds_user_id=(\d+)', cookie) or [None, "0"])[1]
+
+    # Bước 1: Thử kiểm tra qua endpoint edit/web_form_data bằng curl_cffi
     try:
-        res_text = c_requests.get(
+        resp = c_requests.get(
             'https://www.instagram.com/api/v1/accounts/edit/web_form_data/',
-            headers={'x-ig-app-id': '936619743392459', 'cookie': cookie, 'user-agent': USER_AGENT},
+            headers={
+                'x-ig-app-id': '936619743392459',
+                'cookie': cookie,
+                'user-agent': USER_AGENT,
+                'referer': 'https://www.instagram.com/accounts/edit/'
+            },
             proxies=format_proxy(proxy),
             impersonate="chrome120",
-            timeout=8,
+            timeout=10,
             max_redirects=5
-        ).text
+        )
+        res_text = resp.text
+        if "/challenge/" in str(resp.url) or "checkpoint_required" in res_text or "challenge_required" in res_text:
+            return json.dumps({"status_check": "CHECKPOINT", "error": "Checkpoint / Challenge"})
+
         data = json.loads(res_text)
-        if data and 'form_data' in data and data['form_data'].get('username'):
-            return res_text
+        if isinstance(data, dict):
+            if data.get('form_data') and data['form_data'].get('username'):
+                uname = data['form_data']['username']
+                uid = str(data['form_data'].get('id') or fallback_uid)
+                return json.dumps({
+                    "status_check": "LIVE",
+                    "form_data": {"username": uname, "id": uid}
+                })
+            if data.get("message") in ["checkpoint_required", "challenge_required"]:
+                return json.dumps({"status_check": "CHECKPOINT", "error": "Checkpoint / Challenge"})
+            if data.get("message") == "login_required":
+                return json.dumps({"status_check": "DIE", "error": "Cookie hết hạn (login_required)"})
     except Exception:
         pass
+
+    # Bước 2: Kiểm tra qua INSTAGRAM.GETINFO() (xác thực viewerId thực tế trên trang chủ)
     ig_client = INSTAGRAM(cookie, proxy)
-    uid, _, _, uname = ig_client.GETINFO()
-    if uid and uname:
-        return json.dumps({"form_data": {"username": uname, "id": uid}})
-    return json.dumps({"error": "Cookie Die"})
+    uid, fb_dtsg, status_code_str, uname = ig_client.GETINFO()
+    if status_code_str == "LIVE" and uid and uname:
+        return json.dumps({
+            "status_check": "LIVE",
+            "form_data": {"username": uname, "id": str(uid), "fb_dtsg": fb_dtsg}
+        })
+    elif status_code_str == "CHECKPOINT":
+        return json.dumps({"status_check": "CHECKPOINT", "error": "Checkpoint / Challenge"})
+    elif status_code_str == "PROXY_ERR":
+        return json.dumps({"status_check": "PROXY_ERR", "error": "Lỗi kết nối Proxy / Mạng"})
+
+    return json.dumps({"status_check": "DIE", "error": "Cookie Die"})
 
 def scan_facebook_pages(cookie, proxy=None):
     pages_list = []
@@ -756,7 +851,7 @@ class MMOApp(ctk.CTk):
         self.status_bar.grid(row=2, column=0, sticky="ew")
         self.status_bar.grid_columnconfigure(3, weight=1)
 
-        self.lbl_footer_stats = ctk.CTkLabel(self.status_bar, text="Tổng tài khoản: 0 | Đang chạy: 0 | Live: 0", font=ctk.CTkFont(size=11, weight="bold"), text_color="#334155")
+        self.lbl_footer_stats = ctk.CTkLabel(self.status_bar, text="Tổng tài khoản: 0 | Đang chạy: 0 | Live: 0 | Die: 0", font=ctk.CTkFont(size=11, weight="bold"), text_color="#334155")
         self.lbl_footer_stats.grid(row=0, column=0, padx=16, pady=6, sticky="w")
 
         self.lbl_xsmm_balance = ctk.CTkLabel(self.status_bar, text="💰 TỔNG XU KIẾM ĐƯỢC: 0 XU", font=ctk.CTkFont(size=11, weight="bold"), text_color="#059669")
@@ -937,7 +1032,7 @@ class MMOApp(ctk.CTk):
         # Hàng 3: Số luồng (Threads)
         row_threads = ctk.CTkFrame(modal, fg_color="transparent")
         row_threads.pack(fill="x", padx=24, pady=4)
-        ctk.CTkLabel(row_threads, text="Số luồng chạy đồng thời (Threads):", font=ctk.CTkFont(size=10, weight="bold"), text_color="#334155").pack(anchor="w")
+        ctk.CTkLabel(row_threads, text="Số luồng chạy & Check Live đồng thời (Threads):", font=ctk.CTkFont(size=10, weight="bold"), text_color="#334155").pack(anchor="w")
         ent_th = ctk.CTkEntry(row_threads, height=34, fg_color="#f8fafc", border_color="#cbd5e1")
         ent_th.pack(fill="x", pady=(2, 0))
         ent_th.insert(0, self.ent_threads.get())
@@ -1001,7 +1096,7 @@ class MMOApp(ctk.CTk):
         top_bar.grid(row=0, column=0, sticky="ew", padx=12, pady=12)
         top_bar.grid_columnconfigure(0, weight=1)
 
-        self.ent_quick_cookie = ctk.CTkEntry(top_bar, placeholder_text="Nhập Cookie IG (Tự động dùng Proxy xoay chung nếu không kèm |Proxy)...", height=36, font=ctk.CTkFont(family="Consolas", size=10), fg_color="#ffffff", border_color="#cbd5e1")
+        self.ent_quick_cookie = ctk.CTkEntry(top_bar, placeholder_text="Nhập Cookie IG (Tự động Check Live & dùng Proxy xoay chung)...", height=36, font=ctk.CTkFont(family="Consolas", size=10), fg_color="#ffffff", border_color="#cbd5e1")
         self.ent_quick_cookie.grid(row=0, column=0, padx=(12, 6), pady=10, sticky="ew")
 
         self.max_jobs_entry = ctk.CTkEntry(top_bar, placeholder_text="Max Job (Mặc định vô hạn)", width=130, height=36, font=ctk.CTkFont(size=10), fg_color="#ffffff", border_color="#cbd5e1")
@@ -1013,12 +1108,13 @@ class MMOApp(ctk.CTk):
 
         tool_tbl = ctk.CTkFrame(self.frame_acc_tab, fg_color="transparent", height=42)
         tool_tbl.grid(row=1, column=0, sticky="ew", padx=12, pady=4)
-        tool_tbl.grid_columnconfigure(5, weight=1)
+        tool_tbl.grid_columnconfigure(6, weight=1)
 
         ctk.CTkButton(tool_tbl, text="✓ Chọn Tất Cả", width=100, height=28, fg_color="#059669", hover_color="#047857", font=ctk.CTkFont(size=10, weight="bold"), corner_radius=6, command=lambda: self.toggle_all_accounts(True)).grid(row=0, column=0, padx=2)
         ctk.CTkButton(tool_tbl, text="✗ Bỏ Chọn", width=85, height=28, fg_color="#d97706", hover_color="#b45309", font=ctk.CTkFont(size=10, weight="bold"), corner_radius=6, command=lambda: self.toggle_all_accounts(False)).grid(row=0, column=1, padx=2)
         ctk.CTkButton(tool_tbl, text="🗑️ Xóa Đã Chọn", width=110, height=28, fg_color="#dc2626", hover_color="#b91c1c", font=ctk.CTkFont(size=10, weight="bold"), corner_radius=6, command=self.delete_selected_accounts).grid(row=0, column=2, padx=2)
-        ctk.CTkButton(tool_tbl, text="🔄 Check Live/Die", width=110, height=28, fg_color="#0284c7", hover_color="#0369a1", font=ctk.CTkFont(size=10, weight="bold"), corner_radius=6, command=self.check_selected_ig_live).grid(row=0, column=3, padx=2)
+        ctk.CTkButton(tool_tbl, text="🔄 Check Live/Die", width=120, height=28, fg_color="#0284c7", hover_color="#0369a1", font=ctk.CTkFont(size=10, weight="bold"), corner_radius=6, command=self.check_selected_ig_live).grid(row=0, column=3, padx=2)
+        ctk.CTkButton(tool_tbl, text="🗑️ Xóa Acc Die", width=110, height=28, fg_color="#7f1d1d", hover_color="#991b1b", font=ctk.CTkFont(size=10, weight="bold"), corner_radius=6, command=self.delete_die_accounts).grid(row=0, column=4, padx=2)
 
         tbl_head = ctk.CTkFrame(self.frame_acc_tab, fg_color="#f1f5f9", height=36, corner_radius=6)
         tbl_head.grid(row=2, column=0, sticky="ew", padx=12, pady=(2, 6))
@@ -1058,12 +1154,13 @@ class MMOApp(ctk.CTk):
 
         tool_tbl = ctk.CTkFrame(self.frame_page_tab, fg_color="transparent", height=42)
         tool_tbl.grid(row=1, column=0, sticky="ew", padx=12, pady=4)
-        tool_tbl.grid_columnconfigure(5, weight=1)
+        tool_tbl.grid_columnconfigure(6, weight=1)
 
         ctk.CTkButton(tool_tbl, text="✓ Chọn Tất Cả", width=100, height=28, fg_color="#059669", hover_color="#047857", font=ctk.CTkFont(size=10, weight="bold"), corner_radius=6, command=lambda: self.toggle_all_pages(True)).grid(row=0, column=0, padx=2)
         ctk.CTkButton(tool_tbl, text="✗ Bỏ Chọn", width=85, height=28, fg_color="#d97706", hover_color="#b45309", font=ctk.CTkFont(size=10, weight="bold"), corner_radius=6, command=lambda: self.toggle_all_pages(False)).grid(row=0, column=1, padx=2)
         ctk.CTkButton(tool_tbl, text="🗑️ Xóa Đã Chọn", width=110, height=28, fg_color="#dc2626", hover_color="#b91c1c", font=ctk.CTkFont(size=10, weight="bold"), corner_radius=6, command=self.delete_selected_pages).grid(row=0, column=2, padx=2)
-        ctk.CTkButton(tool_tbl, text="🔄 Check Live/Die", width=110, height=28, fg_color="#0284c7", hover_color="#0369a1", font=ctk.CTkFont(size=10, weight="bold"), corner_radius=6, command=self.check_selected_fb_live).grid(row=0, column=3, padx=2)
+        ctk.CTkButton(tool_tbl, text="🔄 Check Live/Die", width=120, height=28, fg_color="#0284c7", hover_color="#0369a1", font=ctk.CTkFont(size=10, weight="bold"), corner_radius=6, command=self.check_selected_fb_live).grid(row=0, column=3, padx=2)
+        ctk.CTkButton(tool_tbl, text="🗑️ Xóa Page Die", width=110, height=28, fg_color="#7f1d1d", hover_color="#991b1b", font=ctk.CTkFont(size=10, weight="bold"), corner_radius=6, command=self.delete_die_pages).grid(row=0, column=4, padx=2)
 
         tbl_head = ctk.CTkFrame(self.frame_page_tab, fg_color="#f1f5f9", height=36, corner_radius=6)
         tbl_head.grid(row=2, column=0, sticky="ew", padx=12, pady=(2, 6))
@@ -1215,12 +1312,22 @@ class MMOApp(ctk.CTk):
 
     def update_account_counter_ui(self):
         total_ig = len(self.acc_rows)
-        active_ig = sum(1 for item in self.acc_rows.values() if item["var"].get())
         total_pg = len(self.page_rows)
-        active_pg = sum(1 for item in self.page_rows.values() if item["var"].get())
         running_count = sum(1 for status in self.single_running_threads.values() if status)
         total_all = total_ig + total_pg
-        self.lbl_footer_stats.configure(text=f"Tổng tài khoản: {total_all} | Đang chạy độc lập: {running_count} | Live: {running_count}")
+
+        live_count = 0
+        die_count = 0
+        for item in list(self.acc_rows.values()) + list(self.page_rows.values()):
+            st_txt = item["status_label"].cget("text")
+            if "Die" in st_txt or "Checkpoint" in st_txt or "Hết Hạn" in st_txt:
+                die_count += 1
+            else:
+                live_count += 1
+
+        self.lbl_footer_stats.configure(
+            text=f"Tổng tài khoản: {total_all} | Đang chạy: {running_count} | Live: {live_count} | Die/CP: {die_count}"
+        )
 
     def export_logs(self):
         file_path = filedialog.asksaveasfilename(defaultextension=".txt", filetypes=[("Text Files", "*.txt")])
@@ -1282,7 +1389,8 @@ class MMOApp(ctk.CTk):
         row_frame.grid_columnconfigure(3, weight=1)
         row_frame.grid_columnconfigure(4, weight=1)
 
-        var = ctk.BooleanVar(value=True)
+        is_die_init = ("Die" in status or "Checkpoint" in status)
+        var = ctk.BooleanVar(value=not is_die_init)
         chk = ctk.CTkCheckBox(row_frame, text="", variable=var, width=20, fg_color="#059669")
         chk.grid(row=0, column=0, padx=(10, 6), pady=6, sticky="w")
 
@@ -1303,7 +1411,7 @@ class MMOApp(ctk.CTk):
         lbl_coin = ctk.CTkLabel(row_frame, text=f"+{init_c} xu", font=ctk.CTkFont(size=11, weight="bold"), text_color="#059669", width=90, anchor="w")
         lbl_coin.grid(row=0, column=5, padx=6, pady=6, sticky="w")
 
-        text_color_st = "#334155" if status == "Sẵn sàng" else ("#dc2626" if "Die" in status else "#059669")
+        text_color_st = "#334155" if status == "Sẵn sàng" else ("#dc2626" if is_die_init else "#059669")
         lbl_status = ctk.CTkLabel(row_frame, text=status, font=ctk.CTkFont(size=10, weight="bold"), text_color=text_color_st, width=240, anchor="w")
         lbl_status.grid(row=0, column=6, padx=6, pady=6, sticky="w")
 
@@ -1328,7 +1436,7 @@ class MMOApp(ctk.CTk):
 
                 self.single_running_threads[ig_user] = True
                 btn_action.configure(text="Dừng", fg_color="#dc2626", hover_color="#b91c1c")
-                lbl_status.configure(text=f"Đang đồng bộ XSMM...", text_color="#2563eb")
+                lbl_status.configure(text="Đang Check Live & Đồng bộ...", text_color="#2563eb")
                 threading.Thread(target=self.worker_single_account_loop, args=(token, chosen_ig_jobs, delay_cfg, acc_data, btn_action, lbl_status), daemon=True).start()
             else:
                 self.single_running_threads[ig_user] = False
@@ -1338,7 +1446,18 @@ class MMOApp(ctk.CTk):
         btn_action = ctk.CTkButton(row_frame, text="Bắt đầu", width=80, height=26, fg_color="#2563eb", hover_color="#1d4ed8", font=ctk.CTkFont(size=10, weight="bold"), corner_radius=6, command=toggle_single_acc)
         btn_action.grid(row=0, column=7, padx=10, pady=6, sticky="e")
 
-        self.acc_rows[ig_user] = {"frame": row_frame, "var": var, "status_label": lbl_status, "coin_label": lbl_coin, "action_btn": btn_action, "coins": init_c, "data": acc_data}
+        self.acc_rows[ig_user] = {
+            "frame": row_frame,
+            "var": var,
+            "stt_label": lbl_stt,
+            "id_label": lbl_id,
+            "user_label": lbl_user,
+            "status_label": lbl_status,
+            "coin_label": lbl_coin,
+            "action_btn": btn_action,
+            "coins": init_c,
+            "data": acc_data
+        }
 
     def add_page_row_to_ui(self, page_data, status="Sẵn sàng"):
         pid = page_data["page_id"]
@@ -1349,7 +1468,8 @@ class MMOApp(ctk.CTk):
         row_frame.grid_columnconfigure(2, weight=1)
         row_frame.grid_columnconfigure(3, weight=1)
 
-        var = ctk.BooleanVar(value=True)
+        is_die_init = ("Die" in status or "Hết Hạn" in status)
+        var = ctk.BooleanVar(value=not is_die_init)
         chk = ctk.CTkCheckBox(row_frame, text="", variable=var, width=20, fg_color="#0284c7")
         chk.grid(row=0, column=0, padx=(10, 6), pady=6, sticky="w")
 
@@ -1367,7 +1487,7 @@ class MMOApp(ctk.CTk):
         lbl_coin = ctk.CTkLabel(row_frame, text=f"+{init_c} xu", font=ctk.CTkFont(size=11, weight="bold"), text_color="#059669", width=90, anchor="w")
         lbl_coin.grid(row=0, column=4, padx=6, pady=6, sticky="w")
 
-        text_color_st = "#334155" if status == "Sẵn sàng" else ("#dc2626" if "Die" in status else "#059669")
+        text_color_st = "#334155" if status == "Sẵn sàng" else ("#dc2626" if is_die_init else "#059669")
         lbl_status = ctk.CTkLabel(row_frame, text=status, font=ctk.CTkFont(size=10, weight="bold"), text_color=text_color_st, width=240, anchor="w")
         lbl_status.grid(row=0, column=5, padx=6, pady=6, sticky="w")
 
@@ -1418,6 +1538,28 @@ class MMOApp(ctk.CTk):
         conn.close()
         self.log(f"🗑️ Đã xóa {len(to_delete)} tài khoản IG đã chọn.")
 
+    def delete_die_accounts(self):
+        """Xóa nhanh toàn bộ tài khoản IG có trạng thái Die hoặc Checkpoint"""
+        to_delete = []
+        for u, info in self.acc_rows.items():
+            st_txt = info["status_label"].cget("text")
+            if "Die" in st_txt or "Checkpoint" in st_txt:
+                to_delete.append(u)
+        if not to_delete:
+            self.log("💡 Không có tài khoản IG nào ở trạng thái Die/Checkpoint để xóa.")
+            return
+        conn = sqlite3.connect(DB_FILE)
+        cursor = conn.cursor()
+        for ig_user in to_delete:
+            self.single_running_threads[ig_user] = False
+            cursor.execute("DELETE FROM accounts WHERE username = ?", (ig_user,))
+            if ig_user in self.acc_rows:
+                self.acc_rows[ig_user]["frame"].destroy()
+                del self.acc_rows[ig_user]
+        conn.commit()
+        conn.close()
+        self.log(f"🗑️ Đã dọn sạch {len(to_delete)} tài khoản IG Die/Checkpoint!")
+
     def delete_selected_pages(self):
         to_delete = [pid for pid, info in self.page_rows.items() if info["var"].get()]
         if not to_delete: return
@@ -1433,47 +1575,131 @@ class MMOApp(ctk.CTk):
         conn.close()
         self.log(f"🗑️ Đã xóa {len(to_delete)} Page Facebook đã chọn.")
 
+    def delete_die_pages(self):
+        """Xóa nhanh toàn bộ Page FB bị Die"""
+        to_delete = []
+        for pid, info in self.page_rows.items():
+            st_txt = info["status_label"].cget("text")
+            if "Die" in st_txt or "Hết Hạn" in st_txt:
+                to_delete.append(pid)
+        if not to_delete:
+            self.log("💡 Không có Page FB nào ở trạng thái Die để xóa.")
+            return
+        conn = sqlite3.connect(DB_FILE)
+        cursor = conn.cursor()
+        for pid in to_delete:
+            self.single_running_threads[pid] = False
+            cursor.execute("DELETE FROM fb_pages WHERE page_id = ?", (pid,))
+            if pid in self.page_rows:
+                self.page_rows[pid]["frame"].destroy()
+                del self.page_rows[pid]
+        conn.commit()
+        conn.close()
+        self.log(f"🗑️ Đã dọn sạch {len(to_delete)} Page FB Die!")
+
     def check_selected_ig_live(self):
         selected = [u for u, info in self.acc_rows.items() if info["var"].get()]
         if not selected:
-            self.log("💡 Vui lòng chọn ít nhất 1 tài khoản IG để check Live/Die.")
+            # Nếu không tích chọn cái nào thì tự check toàn bộ danh sách
+            selected = list(self.acc_rows.keys())
+        if not selected:
+            self.log("💡 Danh sách tài khoản IG đang trống.")
             return
 
-        def _do_check():
-            self.log(f"🔄 Đang tiến hành check Live/Die cho {len(selected)} tài khoản IG...")
-            conn = sqlite3.connect(DB_FILE)
-            cursor = conn.cursor()
-            live_count = 0
-            die_count = 0
-            for ig_user in selected:
-                info = self.acc_rows[ig_user]
-                ck = info["data"]["cookie"]
-                proxy = self.get_effective_proxy(info["data"].get("proxy", ""))
-                self.after(0, lambda l=info["status_label"]: l.configure(text="Đang check...", text_color="#d97706"))
-                try:
-                    res_json_str = check_cookie_ig(ck, proxy)
-                    p_data = json.loads(res_json_str)
-                    if p_data and 'form_data' in p_data and p_data['form_data'].get('username'):
-                        self.after(0, lambda l=info["status_label"]: l.configure(text="Live ✅ (Sẵn sàng)", text_color="#059669"))
-                        cursor.execute("UPDATE accounts SET status = ? WHERE username = ?", ("Live ✅ (Sẵn sàng)", ig_user))
-                        live_count += 1
-                    else:
-                        self.after(0, lambda l=info["status_label"]: l.configure(text="Die / Checkpoint ❌", text_color="#dc2626"))
-                        cursor.execute("UPDATE accounts SET status = ? WHERE username = ?", ("Die / Checkpoint ❌", ig_user))
-                        die_count += 1
-                except Exception:
-                    self.after(0, lambda l=info["status_label"]: l.configure(text="Lỗi kết nối ❌", text_color="#dc2626"))
-                    die_count += 1
-            conn.commit()
-            conn.close()
-            self.log(f"✨ Hoàn tất check IG: {live_count} Live ✅ | {die_count} Die ❌")
+        try:
+            max_workers = max(1, min(15, int(self.ent_threads.get().strip() or 5)))
+        except Exception:
+            max_workers = 5
 
-        threading.Thread(target=_do_check, daemon=True).start()
+        def _check_one(ig_user):
+            if ig_user not in self.acc_rows:
+                return ig_user, "SKIP", None, None
+            info = self.acc_rows[ig_user]
+            ck = info["data"]["cookie"]
+            proxy = self.get_effective_proxy(info["data"].get("proxy", ""))
+            self.after(0, lambda l=info["status_label"]: l.configure(text="🔄 Đang check live...", text_color="#2563eb"))
+            try:
+                res_json_str = check_cookie_ig(ck, proxy)
+                p_data = json.loads(res_json_str)
+                st_code = p_data.get("status_check", "DIE")
+                if st_code == "LIVE" and p_data.get("form_data", {}).get("username"):
+                    real_user = p_data["form_data"]["username"]
+                    real_id = str(p_data["form_data"].get("id") or info["data"].get("id", "0"))
+                    return ig_user, "LIVE", real_user, real_id
+                elif st_code == "CHECKPOINT":
+                    return ig_user, "CHECKPOINT", None, None
+                elif st_code == "PROXY_ERR":
+                    return ig_user, "PROXY_ERR", None, None
+                else:
+                    return ig_user, "DIE", None, None
+            except Exception:
+                return ig_user, "PROXY_ERR", None, None
+
+        def _do_check_all():
+            self.log(f"🔄 Đang Check Live/Die đa luồng ({max_workers} threads) cho {len(selected)} tài khoản IG...")
+            live_count, die_count, cp_count, err_count = 0, 0, 0, 0
+            db_updates = []
+
+            with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                futures = [executor.submit(_check_one, u) for u in selected]
+                for fut in as_completed(futures):
+                    ig_user, result_st, real_user, real_id = fut.result()
+                    if ig_user not in self.acc_rows:
+                        continue
+                    info = self.acc_rows[ig_user]
+                    if result_st == "LIVE":
+                        live_count += 1
+                        if real_id and real_id != "0":
+                            info["data"]["id"] = real_id
+                            self.after(0, lambda l=info["id_label"], rid=real_id: l.configure(text=str(rid)))
+                        status_str = "Live ✅ (Sẵn sàng)"
+                        self.after(0, lambda l=info["status_label"], v=info["var"]: (
+                            l.configure(text="Live ✅ (Sẵn sàng)", text_color="#059669"),
+                            v.set(True)
+                        ))
+                        db_updates.append((status_str, ig_user))
+                    elif result_st == "CHECKPOINT":
+                        cp_count += 1
+                        status_str = "Checkpoint / Challenge ⚠️"
+                        self.after(0, lambda l=info["status_label"], v=info["var"]: (
+                            l.configure(text="Checkpoint / Challenge ⚠️", text_color="#d97706"),
+                            v.set(False)
+                        ))
+                        db_updates.append((status_str, ig_user))
+                    elif result_st == "PROXY_ERR":
+                        err_count += 1
+                        self.after(0, lambda l=info["status_label"]: l.configure(text="Lỗi Proxy / Mạng ⚠️", text_color="#d97706"))
+                    else:
+                        die_count += 1
+                        status_str = "Cookie Die ❌"
+                        self.after(0, lambda l=info["status_label"], v=info["var"]: (
+                            l.configure(text="Cookie Die ❌", text_color="#dc2626"),
+                            v.set(False)
+                        ))
+                        db_updates.append((status_str, ig_user))
+
+            if db_updates:
+                try:
+                    conn = sqlite3.connect(DB_FILE)
+                    cursor = conn.cursor()
+                    cursor.executemany("UPDATE accounts SET status = ? WHERE username = ?", db_updates)
+                    conn.commit()
+                    conn.close()
+                except Exception:
+                    pass
+
+            self.log(
+                f"✨ Kết quả Check IG: {live_count} Live ✅ | {die_count} Die ❌ | {cp_count} Checkpoint ⚠️ | {err_count} Lỗi Mạng/Proxy"
+            )
+
+        threading.Thread(target=_do_check_all, daemon=True).start()
 
     def check_selected_fb_live(self):
         selected = [pid for pid, info in self.page_rows.items() if info["var"].get()]
         if not selected:
-            self.log("💡 Vui lòng chọn ít nhất 1 Page FB để check Live/Die.")
+            selected = list(self.page_rows.keys())
+        if not selected:
+            self.log("💡 Danh sách Page FB đang trống.")
             return
 
         def _do_check():
@@ -1486,7 +1712,7 @@ class MMOApp(ctk.CTk):
                 info = self.page_rows[pid]
                 ptok = info["data"]["page_token"]
                 proxy = self.get_effective_proxy(info["data"].get("proxy", ""))
-                self.after(0, lambda l=info["status_label"]: l.configure(text="Đang check...", text_color="#d97706"))
+                self.after(0, lambda l=info["status_label"]: l.configure(text="🔄 Đang check...", text_color="#0284c7"))
                 is_live = False
                 try:
                     session = c_requests.Session()
@@ -1496,11 +1722,17 @@ class MMOApp(ctk.CTk):
                 except: pass
 
                 if is_live:
-                    self.after(0, lambda l=info["status_label"]: l.configure(text="Live ✅ (Sẵn sàng)", text_color="#059669"))
+                    self.after(0, lambda l=info["status_label"], v=info["var"]: (
+                        l.configure(text="Live ✅ (Sẵn sàng)", text_color="#059669"),
+                        v.set(True)
+                    ))
                     cursor.execute("UPDATE fb_pages SET status = ? WHERE page_id = ?", ("Live ✅ (Sẵn sàng)", pid))
                     live_count += 1
                 else:
-                    self.after(0, lambda l=info["status_label"]: l.configure(text="Die / Token Hết Hạn ❌", text_color="#dc2626"))
+                    self.after(0, lambda l=info["status_label"], v=info["var"]: (
+                        l.configure(text="Die / Token Hết Hạn ❌", text_color="#dc2626"),
+                        v.set(False)
+                    ))
                     cursor.execute("UPDATE fb_pages SET status = ? WHERE page_id = ?", ("Die / Token Hết Hạn ❌", pid))
                     die_count += 1
             conn.commit()
@@ -1521,24 +1753,31 @@ class MMOApp(ctk.CTk):
             raw_proxy = parts[1].strip() if len(parts) > 1 else ""
             proxy = self.get_effective_proxy(raw_proxy)
             idfb = (re.search(r'ds_user_id=(\d+)', ck) or [None, "0"])[1]
+            self.log("🔍 Đang Check Live Cookie IG vừa nhập...")
             try:
                 p_data = json.loads(check_cookie_ig(ck, proxy))
-                if p_data and 'form_data' in p_data and p_data['form_data'].get('username'):
+                st_code = p_data.get("status_check", "DIE")
+                if st_code == "LIVE" and p_data.get('form_data', {}).get('username'):
                     ig_user = p_data['form_data']['username']
-                    if idfb == "0": idfb = str(p_data['form_data'].get('id', '0'))
+                    if idfb == "0" or p_data['form_data'].get('id'):
+                        idfb = str(p_data['form_data'].get('id', idfb))
                     
                     conn = sqlite3.connect(DB_FILE)
                     cursor = conn.cursor()
-                    cursor.execute("INSERT OR REPLACE INTO accounts (username, cookie, proxy, status, coins, max_jobs) VALUES (?, ?, ?, ?, ?, ?)", (ig_user, ck, proxy, "Sẵn sàng", 0, max_jobs_val))
+                    cursor.execute("INSERT OR REPLACE INTO accounts (username, cookie, proxy, status, coins, max_jobs) VALUES (?, ?, ?, ?, ?, ?)", (ig_user, ck, proxy, "Live ✅ (Sẵn sàng)", 0, max_jobs_val))
                     conn.commit()
                     conn.close()
 
                     acc_data = {"cookie": ck, "id": idfb, "username": ig_user, "proxy": proxy, "coins": 0, "max_jobs": max_jobs_val}
-                    self.after(0, lambda: self.add_account_row_to_ui(acc_data))
+                    self.after(0, lambda: self.add_account_row_to_ui(acc_data, status="Live ✅ (Sẵn sàng)"))
                     self.after(0, lambda: self.ent_quick_cookie.delete(0, "end"))
-                    self.log(f"✔ Thêm thành công acc IG: @{ig_user}")
+                    self.log(f"✔ Check Live thành công & đã thêm acc IG: @{ig_user} (UID: {idfb})")
+                elif st_code == "CHECKPOINT":
+                    self.log("⚠️ Cookie IG này đang bị Checkpoint / Challenge!")
+                elif st_code == "PROXY_ERR":
+                    self.log("⚠️ Lỗi kết nối Proxy khi kiểm tra Cookie IG!")
                 else:
-                    self.log("✖ Cookie IG không hợp lệ hoặc đã Die!")
+                    self.log("✖ Cookie IG đã Die hoặc hết hạn phiên đăng nhập!")
             except Exception as e:
                 self.log(f"✖ Lỗi khi kiểm tra Cookie IG: {str(e)}")
 
@@ -1552,7 +1791,7 @@ class MMOApp(ctk.CTk):
         modal.configure(fg_color="#ffffff")
 
         ctk.CTkLabel(modal, text="📋 DÁN DANH SÁCH COOKIE INSTAGRAM VÀO ĐÂY (MỖI DÒNG 1 COOKIE)", font=ctk.CTkFont(size=13, weight="bold"), text_color="#2563eb").pack(anchor="w", padx=24, pady=(20, 4))
-        ctk.CTkLabel(modal, text="💡 Không cần nhập kèm Proxy từng dòng - Hệ thống tự động áp dụng Proxy xoay chung cho tất cả!", font=ctk.CTkFont(size=11, weight="bold"), text_color="#059669").pack(anchor="w", padx=24, pady=(0, 8))
+        ctk.CTkLabel(modal, text="💡 Hệ thống sẽ tự động Check Live đa luồng & gắn Proxy xoay chung cho tất cả Cookie!", font=ctk.CTkFont(size=11, weight="bold"), text_color="#059669").pack(anchor="w", padx=24, pady=(0, 8))
         txt_batch = ctk.CTkTextbox(modal, height=340, font=ctk.CTkFont(family="Consolas", size=10), fg_color="#f8fafc", border_color="#cbd5e1", border_width=1)
         txt_batch.pack(fill="both", expand=True, padx=24, pady=(0, 15))
 
@@ -1561,42 +1800,59 @@ class MMOApp(ctk.CTk):
             if not raw_text: return
             try: max_jobs_val = int(self.max_jobs_entry.get().strip())
             except: max_jobs_val = 999999
+            try: max_workers = max(1, min(15, int(self.ent_threads.get().strip() or 5)))
+            except: max_workers = 5
 
             lines = [c.strip() for c in raw_text.split("\n") if c.strip()]
             modal.destroy()
-            self.log(f"🔄 Đang tiến hành nạp {len(lines)} tài khoản IG...")
+            self.log(f"🔄 Đang tiến hành Check Live & nạp {len(lines)} Cookie IG ({max_workers} luồng)...")
+
+            def _verify_line(line_str):
+                parts = line_str.split("|")
+                ck = parts[0].strip()
+                raw_proxy = parts[1].strip() if len(parts) > 1 else ""
+                proxy = self.get_effective_proxy(raw_proxy)
+                idfb = (re.search(r'ds_user_id=(\d+)', ck) or [None, "0"])[1]
+                try:
+                    p_data = json.loads(check_cookie_ig(ck, proxy))
+                    st_code = p_data.get("status_check", "DIE")
+                    if st_code == "LIVE" and p_data.get('form_data', {}).get('username'):
+                        ig_user = p_data['form_data']['username']
+                        if idfb == "0" or p_data['form_data'].get('id'):
+                            idfb = str(p_data['form_data'].get('id', idfb))
+                        return "LIVE", {"cookie": ck, "id": idfb, "username": ig_user, "proxy": proxy, "coins": 0, "max_jobs": max_jobs_val}
+                    return st_code, None
+                except Exception:
+                    return "DIE", None
 
             def _do_import():
                 conn = sqlite3.connect(DB_FILE)
                 cursor = conn.cursor()
-                new_added = 0
-                for l in lines:
-                    parts = l.split("|")
-                    ck = parts[0].strip()
-                    raw_proxy = parts[1].strip() if len(parts) > 1 else ""
-                    proxy = self.get_effective_proxy(raw_proxy)
-                    idfb = (re.search(r'ds_user_id=(\d+)', ck) or [None, "0"])[1]
-                    
-                    try:
-                        p_data = json.loads(check_cookie_ig(ck, proxy))
-                        if p_data and 'form_data' in p_data and p_data['form_data'].get('username'):
-                            ig_user = p_data['form_data']['username']
-                            if idfb == "0": idfb = str(p_data['form_data'].get('id', '0'))
-                            
-                            cursor.execute("INSERT OR REPLACE INTO accounts (username, cookie, proxy, status, coins, max_jobs) VALUES (?, ?, ?, ?, ?, ?)", (ig_user, ck, proxy, "Sẵn sàng", 0, max_jobs_val))
-                            conn.commit()
+                new_added, die_cnt, cp_cnt = 0, 0, 0
 
-                            acc_data = {"cookie": ck, "id": idfb, "username": ig_user, "proxy": proxy, "coins": 0, "max_jobs": max_jobs_val}
+                with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                    futures = [executor.submit(_verify_line, l) for l in lines]
+                    for fut in as_completed(futures):
+                        st_code, acc_data = fut.result()
+                        if st_code == "LIVE" and acc_data:
+                            cursor.execute(
+                                "INSERT OR REPLACE INTO accounts (username, cookie, proxy, status, coins, max_jobs) VALUES (?, ?, ?, ?, ?, ?)",
+                                (acc_data["username"], acc_data["cookie"], acc_data["proxy"], "Live ✅ (Sẵn sàng)", 0, max_jobs_val)
+                            )
+                            conn.commit()
                             new_added += 1
-                            self.after(0, lambda a=acc_data: self.add_account_row_to_ui(a))
-                    except: pass
+                            self.after(0, lambda a=acc_data: self.add_account_row_to_ui(a, status="Live ✅ (Sẵn sàng)"))
+                        elif st_code == "CHECKPOINT":
+                            cp_cnt += 1
+                        else:
+                            die_cnt += 1
+
                 conn.close()
-                if new_added > 0: self.log(f"✨ Batch import thành công {new_added} tài khoản IG!")
-                else: self.log("⚠️ Không nạp được tài khoản nào (kiểm tra lại Cookie/Proxy).")
+                self.log(f"✨ Batch Import hoàn tất: {new_added} Live ✅ | {die_cnt} Die ❌ | {cp_cnt} Checkpoint ⚠️")
 
             threading.Thread(target=_do_import, daemon=True).start()
 
-        ctk.CTkButton(modal, text="🚀 TIẾN HÀNH NẠP DANH SÁCH", fg_color="#059669", hover_color="#047857", height=42, font=ctk.CTkFont(size=12, weight="bold"), corner_radius=8, command=process_import).pack(fill="x", padx=24, pady=(0, 24))
+        ctk.CTkButton(modal, text="🚀 TIẾN HÀNH CHECK LIVE & NẠP DANH SÁCH", fg_color="#059669", hover_color="#047857", height=42, font=ctk.CTkFont(size=12, weight="bold"), corner_radius=8, command=process_import).pack(fill="x", padx=24, pady=(0, 24))
 
     def scan_and_import_fb_pages(self):
         modal = ctk.CTkToplevel(self)
@@ -1640,12 +1896,12 @@ class MMOApp(ctk.CTk):
                         parent_id = (re.search(r'c_user=(\d+)', ck) or [None, "Main"])[1]
                         
                         cursor.execute("INSERT OR REPLACE INTO fb_pages (parent_username, page_id, page_name, page_token, proxy, status, coins, max_jobs) VALUES (?, ?, ?, ?, ?, ?, ?, ?)", 
-                                       (parent_id, pid, pname, ptok, proxy, "Sẵn sàng", 0, max_jobs_val))
+                                       (parent_id, pid, pname, ptok, proxy, "Live ✅ (Sẵn sàng)", 0, max_jobs_val))
                         conn.commit()
                         
                         page_data = {"parent": parent_id, "page_id": pid, "page_name": pname, "page_token": ptok, "proxy": proxy, "coins": 0, "max_jobs": max_jobs_val}
                         total_scanned_pages += 1
-                        self.after(0, lambda pd=page_data: self.add_page_row_to_ui(pd))
+                        self.after(0, lambda pd=page_data: self.add_page_row_to_ui(pd, status="Live ✅ (Sẵn sàng)"))
                         
                 conn.close()
                 self.log(f"✨ Quét xong {total_scanned_pages} Page Facebook.")
@@ -1687,7 +1943,7 @@ class MMOApp(ctk.CTk):
                 if not self.single_running_threads.get(ig_user, False):
                     self.single_running_threads[ig_user] = True
                     info["action_btn"].configure(text="Dừng", fg_color="#dc2626", hover_color="#b91c1c")
-                    info["status_label"].configure(text=f"Đang đồng bộ XSMM...", text_color="#2563eb")
+                    info["status_label"].configure(text="Đang Check Live & Đồng bộ...", text_color="#2563eb")
                     threading.Thread(target=self.worker_single_account_loop, args=(token, chosen_ig_jobs, delay_cfg, acc_data, info["action_btn"], info["status_label"]), daemon=True).start()
 
             for info in selected_pg:
@@ -1712,6 +1968,16 @@ class MMOApp(ctk.CTk):
                 info["action_btn"].configure(text="Bắt đầu", fg_color="#0284c7")
                 info["status_label"].configure(text="Đã dừng", text_color="#d97706")
 
+    def mark_account_status_db(self, username, status_text):
+        try:
+            conn = sqlite3.connect(DB_FILE)
+            cursor = conn.cursor()
+            cursor.execute("UPDATE accounts SET status = ? WHERE username = ?", (status_text, username))
+            conn.commit()
+            conn.close()
+        except Exception:
+            pass
+
     def worker_single_account_loop(self, token, listnv, delay_cfg, acc, btn_action, lbl_status):
         xsmm = XSMMTool(token)
         username, ck, id_val = acc["username"], acc["cookie"], acc["id"]
@@ -1719,15 +1985,28 @@ class MMOApp(ctk.CTk):
         max_jobs = acc.get("max_jobs", 999999)
         attempted_jobs = 0
         success_count_total = 0
+        consecutive_fails = 0
 
         if isinstance(delay_cfg, tuple) and len(delay_cfg) == 4:
             delay_min, delay_max, delay_coin_min, delay_coin_max = delay_cfg
         else:
             delay_min, delay_max, delay_coin_min, delay_coin_max = self.get_delay_settings()
 
-        # 1. Khởi tạo class INSTAGRAM với Proxy xoay chung và lấy thông tin phiên (av, fb_dtsg) 1 lần duy nhất
+        # 1. Check Live & Lấy thông tin phiên (av, fb_dtsg) trước khi vào vòng lặp
         ig = INSTAGRAM(ck, proxy)
-        av, fb_dtsg, _, ig_uname = ig.GETINFO()
+        av, fb_dtsg, st_check, ig_uname = ig.GETINFO()
+
+        if st_check in ["DIE", "CHECKPOINT"]:
+            err_label = "Checkpoint / Challenge ⚠️" if st_check == "CHECKPOINT" else "Cookie Die ❌"
+            self.log(f"✖ [@{username}] Dừng chạy do {err_label}")
+            self.mark_account_status_db(username, err_label)
+            self.single_running_threads[username] = False
+            self.after(0, lambda: btn_action.configure(text="Bắt đầu", fg_color="#2563eb"))
+            self.after(0, lambda el=err_label: lbl_status.configure(text=el, text_color="#dc2626"))
+            if username in self.acc_rows:
+                self.after(0, lambda: self.acc_rows[username]["var"].set(False))
+            return
+
         if not av:
             av = id_val
         if not ig_uname or ig_uname is False:
@@ -1735,7 +2014,7 @@ class MMOApp(ctk.CTk):
 
         # 2. Đồng bộ lên XSMM và lấy chính xác XSMM ID (account_id)
         xsmm_uid = xsmm.sync_and_get_xsmm_id(ig_uname, av)
-        self.log(f"🔗 [@{username}] Đồng bộ XSMM thành công -> XSMM UID: {xsmm_uid}")
+        self.log(f"🔗 [@{username}] Check Live OK & Đồng bộ XSMM -> UID: {xsmm_uid}")
 
         follow_cache_ids = []
         
@@ -1744,7 +2023,6 @@ class MMOApp(ctk.CTk):
                 self.after(0, lambda: lbl_status.configure(text=f"Đã hoàn thành {max_jobs} job", text_color="#059669"))
                 break
 
-            # Cập nhật lại delay và Proxy xoay chung động từ GUI
             delay_min, delay_max, delay_coin_min, delay_coin_max = self.get_delay_settings()
             ig.proxies = format_proxy(self.get_effective_proxy(acc.get("proxy", "")))
 
@@ -1786,6 +2064,7 @@ class MMOApp(ctk.CTk):
                     attempted_jobs += 1
 
                     if is_done:
+                        consecutive_fails = 0
                         success_count_total += 1
                         if rand_job in ['instagram_like', 'instagram_comment']:
                             c_res = gui_nhan_xu(rand_job, [task_id], xsmm_uid, cookie_check=ck, xsmm_obj=xsmm)
@@ -1825,13 +2104,31 @@ class MMOApp(ctk.CTk):
                             self.after(0, lambda rt=rest_time: lbl_status.configure(text=f"Nghỉ an toàn {rt}s...", text_color="#059669"))
                             time.sleep(rest_time)
                     else:
+                        consecutive_fails += 1
                         self.after(0, lambda jl=job_label, c=attempted_jobs: lbl_status.configure(text=f"❌ Lỗi {jl} ({c})", text_color="#dc2626"))
+
+                        # Nếu lỗi 5 lần liên tiếp -> Tự động Check Live lại xem acc có bị Checkpoint/Die không
+                        if consecutive_fails >= 5:
+                            _, new_dtsg, recheck_st, _ = ig.GETINFO()
+                            if recheck_st in ["DIE", "CHECKPOINT"]:
+                                err_label = "Checkpoint khi chạy ⚠️" if recheck_st == "CHECKPOINT" else "Cookie Die khi chạy ❌"
+                                self.log(f"✖ [@{username}] Tự động dừng: {err_label}")
+                                self.mark_account_status_db(username, err_label)
+                                self.single_running_threads[username] = False
+                                self.after(0, lambda: btn_action.configure(text="Bắt đầu", fg_color="#2563eb"))
+                                self.after(0, lambda el=err_label: lbl_status.configure(text=el, text_color="#dc2626"))
+                                if username in self.acc_rows:
+                                    self.after(0, lambda: self.acc_rows[username]["var"].set(False))
+                                return
+                            elif new_dtsg:
+                                fb_dtsg = new_dtsg
+                            consecutive_fails = 0
 
                     delay_action = random.randint(delay_min, delay_max)
                     time.sleep(delay_action)
 
             if self.single_running_threads.get(username, False) and attempted_jobs < max_jobs:
-                self.after(0, lambda: lbl_status.configure(text="Live (Chờ job mới 10s)", text_color="#059669"))
+                self.after(0, lambda: lbl_status.configure(text="Live ✅ (Chờ job mới 10s)", text_color="#059669"))
             time.sleep(10)
 
         self.single_running_threads[username] = False
