@@ -134,7 +134,7 @@ def get_media_id(input_str: str) -> str:
         return input_str.split("_")[0]
 
     match = re.search(r'/(?:p|reel|reels|tv)/([A-Za-z0-9_-]+)', input_str)
-    shortcode = match.group(1) if match else (input_str if re.match(r'^[A-Za-z0-9_-]{8,15}$', input_str) else None)
+    shortcode = match.group(1) if match else (input_str if re.match(r'^[A-Za-z0-9_-]{8,15}$', input_str) and not input_str.startswith("http") else None)
         
     if shortcode:
         alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_'
@@ -188,305 +188,440 @@ def parse_real_earned_points(response_data, default_points=10):
         return 0, msg
     return 0, "Phản hồi từ server không hợp lệ"
 
+def get_ig_headers(cookie, csrftoken, referer="https://www.instagram.com/"):
+    return {
+        'accept': '*/*',
+        'accept-language': 'vi-VN,vi;q=0.9,en-US;q=0.8,en;q=0.7',
+        'content-type': 'application/x-www-form-urlencoded',
+        'cookie': cookie,
+        'origin': 'https://www.instagram.com',
+        'referer': referer,
+        'sec-ch-ua': SEC_CH_UA_120,
+        'sec-ch-ua-mobile': '?0',
+        'sec-ch-ua-platform': '"Windows"',
+        'sec-fetch-dest': 'empty',
+        'sec-fetch-mode': 'cors',
+        'sec-fetch-site': 'same-origin',
+        'user-agent': USER_AGENT,
+        'x-asbd-id': '129477',
+        'x-csrftoken': csrftoken,
+        'x-ig-app-id': '936619743392459',
+        'x-ig-www-claim': '0',
+        'x-requested-with': 'XMLHttpRequest'
+    }
+
 class INSTAGRAM:
-    """Class xử lý trực tiếp Instagram (Check Live chính xác + Like + Follow + Comment)"""
+    """
+    Class xử lý Instagram sử dụng curl_cffi (impersonate="chrome120")
+    kết hợp 3 tầng API (Web REST v1 + GraphQL + Mobile API) để đảm bảo làm job ổn định.
+    """
     def __init__(self, cookies_str, proxy=None):
-        self.cookies_str = cookies_str
-        self.cookies_dict = parse_cookie_string(cookies_str)
+        self.cookies_str = unquote(cookies_str).strip()
+        self.cookies_dict = parse_cookie_string(self.cookies_str)
         self.csrftoken = self.cookies_dict.get('csrftoken', '')
+        self.ds_user_id = self.cookies_dict.get('ds_user_id', '')
         self.proxies = format_proxy(proxy)
-            
-    def GETINFO(self):
-        """
-        Kiểm tra phiên đăng nhập thực tế trên Instagram.
-        Trả về: (userID, fb_dtsg, status_code_str, ig_username)
-        status_code_str: "LIVE", "CHECKPOINT", "DIE", hoặc "PROXY_ERR"
-        """
-        try:
-            headers = {
-                'accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
-                'accept-language': 'vi-VN,vi;q=0.9,en-US;q=0.8,en;q=0.7',
-                'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36',
-            }
-            resp_obj = requests.get(
-                "https://www.instagram.com/",
-                headers=headers,
-                cookies=self.cookies_dict,
-                proxies=self.proxies,
-                timeout=12,
-                allow_redirects=True
-            )
-            final_url = str(resp_obj.url)
-            response = resp_obj.text
+        self.last_error = ""
+        self.lsd = "Jfq8VQNmkkkJufHSbEE9bf"
+        self.jazoest = "26328"
 
-            # Kiểm tra nếu bị chuyển hướng sang trang Challenge / Checkpoint
-            if "/challenge/" in final_url or "checkpoint_required" in response or "challenge_required" in response:
-                return False, False, "CHECKPOINT", False
-
-            # Kiểm tra nếu bị đá về trang Login
-            if "/accounts/login" in final_url:
-                return False, False, "DIE", False
-
-            userID1 = None
-            userID_match = re.search(r'"viewerId":"(\d+)"', response)
-            if userID_match and userID_match.group(1) != "0":
-                userID1 = userID_match.group(1)
-            else:
-                uid_matches = re.findall(r'"userID":"(\d+)"', response)
-                for uid_candidate in uid_matches:
-                    if uid_candidate != "0":
-                        userID1 = uid_candidate
-                        break
-
-            # Nếu không có viewerId hợp lệ trên trang chủ -> Cookie đã Die
-            if not userID1 or str(userID1) == "0":
-                return False, False, "DIE", False
-                
-            # Tìm username thực tế của tài khoản đang đăng nhập
-            username_match = (
-                re.search(r'"viewer":\{[^}]*?"username":"([^"]+)"', response)
-                or re.search(r'\\"viewer\\":\{[^}]*?\\"username\\":\\"([^\\"]+)\\"', response)
-                or re.search(r'"username":"([^"]+)"', response)
-            )
-            ig_username = username_match.group(1) if username_match else None
-            
-            dtsg_match = re.search(r'"dtsg":\s*\{"token":"([^"]+)"', response) or re.search(r'name="fb_dtsg" value="([^"]+)"', response)
-            fb_dtsg = dtsg_match.group(1) if dtsg_match else ""
-
-            # Nếu trang chủ chỉ có userID mà ẩn username, gọi thêm API web_form_data để lấy đúng username
-            if not ig_username:
-                try:
-                    api_headers = {
-                        'x-ig-app-id': '936619743392459',
-                        'x-csrftoken': self.csrftoken,
-                        'user-agent': USER_AGENT,
-                        'referer': 'https://www.instagram.com/accounts/edit/'
-                    }
-                    r_form = requests.get(
-                        "https://www.instagram.com/api/v1/accounts/edit/web_form_data/",
-                        headers=api_headers,
-                        cookies=self.cookies_dict,
-                        proxies=self.proxies,
-                        timeout=10
-                    )
-                    if r_form.status_code == 200:
-                        j_form = r_form.json()
-                        ig_username = j_form.get("form_data", {}).get("username")
-                except Exception:
-                    pass
-
-            if not ig_username:
-                ig_username = str(userID1)
-            
-            return str(userID1), fb_dtsg, "LIVE", ig_username
-        except (requests.exceptions.ProxyError, requests.exceptions.ConnectTimeout, requests.exceptions.ReadTimeout, requests.exceptions.ConnectionError):
-            return False, False, "PROXY_ERR", False
-        except Exception:
-            return False, False, "DIE", False
-
-    def LIKE(self, av, dtsg, post_id, cookies, link, lsd_token=""):
-        """Thực hiện Like bài viết (Ưu tiên Web API an toàn + Fallback Mobile API)"""
-        media_id = get_media_id(link if link else post_id)
-        if not media_id or not str(media_id).isdigit():
-            media_id = get_media_id(post_id)
-        if not media_id or not str(media_id).isdigit():
-            return False
-
-        # Nhánh 1: Gọi Web API v1 (Đồng bộ với Cookie trình duyệt, hạn chế checkpoint)
-        web_headers = {
-            'authority': 'www.instagram.com',
-            'accept': '*/*',
-            'accept-language': 'vi-VN,vi;q=0.9,en-US;q=0.8,en;q=0.7',
-            'content-type': 'application/x-www-form-urlencoded',
-            'origin': 'https://www.instagram.com',
-            'referer': link if link else 'https://www.instagram.com/',
-            'sec-ch-ua': '"Chromium";v="139", "Not;A=Brand";v="99"',
-            'sec-ch-ua-mobile': '?1',
-            'sec-ch-ua-platform': '"Android"',
-            'user-agent': 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Mobile Safari/537.36',
-            'x-csrftoken': self.csrftoken,
-            'x-ig-app-id': '1217981644879628',
-            'x-requested-with': 'XMLHttpRequest',
-        }
-        try:
-            res_web = requests.post(
-                f"https://www.instagram.com/api/v1/web/likes/{media_id}/like/",
-                cookies=self.cookies_dict,
-                headers=web_headers,
-                data={},
-                proxies=self.proxies,
-                timeout=12
-            )
-            if res_web.status_code == 200:
-                res_json = res_web.json()
-                if res_json.get('status') == 'ok':
-                    return True
-        except Exception:
-            pass
-
-        # Nhánh 2: Fallback sang Mobile API i.instagram.com
-        headers = {
-            'User-Agent': 'Instagram 269.0.0.18.75 Android (28/9; 480dpi; 1080x1920; Xiaomi; Redmi Note 7; lavender; qcom; sm6150; en_US; 317822529)',
-            'Accept-Language': 'vi-VN, en-US',
-            'X-IG-Capabilities': '3brTvx0=',
-            'X-IG-Connection-Type': 'WIFI',
-            'X-IG-App-ID': '1217981644879628',
-            'X-CSRFToken': self.csrftoken,
-            'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
-            'Host': 'i.instagram.com',
-            'Connection': 'keep-alive',
-            'Accept-Encoding': 'gzip, deflate',
-        }
-        url = f"https://i.instagram.com/api/v1/media/{media_id}/like/"
-        data = {
-            'module_name': 'feed_timeline',
-            'media_id': media_id
-        }
-        try:
-            response = requests.post(url, cookies=self.cookies_dict, headers=headers, data=data, proxies=self.proxies, timeout=12)
-            if response.status_code == 200:
-                res_json = response.json()
-                if res_json.get('status') == 'ok':
-                    return True
-        except Exception:
-            pass
-        return False
-
-    def FOLLOW(self, dtsg, target_user_id, target_url=""):
-        """Thực hiện Follow người dùng"""
-        target_uid = str(target_user_id or "").strip()
-        if not target_uid.isdigit() and target_url:
+    def _create_session(self):
+        sess = c_requests.Session()
+        if self.proxies:
+            sess.proxies = self.proxies
+        for k, v in self.cookies_dict.items():
             try:
-                html = requests.get(target_url, cookies=self.cookies_dict, proxies=self.proxies, timeout=10).text
-                m = re.search(r'"profile_id":"(\d+)"', html) or re.search(r'"user_id":"(\d+)"', html) or re.search(r'profilePage_(\d+)', html)
-                if m: target_uid = m.group(1)
+                sess.cookies.set(k, v, domain='.instagram.com')
             except Exception:
                 pass
-        if not target_uid.isdigit():
-            return False
+        return sess
 
-        url = f"https://www.instagram.com/api/v1/friendships/create/{target_uid}/"
-        headers = {
-            'authority': 'www.instagram.com',
-            'accept': '*/*',
-            'accept-language': 'vi-VN,vi;q=0.9,en-US;q=0.8,en;q=0.7',
-            'content-type': 'application/x-www-form-urlencoded',
-            'origin': 'https://www.instagram.com',
-            'referer': target_url if target_url else 'https://www.instagram.com/',
-            'sec-ch-ua': '"Chromium";v="139", "Not;A=Brand";v="99"',
-            'sec-ch-ua-mobile': '?1',
-            'sec-ch-ua-platform': '"Android"',
-            'sec-fetch-dest': 'empty',
-            'sec-fetch-mode': 'cors',
-            'sec-fetch-site': 'same-origin',
-            'user-agent': 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Mobile Safari/537.36',
-            'x-csrftoken': self.csrftoken,
-            'x-ig-app-id': '1217981644879628',
-            'x-requested-with': 'XMLHttpRequest',
-        }
-        data = {
-            'container_module': 'profile',
-            'include_follow_friction_check': 'true',
-            'nav_chain': 'PolarisProfileRoot:profilePage:1:via_cold_start',
-            'user_id': str(target_uid),
-            'jazoest': '22613',
-            'fb_dtsg': dtsg if dtsg else 'NAfw7uEKgkrIMU2uHq9loxwB_G4Ai8jtT0G9FzGOC4w'
-        }
+    def GETINFO(self):
+        """
+        Kiểm tra phiên đăng nhập & lấy (userID, fb_dtsg, status_code_str, ig_username).
+        Sử dụng curl_cffi để tránh bị Instagram chặn TLS hoặc báo Die nhầm.
+        """
+        sess = self._create_session()
+        ig_username = None
+        userID1 = self.ds_user_id if (self.ds_user_id and self.ds_user_id != "0") else None
+        fb_dtsg = ""
 
+        # Bước 1: Kiểm tra qua endpoint /api/v1/accounts/edit/web_form_data/ (Nhanh & chính xác nhất)
         try:
-            response = requests.post(url, cookies=self.cookies_dict, headers=headers, data=data, proxies=self.proxies, timeout=12)
-            if response.status_code == 200:
-                res_json = response.json()
-                if res_json.get('status') == 'ok' or res_json.get('friendship_status', {}).get('following') is True or res_json.get('friendship_status', {}).get('outgoing_request') is True:
-                    return True
+            r_edit = sess.get(
+                'https://www.instagram.com/api/v1/accounts/edit/web_form_data/',
+                headers={
+                    'x-ig-app-id': '936619743392459',
+                    'x-csrftoken': self.csrftoken,
+                    'cookie': self.cookies_str,
+                    'user-agent': USER_AGENT,
+                    'referer': 'https://www.instagram.com/accounts/edit/'
+                },
+                impersonate="chrome120",
+                timeout=10,
+                max_redirects=5
+            )
+            txt_edit = r_edit.text
+            if "/challenge/" in str(r_edit.url) or "checkpoint_required" in txt_edit or "challenge_required" in txt_edit:
+                return False, False, "CHECKPOINT", False
+            if "/accounts/login" in str(r_edit.url) or '"login_required"' in txt_edit:
+                return False, False, "DIE", False
+
+            j_edit = json.loads(txt_edit)
+            if isinstance(j_edit, dict) and j_edit.get("form_data", {}).get("username"):
+                ig_username = j_edit["form_data"]["username"]
+                if not userID1 and j_edit["form_data"].get("id"):
+                    userID1 = str(j_edit["form_data"]["id"])
         except Exception:
             pass
-        return False
 
-    def COMMENT(self, av, dtsg, target_id, target_url, comment_content):
-        """Thực hiện Comment bài viết"""
-        url = "https://www.instagram.com/api/graphql"
-        media_id = get_media_id(target_url if target_url else target_id)
+        # Bước 2: Lấy thêm fb_dtsg, lsd, viewerId từ trang chủ Instagram bằng curl_cffi
+        try:
+            resp_home = sess.get(
+                "https://www.instagram.com/",
+                headers={
+                    'accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+                    'accept-language': 'vi-VN,vi;q=0.9,en-US;q=0.8,en;q=0.7',
+                    'cookie': self.cookies_str,
+                    'user-agent': USER_AGENT,
+                },
+                impersonate="chrome120",
+                timeout=12,
+                max_redirects=5
+            )
+            final_url = str(resp_home.url)
+            html = resp_home.text
+
+            if "/challenge/" in final_url or "checkpoint_required" in html or "challenge_required" in html:
+                return False, False, "CHECKPOINT", False
+            if "/accounts/login" in final_url and not ig_username:
+                return False, False, "DIE", False
+
+            if lsd_m := re.search(r'"LSD",\[\],\{"token":"([^"]+)"\}', html):
+                self.lsd = lsd_m.group(1)
+            if dtsg_m := (re.search(r'"dtsg":\s*\{"token":"([^"]+)"', html) or re.search(r'name="fb_dtsg" value="([^"]+)"', html)):
+                fb_dtsg = dtsg_m.group(1)
+            if jaz_m := re.search(r'name="jazoest" value="(\d+)"', html):
+                self.jazoest = jaz_m.group(1)
+
+            if not userID1:
+                uid_m = re.search(r'"viewerId":"(\d+)"', html) or re.search(r'"actorID":"(\d+)"', html) or re.search(r'"userID":"(\d+)"', html)
+                if uid_m and uid_m.group(1) != "0":
+                    userID1 = uid_m.group(1)
+
+            if not ig_username:
+                uname_m = (
+                    re.search(r'"viewer":\{[^}]*?"username":"([^"]+)"', html)
+                    or re.search(r'\\"viewer\\":\{[^}]*?\\"username\\":\\"([^\\"]+)\\"', html)
+                    or re.search(r'"username":"([^"]+)"', html)
+                )
+                if uname_m:
+                    ig_username = uname_m.group(1)
+        except Exception as e:
+            if not ig_username and not userID1:
+                self.last_error = str(e)
+                return False, False, "PROXY_ERR", False
+
+        if ig_username or (userID1 and str(userID1) != "0" and fb_dtsg):
+            final_uid = str(userID1 or self.ds_user_id or "0")
+            final_uname = str(ig_username or final_uid)
+            return final_uid, fb_dtsg, "LIVE", final_uname
+
+        return False, False, "DIE", False
+
+    def resolve_media_id_full(self, post_id, link=""):
+        """Giải mã media_id số từ post_id, shortcode hoặc link bài viết"""
+        for candidate in [post_id, link]:
+            mid = get_media_id(candidate)
+            if mid and str(mid).isdigit():
+                return str(mid)
+
+        # Nếu vẫn chưa ra số, truy cập vào link bài viết để lấy media_id trong HTML
+        if link and link.startswith("http"):
+            try:
+                sess = self._create_session()
+                html = sess.get(link, headers={'cookie': self.cookies_str, 'user-agent': USER_AGENT}, impersonate="chrome120", timeout=10, max_redirects=5).text
+                m = re.search(r'"media_id":"(\d+)"', html) or re.search(r'instagram://media\?id=(\d+)', html) or re.search(r'"pk":"(\d+)"', html)
+                if m:
+                    return m.group(1)
+            except Exception:
+                pass
+        return ""
+
+    def resolve_user_id_full(self, target_user_id, target_url=""):
+        """Giải mã user_id số từ target_user_id, username hoặc link profile"""
+        raw_uid = str(target_user_id or "").strip()
+        if raw_uid.isdigit():
+            return raw_uid
+
+        # Trích xuất username từ target_url hoặc raw_uid
+        uname = ""
+        if target_url and "instagram.com/" in target_url:
+            m = re.search(r'instagram\.com/([A-Za-z0-9._]+)', target_url)
+            if m and m.group(1).lower() not in ["p", "reel", "reels", "tv", "stories", "explore"]:
+                uname = m.group(1)
+        if not uname and raw_uid and not raw_uid.startswith("http"):
+            uname = raw_uid.replace("@", "").strip()
+
+        sess = self._create_session()
+
+        # Cách 1: Gọi API web_profile_info chuẩn của IG để lấy ID từ username
+        if uname:
+            try:
+                api_url = f"https://www.instagram.com/api/v1/users/web_profile_info/?username={uname}"
+                r_prof = sess.get(
+                    api_url,
+                    headers=get_ig_headers(self.cookies_str, self.csrftoken, f"https://www.instagram.com/{uname}/"),
+                    impersonate="chrome120",
+                    timeout=10
+                )
+                if r_prof.status_code == 200:
+                    j_prof = r_prof.json()
+                    uid_found = j_prof.get("data", {}).get("user", {}).get("id")
+                    if uid_found and str(uid_found).isdigit():
+                        return str(uid_found)
+            except Exception:
+                pass
+
+        # Cách 2: Cào từ HTML trang cá nhân bằng curl_cffi
+        url_to_fetch = target_url if (target_url and target_url.startswith("http")) else (f"https://www.instagram.com/{uname}/" if uname else "")
+        if url_to_fetch:
+            try:
+                html = sess.get(url_to_fetch, headers={'cookie': self.cookies_str, 'user-agent': USER_AGENT}, impersonate="chrome120", timeout=10, max_redirects=5).text
+                m = re.search(r'"profile_id":"(\d+)"', html) or re.search(r'"user_id":"(\d+)"', html) or re.search(r'profilePage_(\d+)', html) or re.search(r'"pk":"(\d+)"', html)
+                if m:
+                    return m.group(1)
+            except Exception:
+                pass
+        return ""
+
+    def LIKE(self, av, dtsg, post_id, cookies, link, lsd_token=""):
+        """Thực hiện Like bài viết (3 tầng: Web API v1 -> GraphQL -> Mobile API)"""
+        media_id = self.resolve_media_id_full(post_id, link)
         if not media_id or not str(media_id).isdigit():
-            media_id = get_media_id(target_id)
-        if not media_id or not str(media_id).isdigit():
+            self.last_error = f"Không lấy được media_id từ ({post_id} | {link})"
             return False
-        
-        headers = {
-            "authority": "www.instagram.com",
-            "accept": "*/*",
-            "accept-language": "vi-VN,vi;q=0.9,en-US;q=0.8,en;q=0.7",
-            "content-type": "application/x-www-form-urlencoded",
-            "origin": "https://www.instagram.com",
-            "referer": target_url if target_url else f"https://www.instagram.com/p/{target_id}/comments/",
-            "sec-ch-ua": '"Chromium";v="139", "Not;A=Brand";v="99"',
-            "sec-ch-ua-mobile": "?1",
-            "sec-ch-ua-platform": '"Android"',
-            "sec-fetch-dest": "empty",
-            "sec-fetch-mode": "cors",
-            "sec-fetch-site": "same-origin",
-            "user-agent": "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Mobile Safari/537.36",
-            "x-asbd-id": "359341",
-            "x-csrftoken": self.csrftoken,
-            "x-fb-friendly-name": "PolarisPostCommentInputRevampedMutation",
-            "x-ig-app-id": "1217981644879628",
-            "x-ig-max-touch-points": "5",
-            "x-requested-with": "XMLHttpRequest",
-        }
 
-        variables_dict = {
-            "connections": [
-                f'client:root:__PolarisPostComments__xdt_api__v1__media__{media_id}__comments__connection_connection(data:{{}},media_id:"{media_id}",sort_order:"popular")'
-            ],
-            "data": {
-                "comment_text": comment_content,
-                "media_id": str(media_id)
+        sess = self._create_session()
+        ref_url = link if (link and link.startswith("http")) else "https://www.instagram.com/"
+        headers = get_ig_headers(self.cookies_str, self.csrftoken, ref_url)
+
+        # Tầng 1: Gọi Web REST API v1 bằng curl_cffi
+        try:
+            res_v1 = sess.post(
+                f"https://www.instagram.com/api/v1/web/likes/{media_id}/like/",
+                headers=headers,
+                data={},
+                impersonate="chrome120",
+                timeout=12
+            )
+            if res_v1.status_code == 200:
+                j1 = res_v1.json()
+                if j1.get("status") == "ok":
+                    return True
+                self.last_error = j1.get("message") or str(j1)[:40]
+        except Exception as e:
+            self.last_error = str(e)[:40]
+
+        # Tầng 2: Gọi GraphQL usePolarisLikeMediaXIGLikeMutation bằng curl_cffi
+        try:
+            actor_id = str(av or self.ds_user_id or "0")
+            variables = {
+                "input": {
+                    "actor_id": actor_id,
+                    "client_mutation_id": str(random.randint(1000000, 9999999)),
+                    "container_module": "single_post",
+                    "media_id": str(media_id)
+                }
             }
-        }
-        encoded_variables = urllib.parse.quote(json.dumps(variables_dict, ensure_ascii=False))
-
-        data = (
-            f"av={av}&__d=www&__user=0&__a=1&__req=31"
-            "&__hs=20716.HYP%3Ainstagram_web_pkg.2.1...0&dpr=3&__ccg=EXCELLENT&__rev=1047982529"
-            "&__comet_req=7"
-            f"&fb_dtsg={urllib.parse.quote(dtsg if dtsg else 'NAfw7uEKgkrIMU2uHq9loxwB_G4Ai8jtT0G9FzGOC4w')}"
-            "&jazoest=26096&__spin_r=1047982529&__spin_b=trunk&__spin_t=1789924702"
-            "&__crn=comet.igweb.PolarisMobileAllCommentsRouteNext&fb_api_caller_class=RelayModern"
-            "&fb_api_req_friendly_name=PolarisPostCommentInputRevampedMutation&server_timestamps=true"
-            f"&variables={encoded_variables}"
-            "&doc_id=27261905640092552"
-        )
-
-        try:
-            response = requests.post(
-                url,
-                cookies=self.cookies_dict,
+            gql_data = {
+                "av": actor_id, "__d": "www", "__user": "0", "__a": "1", "__req": "h",
+                "__hs": "20702.HYP:instagram_web_pkg.2.1...0", "dpr": "1", "__ccg": "EXCELLENT",
+                "__rev": "1046913831", "__comet_req": "7",
+                "fb_dtsg": dtsg, "jazoest": self.jazoest, "lsd": self.lsd,
+                "fb_api_caller_class": "RelayModern",
+                "fb_api_req_friendly_name": "usePolarisLikeMediaXIGLikeMutation",
+                "server_timestamps": "true",
+                "doc_id": "27182485238052618",
+                "variables": json.dumps(variables)
+            }
+            res_gql = sess.post(
+                "https://www.instagram.com/api/graphql",
                 headers=headers,
-                data=data,
-                proxies=self.proxies,
+                data=gql_data,
+                impersonate="chrome120",
                 timeout=12
             )
-            if response.status_code == 200:
-                res_json = response.json()
-                if "errors" not in res_json and ("data" in res_json or res_json.get("status") == "ok"):
+            if res_gql.status_code == 200:
+                jg = res_gql.json()
+                if "errors" not in jg and ("data" in jg or jg.get("status") == "ok"):
                     return True
-        except Exception:
-            pass
+                self.last_error = str(jg.get("errors") or jg.get("message") or "GraphQL Like Block")[:40]
+        except Exception as e:
+            self.last_error = str(e)[:40]
 
-        # Fallback sang REST API v1 Comment nếu GraphQL đổi doc_id
+        # Tầng 3: Fallback Mobile API i.instagram.com
         try:
-            res_v1 = requests.post(
-                f"https://www.instagram.com/api/v1/web/comments/{media_id}/add/",
-                cookies=self.cookies_dict,
-                headers=headers,
-                data={"comment_text": comment_content},
-                proxies=self.proxies,
+            mob_headers = {
+                'User-Agent': 'Instagram 269.0.0.18.75 Android (28/9; 480dpi; 1080x1920; Xiaomi; Redmi Note 7; lavender; qcom; sm6150; en_US; 317822529)',
+                'Accept-Language': 'vi-VN, en-US',
+                'X-IG-Capabilities': '3brTvx0=',
+                'X-IG-Connection-Type': 'WIFI',
+                'X-IG-App-ID': '1217981644879628',
+                'X-CSRFToken': self.csrftoken,
+                'Cookie': self.cookies_str,
+                'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+            }
+            res_mob = sess.post(
+                f"https://i.instagram.com/api/v1/media/{media_id}/like/",
+                headers=mob_headers,
+                data={'module_name': 'feed_timeline', 'media_id': str(media_id)},
+                impersonate="chrome120",
                 timeout=12
             )
-            if res_v1.status_code == 200 and res_v1.json().get("status") == "ok":
+            if res_mob.status_code == 200 and res_mob.json().get("status") == "ok":
                 return True
         except Exception:
             pass
+
+        return False
+
+    def FOLLOW(self, dtsg, target_user_id, target_url="", av=""):
+        """Thực hiện Follow người dùng (2 tầng: Web API v1 -> GraphQL Follow Mutation)"""
+        target_uid = self.resolve_user_id_full(target_user_id, target_url)
+        if not target_uid or not str(target_uid).isdigit():
+            self.last_error = f"Không lấy được UID từ ({target_user_id} | {target_url})"
+            return False
+
+        sess = self._create_session()
+        ref_url = target_url if (target_url and target_url.startswith("http")) else "https://www.instagram.com/"
+        headers = get_ig_headers(self.cookies_str, self.csrftoken, ref_url)
+
+        # Tầng 1: Web API v1 friendships/create bằng curl_cffi
+        try:
+            data_v1 = {
+                'container_module': 'profile',
+                'include_follow_friction_check': 'true',
+                'nav_chain': 'PolarisProfileRoot:profilePage:1:via_cold_start',
+                'user_id': str(target_uid),
+                'jazoest': self.jazoest,
+                'fb_dtsg': dtsg if dtsg else ''
+            }
+            res_v1 = sess.post(
+                f"https://www.instagram.com/api/v1/friendships/create/{target_uid}/",
+                headers=headers,
+                data=data_v1,
+                impersonate="chrome120",
+                timeout=12
+            )
+            if res_v1.status_code == 200:
+                j1 = res_v1.json()
+                f_status = j1.get("friendship_status", {})
+                if j1.get("status") == "ok" and (f_status.get("following") is True or f_status.get("outgoing_request") is True or "friendship_status" in j1):
+                    return True
+                self.last_error = j1.get("message") or str(j1)[:40]
+        except Exception as e:
+            self.last_error = str(e)[:40]
+
+        # Tầng 2: GraphQL usePolarisFollowMutation bằng curl_cffi
+        try:
+            actor_id = str(av or self.ds_user_id or "0")
+            variables = {
+                "target_user_id": str(target_uid),
+                "container_module": "profile",
+                "nav_chain": "PolarisFeedRoot:feedPage:5:topnav-link"
+            }
+            gql_data = {
+                "av": actor_id, "__d": "www", "__user": "0", "__a": "1", "__req": "s",
+                "__hs": "20702.HYP:instagram_web_pkg.2.1...0", "dpr": "1", "__ccg": "EXCELLENT",
+                "__rev": "1046917461", "__comet_req": "7",
+                "fb_dtsg": dtsg, "jazoest": self.jazoest, "lsd": self.lsd,
+                "fb_api_caller_class": "RelayModern",
+                "fb_api_req_friendly_name": "usePolarisFollowMutation",
+                "server_timestamps": "true",
+                "doc_id": "26508036048874888",
+                "variables": json.dumps(variables)
+            }
+            res_gql = sess.post(
+                "https://www.instagram.com/api/graphql",
+                headers=headers,
+                data=gql_data,
+                impersonate="chrome120",
+                timeout=12
+            )
+            if res_gql.status_code == 200:
+                jg = res_gql.json()
+                if "errors" not in jg and ("data" in jg or jg.get("status") == "ok"):
+                    return True
+                self.last_error = str(jg.get("errors") or jg.get("message") or "GraphQL Follow Block")[:40]
+        except Exception as e:
+            self.last_error = str(e)[:40]
+
+        return False
+
+    def COMMENT(self, av, dtsg, target_id, target_url, comment_content):
+        """Thực hiện Comment bài viết (2 tầng: Web API v1 -> GraphQL Comment Mutation)"""
+        media_id = self.resolve_media_id_full(target_id, target_url)
+        if not media_id or not str(media_id).isdigit():
+            self.last_error = f"Không lấy được media_id từ ({target_id} | {target_url})"
+            return False
+
+        sess = self._create_session()
+        ref_url = target_url if (target_url and target_url.startswith("http")) else "https://www.instagram.com/"
+        headers = get_ig_headers(self.cookies_str, self.csrftoken, ref_url)
+
+        # Tầng 1: Web API v1 Comment bằng curl_cffi
+        try:
+            res_v1 = sess.post(
+                f"https://www.instagram.com/api/v1/web/comments/{media_id}/add/",
+                headers=headers,
+                data={"comment_text": comment_content},
+                impersonate="chrome120",
+                timeout=12
+            )
+            if res_v1.status_code == 200:
+                j1 = res_v1.json()
+                if j1.get("status") == "ok":
+                    return True
+                self.last_error = j1.get("message") or str(j1)[:40]
+        except Exception as e:
+            self.last_error = str(e)[:40]
+
+        # Tầng 2: GraphQL PolarisPostCommentInputRevampedMutation bằng curl_cffi
+        try:
+            actor_id = str(av or self.ds_user_id or "0")
+            variables = {
+                "connections": [
+                    f'client:root:__PolarisPostComments__xdt_api__v1__media__media_id__comments__connection_connection(data:{{}},media_id:"{media_id}",sort_order:"popular")'
+                ],
+                "data": {"comment_text": comment_content, "media_id": str(media_id)}
+            }
+            gql_data = {
+                "av": actor_id, "__d": "www", "__user": "0", "__a": "1", "__req": "10",
+                "__hs": "20702.HYP:instagram_web_pkg.2.1...0", "dpr": "1", "__ccg": "EXCELLENT",
+                "__rev": "1046917461", "__comet_req": "7",
+                "fb_dtsg": dtsg, "jazoest": self.jazoest, "lsd": self.lsd,
+                "fb_api_caller_class": "RelayModern",
+                "fb_api_req_friendly_name": "PolarisPostCommentInputRevampedMutation",
+                "server_timestamps": "true",
+                "doc_id": "27261905640092552",
+                "variables": json.dumps(variables, ensure_ascii=False)
+            }
+            res_gql = sess.post(
+                "https://www.instagram.com/api/graphql",
+                headers=headers,
+                data=gql_data,
+                impersonate="chrome120",
+                timeout=12
+            )
+            if res_gql.status_code == 200:
+                jg = res_gql.json()
+                if "errors" not in jg and ("data" in jg or jg.get("status") == "ok"):
+                    return True
+                self.last_error = str(jg.get("errors") or jg.get("message") or "GraphQL Comment Block")[:40]
+        except Exception as e:
+            self.last_error = str(e)[:40]
+
         return False
 
 class XSMMTool:
@@ -529,8 +664,12 @@ class XSMMTool:
             if search_uid:
                 url += f"&search={search_uid}"
             res = requests.get(url, headers=self.headers, timeout=15).json()
-            if isinstance(res, dict) and "accounts" in res and isinstance(res["accounts"], list):
-                return res["accounts"]
+            if isinstance(res, dict):
+                for key in ["accounts", "data", "list", "items"]:
+                    if isinstance(res.get(key), list):
+                        return res[key]
+            elif isinstance(res, list):
+                return res
             return []
         except Exception:
             return []
@@ -538,60 +677,70 @@ class XSMMTool:
     def sync_and_get_xsmm_id(self, ig_username, fallback_av):
         """Đồng bộ tài khoản lên XSMM và lấy chính xác account_id trên hệ thống XSMM"""
         clean_user = str(ig_username).replace("@", "").strip()
-        link_account = f"https://www.instagram.com/{clean_user}"
-        payload = {
-            "type": "instagram",
-            "link_account": link_account
-        }
-        try:
-            requests.post(f"{self.base_url}/accounts2", headers=self.headers, json=payload, timeout=15)
-        except Exception:
-            pass
-
-        accounts = self.get_instagram_accounts(search_uid=fallback_av)
-        for acc in accounts:
-            if isinstance(acc, dict):
-                if str(acc.get("account_id")) == str(fallback_av) or clean_user.lower() in str(acc.get("link_account", "")).lower():
-                    return acc.get("account_id") or acc.get("id")
-                
-        all_accounts = self.get_instagram_accounts()
-        for acc in all_accounts:
-            if isinstance(acc, dict):
-                if str(acc.get("account_id")) == str(fallback_av) or clean_user.lower() in str(acc.get("link_account", "")).lower():
-                    return acc.get("account_id") or acc.get("id")
-                
-        return fallback_av
-
-    def get_tasks(self, job_type, uid, typejob="normal"):
-        endpoints_to_try = [
-            (f"{self.base_url}/tasks2", {"type": job_type, "uid": str(uid).strip(), "typejob": typejob}),
-            (f"{self.base_url}/tasks2", {"type": job_type, "uid": str(uid).strip(), "typejob": "normal,better,best"}),
-            (f"{self.base_url}/tasks", {"type": job_type, "uid": str(uid).strip()}),
-            (f"{self.base_url}/tasks2", {"type": job_type, "account_id": str(uid).strip(), "typejob": typejob}),
-            (f"{self.base_url}/{job_type}", {"uid": str(uid).strip()})
-        ]
-        
-        last_error_msg = ""
-        for url, params in endpoints_to_try:
+        if clean_user and not clean_user.isdigit():
+            link_account = f"https://www.instagram.com/{clean_user}"
+            payload = {
+                "type": "instagram",
+                "link_account": link_account
+            }
             try:
-                response = requests.get(url, headers=self.headers, params=params, timeout=12)
-                res = response.json()
+                r_add = requests.post(f"{self.base_url}/accounts2", headers=self.headers, json=payload, timeout=15).json()
+                if isinstance(r_add, dict):
+                    direct_id = r_add.get("account_id") or r_add.get("uid") or (r_add.get("data", {}).get("account_id") if isinstance(r_add.get("data"), dict) else None)
+                    if direct_id:
+                        return str(direct_id)
+            except Exception:
+                pass
+
+        for query_val in [fallback_av, clean_user, ""]:
+            accounts = self.get_instagram_accounts(search_uid=query_val)
+            for acc in accounts:
+                if isinstance(acc, dict):
+                    acc_id_str = str(acc.get("account_id") or acc.get("uid") or "")
+                    link_str = str(acc.get("link_account") or acc.get("username") or "").lower()
+                    if (fallback_av and acc_id_str == str(fallback_av)) or (clean_user and clean_user.lower() in link_str):
+                        return str(acc.get("account_id") or acc.get("id") or fallback_av)
                 
-                if isinstance(res, list) and len(res) > 0:
-                    return res, "OK"
-                elif isinstance(res, dict):
-                    if "error" in res or res.get("success") is False:
-                        last_error_msg = res.get("message") or res.get("error") or "Lỗi từ API Server"
+        return str(fallback_av if fallback_av else clean_user)
+
+    def get_tasks(self, job_type, uid, typejob="normal", fallback_uids=None):
+        """Thử lấy nhiệm vụ với đầy đủ các biến thể UID (xsmm_uid, ds_user_id, username)"""
+        uid_candidates = []
+        for u in [uid] + (fallback_uids or []):
+            u_str = str(u or "").strip()
+            if u_str and u_str not in uid_candidates:
+                uid_candidates.append(u_str)
+
+        last_error_msg = ""
+        for curr_uid in uid_candidates:
+            endpoints_to_try = [
+                (f"{self.base_url}/tasks2", {"type": job_type, "uid": curr_uid, "typejob": typejob}),
+                (f"{self.base_url}/tasks2", {"type": job_type, "uid": curr_uid, "typejob": "normal,better,best"}),
+                (f"{self.base_url}/tasks", {"type": job_type, "uid": curr_uid}),
+                (f"{self.base_url}/tasks2", {"type": job_type, "account_id": curr_uid, "typejob": typejob}),
+                (f"{self.base_url}/{job_type}", {"uid": curr_uid})
+            ]
+            
+            for url, params in endpoints_to_try:
+                try:
+                    response = requests.get(url, headers=self.headers, params=params, timeout=12)
+                    res = response.json()
                     
-                    for key in ["data", "tasks", "list", "result", "job", "jobs", "data_task", "items"]:
-                        val = res.get(key)
-                        if isinstance(val, list) and len(val) > 0:
-                            return val, "OK"
-            except Exception as e:
-                last_error_msg = str(e)
-                continue
+                    if isinstance(res, list) and len(res) > 0:
+                        return res, "OK", curr_uid
+                    elif isinstance(res, dict):
+                        if "error" in res or res.get("success") is False:
+                            last_error_msg = str(res.get("message") or res.get("error") or "Lỗi từ API Server")
+                        
+                        for key in ["data", "tasks", "list", "result", "job", "jobs", "data_task", "items"]:
+                            val = res.get(key)
+                            if isinstance(val, list) and len(val) > 0:
+                                return val, "OK", curr_uid
+                except Exception as e:
+                    last_error_msg = str(e)
+                    continue
         
-        return [], last_error_msg if last_error_msg else "Hết job hoặc tài khoản chưa liên kết/chưa cấu hình trên web"
+        return [], (last_error_msg if last_error_msg else "Hết job hoặc tài khoản chưa liên kết trên web"), str(uid)
 
 def gui_nhan_xu(job_type, task_ids, uid, cookie_check="", xsmm_obj=None):
     if isinstance(cookie_check, XSMMTool):
@@ -625,52 +774,11 @@ def gui_nhan_xu(job_type, task_ids, uid, cookie_check="", xsmm_obj=None):
 
 def check_cookie_ig(cookie, proxy=None):
     """
-    Hàm Check Live Cookie IG chuẩn xác:
-    1. Kiểm tra qua API /api/v1/accounts/edit/web_form_data/
-    2. Kiểm tra qua INSTAGRAM.GETINFO() (xác thực viewerId != 0 & lấy fb_dtsg)
-    Trả về chuỗi JSON chứa trạng thái: live / checkpoint / die / proxy_error
+    Hàm Check Live Cookie IG chuẩn xác bằng curl_cffi
     """
     if not cookie or not cookie.strip():
         return json.dumps({"status_check": "DIE", "error": "Cookie trống"})
 
-    fallback_uid = (re.search(r'ds_user_id=(\d+)', cookie) or [None, "0"])[1]
-
-    # Bước 1: Thử kiểm tra qua endpoint edit/web_form_data bằng curl_cffi
-    try:
-        resp = c_requests.get(
-            'https://www.instagram.com/api/v1/accounts/edit/web_form_data/',
-            headers={
-                'x-ig-app-id': '936619743392459',
-                'cookie': cookie,
-                'user-agent': USER_AGENT,
-                'referer': 'https://www.instagram.com/accounts/edit/'
-            },
-            proxies=format_proxy(proxy),
-            impersonate="chrome120",
-            timeout=10,
-            max_redirects=5
-        )
-        res_text = resp.text
-        if "/challenge/" in str(resp.url) or "checkpoint_required" in res_text or "challenge_required" in res_text:
-            return json.dumps({"status_check": "CHECKPOINT", "error": "Checkpoint / Challenge"})
-
-        data = json.loads(res_text)
-        if isinstance(data, dict):
-            if data.get('form_data') and data['form_data'].get('username'):
-                uname = data['form_data']['username']
-                uid = str(data['form_data'].get('id') or fallback_uid)
-                return json.dumps({
-                    "status_check": "LIVE",
-                    "form_data": {"username": uname, "id": uid}
-                })
-            if data.get("message") in ["checkpoint_required", "challenge_required"]:
-                return json.dumps({"status_check": "CHECKPOINT", "error": "Checkpoint / Challenge"})
-            if data.get("message") == "login_required":
-                return json.dumps({"status_check": "DIE", "error": "Cookie hết hạn (login_required)"})
-    except Exception:
-        pass
-
-    # Bước 2: Kiểm tra qua INSTAGRAM.GETINFO() (xác thực viewerId thực tế trên trang chủ)
     ig_client = INSTAGRAM(cookie, proxy)
     uid, fb_dtsg, status_code_str, uname = ig_client.GETINFO()
     if status_code_str == "LIVE" and uid and uname:
@@ -732,42 +840,20 @@ def fb_page_comment(target_id_or_post, comment_text, page_token, proxy=None):
     except Exception as e:
         return json.dumps({"error": str(e)})
 
-def get_ig_headers(cookie, csrftoken, referer="https://www.instagram.com/"):
-    return {
-        'accept': '*/*',
-        'accept-language': 'vi-VN,vi;q=0.9,en-US;q=0.8,en;q=0.7',
-        'content-type': 'application/x-www-form-urlencoded',
-        'cookie': cookie,
-        'origin': 'https://www.instagram.com',
-        'referer': referer,
-        'sec-ch-ua': SEC_CH_UA_120,
-        'sec-ch-ua-mobile': '?0',
-        'sec-ch-ua-platform': '"Windows"',
-        'sec-fetch-dest': 'empty',
-        'sec-fetch-mode': 'cors',
-        'sec-fetch-site': 'same-origin',
-        'user-agent': USER_AGENT,
-        'x-asbd-id': '129477',
-        'x-csrftoken': csrftoken,
-        'x-ig-app-id': '936619743392459',
-        'x-ig-www-claim': '0',
-        'x-requested-with': 'XMLHttpRequest'
-    }
-
 def follow(target_id, cookie, csrftoken, profile_url="", proxy=None, dtsg=""):
     ig_client = INSTAGRAM(cookie, proxy)
     ok = ig_client.FOLLOW(dtsg, target_id, profile_url)
-    return json.dumps({"status": "ok"}) if ok else json.dumps({"error": "IG Follow Failed"})
+    return json.dumps({"status": "ok"}) if ok else json.dumps({"error": ig_client.last_error or "IG Follow Failed"})
 
 def tym(mediaid, cookie, csrftoken, link_job="", proxy=None, av="", dtsg=""):
     ig_client = INSTAGRAM(cookie, proxy)
     ok = ig_client.LIKE(av, dtsg, mediaid, cookie, link_job, "")
-    return json.dumps({"status": "ok"}) if ok else json.dumps({"status": "error", "message": "IG Like Failed"})
+    return json.dumps({"status": "ok"}) if ok else json.dumps({"status": "error", "message": ig_client.last_error or "IG Like Failed"})
 
 def cmt(mediaid, text, cookie, csrftoken, link_job="", proxy=None, av="", dtsg=""):
     ig_client = INSTAGRAM(cookie, proxy)
     ok = ig_client.COMMENT(av, dtsg, mediaid, link_job, text)
-    return json.dumps({"status": "ok"}) if ok else json.dumps({"error": "IG Comment Failed"})
+    return json.dumps({"status": "ok"}) if ok else json.dumps({"error": ig_client.last_error or "IG Comment Failed"})
 
 class MMOApp(ctk.CTk):
     def __init__(self):
@@ -1271,8 +1357,10 @@ class MMOApp(ctk.CTk):
     def log(self, message, level="info"):
         timestamp = datetime.now().strftime('%H:%M:%S')
         with self.lock:
-            self.txt_log.insert("end", f"[{timestamp}] {message}\n")
-            self.txt_log.see("end")
+            self.after(0, lambda m=f"[{timestamp}] {message}\n": (
+                self.txt_log.insert("end", m),
+                self.txt_log.see("end")
+            ))
 
     def update_stats(self, coins=0, jobs=0, entity_type="account", entity_key=""):
         with self.lock:
@@ -1290,7 +1378,7 @@ class MMOApp(ctk.CTk):
                     self.update_db_coins(entity_key, c_val, is_page=True)
 
             if jobs: self.success_jobs += jobs
-            self.lbl_xsmm_balance.configure(text=f"💰 TỔNG XU KIẾM ĐƯỢC: {self.total_coins} XU")
+            self.after(0, lambda tc=self.total_coins: self.lbl_xsmm_balance.configure(text=f"💰 TỔNG XU KIẾM ĐƯỢC: {tc} XU"))
 
     def update_db_coins(self, key, coins, is_page=False):
         try:
@@ -1420,7 +1508,8 @@ class MMOApp(ctk.CTk):
             if not is_currently_running:
                 token = self.ent_token.get().strip()
                 if not token:
-                    self.log("✖ Vui lòng nhập XSMM Access Token!")
+                    self.log("✖ Vui lòng nhập XSMM Access Token trong phần ⚙️ Cấu hình chung!")
+                    lbl_status.configure(text="❌ Thiếu Token XSMM", text_color="#dc2626")
                     return
                 self.save_config()
                 delay_cfg = self.get_delay_settings()
@@ -1436,7 +1525,7 @@ class MMOApp(ctk.CTk):
 
                 self.single_running_threads[ig_user] = True
                 btn_action.configure(text="Dừng", fg_color="#dc2626", hover_color="#b91c1c")
-                lbl_status.configure(text="Đang Check Live & Đồng bộ...", text_color="#2563eb")
+                lbl_status.configure(text="Đang kết nối & lấy phiên...", text_color="#2563eb")
                 threading.Thread(target=self.worker_single_account_loop, args=(token, chosen_ig_jobs, delay_cfg, acc_data, btn_action, lbl_status), daemon=True).start()
             else:
                 self.single_running_threads[ig_user] = False
@@ -1600,7 +1689,6 @@ class MMOApp(ctk.CTk):
     def check_selected_ig_live(self):
         selected = [u for u, info in self.acc_rows.items() if info["var"].get()]
         if not selected:
-            # Nếu không tích chọn cái nào thì tự check toàn bộ danh sách
             selected = list(self.acc_rows.keys())
         if not selected:
             self.log("💡 Danh sách tài khoản IG đang trống.")
@@ -1914,7 +2002,7 @@ class MMOApp(ctk.CTk):
         if not self.is_running:
             token = self.ent_token.get().strip()
             if not token:
-                self.log("✖ Vui lòng nhập XSMM Access Token!")
+                self.log("✖ Vui lòng nhập XSMM Access Token trong phần ⚙️ Cấu hình chung!")
                 return
             
             self.save_config()
@@ -1923,7 +2011,9 @@ class MMOApp(ctk.CTk):
             selected_ig = [info for info in self.acc_rows.values() if info["var"].get()]
             selected_pg = [info for info in self.page_rows.values() if info["var"].get()]
 
-            if not selected_ig and not selected_pg: return
+            if not selected_ig and not selected_pg:
+                self.log("⚠️ Vui lòng tích chọn ít nhất 1 tài khoản để chạy!")
+                return
 
             chosen_ig_jobs = []
             if self.chk_ig_like.get(): chosen_ig_jobs.append('instagram_like')
@@ -1943,7 +2033,7 @@ class MMOApp(ctk.CTk):
                 if not self.single_running_threads.get(ig_user, False):
                     self.single_running_threads[ig_user] = True
                     info["action_btn"].configure(text="Dừng", fg_color="#dc2626", hover_color="#b91c1c")
-                    info["status_label"].configure(text="Đang Check Live & Đồng bộ...", text_color="#2563eb")
+                    info["status_label"].configure(text="Đang kết nối & lấy phiên...", text_color="#2563eb")
                     threading.Thread(target=self.worker_single_account_loop, args=(token, chosen_ig_jobs, delay_cfg, acc_data, info["action_btn"], info["status_label"]), daemon=True).start()
 
             for info in selected_pg:
@@ -1992,13 +2082,13 @@ class MMOApp(ctk.CTk):
         else:
             delay_min, delay_max, delay_coin_min, delay_coin_max = self.get_delay_settings()
 
-        # 1. Check Live & Lấy thông tin phiên (av, fb_dtsg) trước khi vào vòng lặp
+        # 1. Lấy thông tin phiên (av, fb_dtsg) bằng curl_cffi
         ig = INSTAGRAM(ck, proxy)
         av, fb_dtsg, st_check, ig_uname = ig.GETINFO()
 
         if st_check in ["DIE", "CHECKPOINT"]:
             err_label = "Checkpoint / Challenge ⚠️" if st_check == "CHECKPOINT" else "Cookie Die ❌"
-            self.log(f"✖ [@{username}] Dừng chạy do {err_label}")
+            self.log(f"✖ [@{username}] Không thể chạy do {err_label}")
             self.mark_account_status_db(username, err_label)
             self.single_running_threads[username] = False
             self.after(0, lambda: btn_action.configure(text="Bắt đầu", fg_color="#2563eb"))
@@ -2007,16 +2097,20 @@ class MMOApp(ctk.CTk):
                 self.after(0, lambda: self.acc_rows[username]["var"].set(False))
             return
 
-        if not av:
-            av = id_val
+        # Nếu mạng/Proxy chập chờn lúc khởi tạo thì dùng id_val và username có sẵn để không bị dừng luồng
+        if not av or av is False:
+            av = str(id_val if id_val and str(id_val) != "0" else ig.ds_user_id)
         if not ig_uname or ig_uname is False:
             ig_uname = username
+        if not fb_dtsg or fb_dtsg is False:
+            fb_dtsg = ""
 
-        # 2. Đồng bộ lên XSMM và lấy chính xác XSMM ID (account_id)
+        # 2. Đồng bộ lên XSMM và lấy XSMM UID
         xsmm_uid = xsmm.sync_and_get_xsmm_id(ig_uname, av)
-        self.log(f"🔗 [@{username}] Check Live OK & Đồng bộ XSMM -> UID: {xsmm_uid}")
+        self.log(f"🔗 [@{username}] Đã kết nối XSMM (XSMM_UID: {xsmm_uid} | IG_ID: {av}) -> Bắt đầu tìm job!")
 
         follow_cache_ids = []
+        active_claim_uid = xsmm_uid
         
         while self.single_running_threads.get(username, False):
             if attempted_jobs >= max_jobs:
@@ -2026,14 +2120,22 @@ class MMOApp(ctk.CTk):
             delay_min, delay_max, delay_coin_min, delay_coin_max = self.get_delay_settings()
             ig.proxies = format_proxy(self.get_effective_proxy(acc.get("proxy", "")))
 
+            found_any_task_in_cycle = False
+
             for rand_job in [j for j in listnv if 'instagram' in j]:
                 if not self.single_running_threads.get(username, False) or attempted_jobs >= max_jobs:
                     break
                 
-                tasks, err_msg = xsmm.get_tasks(rand_job, xsmm_uid)
+                self.after(0, lambda rj=rand_job: lbl_status.configure(text=f"Đang tìm job {rj.replace('instagram_', '')}...", text_color="#2563eb"))
+                tasks, err_msg, matched_uid = xsmm.get_tasks(rand_job, xsmm_uid, fallback_uids=[av, ig_uname, username])
                 if not tasks or not isinstance(tasks, list):
+                    self.log(f"⚠️ [@{username}] Không có job [{rand_job}]: {err_msg}")
                     self.after(0, lambda fr=err_msg: lbl_status.configure(text=f"⚠️ {fr[:25]}", text_color="#d97706"))
                     continue
+
+                found_any_task_in_cycle = True
+                active_claim_uid = matched_uid
+                self.log(f"📥 [@{username}] Tìm thấy {len(tasks)} job [{rand_job}] (UID: {active_claim_uid})")
 
                 for nv in tasks:
                     if not self.single_running_threads.get(username, False) or attempted_jobs >= max_jobs:
@@ -2044,7 +2146,7 @@ class MMOApp(ctk.CTk):
 
                     task_id = nv.get('id')
                     target_id = nv.get('target_id', '') or nv.get('target_id2', '')
-                    target_url = nv.get('target_url', '')
+                    target_url = nv.get('target_url', '') or nv.get('link', '')
                     idorlink = nv.get('idorlink') or target_url or target_id or ""
                     default_p = int(nv.get('points', 10))
                     comment_content = nv.get('msg') or nv.get('comment') or ai_generate_unique_comment()
@@ -2054,12 +2156,12 @@ class MMOApp(ctk.CTk):
 
                     is_done = False
                     if rand_job == 'instagram_like':
-                        is_done = ig.LIKE(av, fb_dtsg, target_id, ck, target_url, "")
+                        is_done = ig.LIKE(av, fb_dtsg, target_id, ck, target_url or idorlink, "")
                     elif rand_job == 'instagram_follow':
-                        follow_uid = target_id if target_id else get_media_id(idorlink)
-                        is_done = ig.FOLLOW(fb_dtsg, follow_uid, target_url)
+                        follow_target = target_id if target_id else idorlink
+                        is_done = ig.FOLLOW(fb_dtsg, follow_target, target_url or idorlink, av=av)
                     elif rand_job == 'instagram_comment':
-                        is_done = ig.COMMENT(av, fb_dtsg, target_id, target_url, comment_content)
+                        is_done = ig.COMMENT(av, fb_dtsg, target_id, target_url or idorlink, comment_content)
 
                     attempted_jobs += 1
 
@@ -2067,12 +2169,18 @@ class MMOApp(ctk.CTk):
                         consecutive_fails = 0
                         success_count_total += 1
                         if rand_job in ['instagram_like', 'instagram_comment']:
-                            c_res = gui_nhan_xu(rand_job, [task_id], xsmm_uid, cookie_check=ck, xsmm_obj=xsmm)
+                            c_res = gui_nhan_xu(rand_job, [task_id], active_claim_uid, cookie_check=ck, xsmm_obj=xsmm)
                             earned, claim_msg = parse_real_earned_points(c_res, default_points=default_p)
+                            if earned == 0 and str(active_claim_uid) != str(av):
+                                c_res = gui_nhan_xu(rand_job, [task_id], av, cookie_check=ck, xsmm_obj=xsmm)
+                                earned, claim_msg = parse_real_earned_points(c_res, default_points=default_p)
+
                             if earned > 0:
                                 self.update_stats(coins=int(earned), jobs=1, entity_type="account", entity_key=username)
+                                self.log(f"✅ [@{username}] Xong {job_label} [{task_id}] -> +{earned} xu")
                                 self.after(0, lambda jl=job_label, c=attempted_jobs: lbl_status.configure(text=f"✅ Xong {jl} ({c}/{max_jobs})", text_color="#059669"))
                             else:
+                                self.log(f"⚠️ [@{username}] Đã {job_label} [{task_id}] nhưng duyệt báo: {c_res}")
                                 self.after(0, lambda cm=claim_msg, c=attempted_jobs: lbl_status.configure(text=f"⚠️ Duyệt: {cm[:16]} ({c})", text_color="#d97706"))
                             
                             delay_coin = random.randint(delay_coin_min, delay_coin_max)
@@ -2082,18 +2190,23 @@ class MMOApp(ctk.CTk):
                             # Gom đủ 3 nhiệm vụ Follow là gửi nhận xu ngay
                             follow_cache_ids.append(task_id)
                             cache_len = len(follow_cache_ids)
+                            self.log(f"✅ [@{username}] Follow thành công [{task_id}] -> Tích lũy: {cache_len}/3")
                             self.after(0, lambda cl=cache_len, c=attempted_jobs: lbl_status.configure(text=f"✅ Đã gom Follow [{cl}/3] ({c})", text_color="#059669"))
 
                             if len(follow_cache_ids) >= 3 or attempted_jobs >= max_jobs:
                                 batch_size = len(follow_cache_ids)
                                 self.after(0, lambda bs=batch_size: lbl_status.configure(text=f"Đang gửi duyệt {bs} Follow...", text_color="#2563eb"))
-                                c_res = gui_nhan_xu(rand_job, follow_cache_ids, xsmm_uid, cookie_check=ck, xsmm_obj=xsmm)
+                                c_res = gui_nhan_xu(rand_job, follow_cache_ids, active_claim_uid, cookie_check=ck, xsmm_obj=xsmm)
                                 earned, claim_msg = parse_real_earned_points(c_res, default_points=default_p * batch_size)
+                                if earned == 0 and str(active_claim_uid) != str(av):
+                                    c_res = gui_nhan_xu(rand_job, follow_cache_ids, av, cookie_check=ck, xsmm_obj=xsmm)
+                                    earned, claim_msg = parse_real_earned_points(c_res, default_points=default_p * batch_size)
+
                                 if earned > 0:
                                     self.update_stats(coins=int(earned), jobs=batch_size, entity_type="account", entity_key=username)
                                     self.log(f"💰 [@{username}] Nhận xu {batch_size} job Follow thành công: +{earned} xu")
                                 else:
-                                    self.log(f"⚠️ [@{username}] Phản hồi duyệt Follow: {c_res}")
+                                    self.log(f"⚠️ [@{username}] Phản hồi duyệt {batch_size} Follow: {c_res}")
                                 follow_cache_ids = []
                                 
                                 delay_coin = random.randint(delay_coin_min, delay_coin_max)
@@ -2105,6 +2218,8 @@ class MMOApp(ctk.CTk):
                             time.sleep(rest_time)
                     else:
                         consecutive_fails += 1
+                        err_detail = ig.last_error or "Thao tác bị chặn"
+                        self.log(f"❌ [@{username}] Lỗi {job_label} [{task_id}]: {err_detail}")
                         self.after(0, lambda jl=job_label, c=attempted_jobs: lbl_status.configure(text=f"❌ Lỗi {jl} ({c})", text_color="#dc2626"))
 
                         # Nếu lỗi 5 lần liên tiếp -> Tự động Check Live lại xem acc có bị Checkpoint/Die không
@@ -2127,8 +2242,18 @@ class MMOApp(ctk.CTk):
                     delay_action = random.randint(delay_min, delay_max)
                     time.sleep(delay_action)
 
+                # Nếu kết thúc danh sách Follow mà còn dư 1-2 job trong cache và hết job mới -> Gửi duyệt luôn
+                if rand_job == 'instagram_follow' and len(follow_cache_ids) >= 3:
+                    batch_size = len(follow_cache_ids)
+                    c_res = gui_nhan_xu(rand_job, follow_cache_ids, active_claim_uid, cookie_check=ck, xsmm_obj=xsmm)
+                    earned, _ = parse_real_earned_points(c_res, default_points=10 * batch_size)
+                    if earned > 0:
+                        self.update_stats(coins=int(earned), jobs=batch_size, entity_type="account", entity_key=username)
+                    follow_cache_ids = []
+
             if self.single_running_threads.get(username, False) and attempted_jobs < max_jobs:
-                self.after(0, lambda: lbl_status.configure(text="Live ✅ (Chờ job mới 10s)", text_color="#059669"))
+                wait_msg = "Live ✅ (Chờ job mới 10s)" if found_any_task_in_cycle else "⚠️ Chờ 10s quét lại job..."
+                self.after(0, lambda wm=wait_msg: lbl_status.configure(text=wm, text_color="#059669" if found_any_task_in_cycle else "#d97706"))
             time.sleep(10)
 
         self.single_running_threads[username] = False
@@ -2151,7 +2276,7 @@ class MMOApp(ctk.CTk):
 
             for rand_job in [j for j in listnv if 'facebook' in j]:
                 if not self.single_running_threads.get(pid, False) or attempted_jobs >= max_jobs: break
-                tasks, err_msg = xsmm.get_tasks(rand_job, pid)
+                tasks, err_msg, _ = xsmm.get_tasks(rand_job, pid)
                 if not tasks or not isinstance(tasks, list):
                     self.after(0, lambda: lbl_status.configure(text="⚠️ Hết job Page", text_color="#d97706"))
                     continue
