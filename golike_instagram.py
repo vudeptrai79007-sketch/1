@@ -682,7 +682,7 @@ class GoLike:
         return acc_id
 
     def auto_link(self, instagram: Instagram) -> str:
-        # Bước 1: Đảm bảo lấy được @username chữ (từ bộ nhớ, trang chủ HTML, hoặc Mobile API)
+        # Bước 1: Lấy đúng @username chữ từ trang chủ IG (PolarisViewer) hoặc API
         if not getattr(instagram, "username", ""):
             cached_u = get_remembered_ig_username(getattr(instagram, "uid", ""))
             if cached_u:
@@ -707,7 +707,7 @@ class GoLike:
         if not handle or handle.isdigit():
             raise StopRun(
                 f"Không lấy được username chữ của nick IG (UID {uid}) từ Cookie; "
-                "Cookie có thể đang bị IG hạn chế tạm thời hoặc hết hạn."
+                "Cookie có thể đã hết hạn hoặc bị đăng xuất."
             )
 
         # Bước 2: Lấy thông tin kênh cần Follow và Mã xác thực Tiểu sử (Bio) từ GoLike
@@ -745,7 +745,7 @@ class GoLike:
                     try:
                         updated_ok = instagram.update_bio(code_str)
                         if updated_ok:
-                            print(f"  [✓] Đã gửi lệnh gắn mã [{code_str}] vào Tiểu sử IG thành công!", flush=True)
+                            print(f"  [✓] Đã gửi lệnh lưu mã [{code_str}] vào Tiểu sử IG @{handle}!", flush=True)
                     except Exception as exc:
                         print(f"  [!] Lưu ý khi cập nhật tiểu sử IG: {exc}", flush=True)
 
@@ -779,7 +779,7 @@ class GoLike:
                         link=f"https://www.instagram.com/{target_handle}/",
                     )
                     instagram.perform(job)
-                    print(f"  [✓] Đã follow @{target_handle} thành công!", flush=True)
+                    print(f"  [✓] Đã nhấn follow @{target_handle} thành công trên Instagram!", flush=True)
                 except Exception as exc:
                     print(f"  [!] Lưu ý khi follow @{target_handle}: {exc}", flush=True)
             if hasattr(instagram, "reload_profile"):
@@ -798,8 +798,6 @@ class GoLike:
         candidates = [
             ("instagram-account/verify-account", {"object_id": handle}),
             ("instagram-account/verify-account", {"object_id": f"https://www.instagram.com/{handle}/"}),
-            ("instagram-account/verify-account-id", {"unique_id": handle}),
-            ("instagram-account", {"instagram_username": handle, "link": f"https://www.instagram.com/{handle}/"}),
         ]
 
         last_msg = ""
@@ -832,7 +830,7 @@ class GoLike:
                         linked_ok = True
                         break
 
-                    # Kiểm tra xem GoLike có trả mã xác thực tiểu sử (Bio) trong phản hồi không
+                    # Kiểm tra xem GoLike có trả mã xác thực tiểu sử (Bio) khác trong phản hồi không
                     found_code = extract_verify_code(res, (handle, target_follow, self.username))
                     if found_code and found_code != current_bio_code:
                         dynamic_code = found_code
@@ -852,13 +850,9 @@ class GoLike:
                     if parsed_dyn and parsed_dyn.lower() not in followed_targets:
                         dynamic_follow = parsed_dyn
 
-                    # Giữ thông báo cụ thể từ verify-account, không để lỗi chung của verify-account-id ghi đè
                     if msg and "an error has occurred" not in msg.lower() and "405" not in msg:
-                        if "api check info" not in msg.lower():
-                            round_primary_msg = msg
-                            last_msg = msg
-                        elif not round_primary_msg and not last_msg:
-                            last_msg = msg
+                        round_primary_msg = msg
+                        last_msg = msg
 
                     if dynamic_code or dynamic_follow:
                         break
@@ -888,7 +882,7 @@ class GoLike:
             if round_try < max_link_rounds:
                 show_msg = round_primary_msg or last_msg
                 if show_msg:
-                    print(f"  [!] GoLike báo: {show_msg}", flush=True)
+                    print(f"  [!] GoLike phản hồi: {show_msg}", flush=True)
                 if dynamic_code:
                     current_bio_code = dynamic_code
                     ensure_bio_code_visible(current_bio_code)
@@ -998,29 +992,30 @@ class Instagram:
         self.username = get_remembered_ig_username(self.uid)
         self.dtsg = ""
         self.lsd = ""
+        self.actor_id = ""
+        self.csrf_token = fields.get("csrftoken", "")
         self.profile_form: dict[str, Any] = {}
 
     def close(self):
         self.session.close()
 
     def get_csrf(self) -> str:
-        return next((c.value for c in reversed(list(self.session.cookies)) if c.name == "csrftoken" and c.value), "")
+        cookie_csrf = next((c.value for c in reversed(list(self.session.cookies)) if c.name == "csrftoken" and c.value), "")
+        return self.csrf_token or cookie_csrf
 
-    def set_clean_csrf(self, token_val: str = ""):
-        """Xóa các cookie csrftoken bị trùng domain để tránh lỗi 403 CSRF khi POST trên Instagram."""
-        token_val = (token_val or self.get_csrf()).strip()
-        if not token_val:
-            return
-        to_remove = [(c.domain, c.path, c.name) for c in self.session.cookies if c.name == "csrftoken"]
-        for dom, pth, nm in to_remove:
-            try:
-                self.session.cookies.clear(domain=dom, path=pth, name=nm)
-            except Exception:
-                pass
-        self.session.cookies.set("csrftoken", token_val, domain=".instagram.com", path="/", secure=True)
+    def update_csrf_from_html_or_cookies(self, html: str = ""):
+        if html:
+            m_csrf = re.search(r'"csrf_token"\s*:\s*"([A-Za-z0-9_-]{10,64})"', html)
+            if m_csrf:
+                self.csrf_token = m_csrf.group(1)
+                self.session.cookies.set("csrftoken", self.csrf_token, domain=".instagram.com", path="/", secure=True)
+                return
+        for c in reversed(list(self.session.cookies)):
+            if c.name == "csrftoken" and c.value:
+                self.csrf_token = c.value
+                break
 
     def headers(self, referer: str = "") -> dict:
-        self.set_clean_csrf()
         csrf = self.get_csrf()
         return {"User-Agent": IG_UA, "Accept": "*/*", "Origin": IG_ORIGIN,
                 "Referer": ig_url(referer) if referer else IG_ORIGIN + "/",
@@ -1033,8 +1028,6 @@ class Instagram:
                 "X-Bloks-Version-Id": "61fc9465e13b77eaa110f317859102ba7fb93a0a2bcc08c46473da6713640739"}
 
     def mobile_headers(self) -> dict:
-        """Bộ header chuẩn Android App cho i.instagram.com (tuyệt đối không gửi Origin web và Web App ID)."""
-        self.set_clean_csrf()
         csrf = self.get_csrf()
         return {
             "User-Agent": IG_MOBILE_UA,
@@ -1046,27 +1039,11 @@ class Instagram:
             "X-CSRFToken": csrf,
         }
 
-    def nav_headers(self, referer: str = "") -> dict:
-        """Bộ header tải trang HTML chuẩn như trình duyệt mở tab."""
-        return {
-            "User-Agent": IG_UA,
-            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
-            "Accept-Language": "en-US,en;q=0.9,vi-VN;q=0.8,vi;q=0.7",
-            "Referer": ig_url(referer) if referer else IG_ORIGIN + "/",
-            "Sec-Ch-Ua": '"Chromium";v="130", "Google Chrome";v="130", "Not?A_Brand";v="99"',
-            "Sec-Ch-Ua-Mobile": "?0",
-            "Sec-Ch-Ua-Platform": '"Windows"',
-            "Sec-Fetch-Dest": "document",
-            "Sec-Fetch-Mode": "navigate",
-            "Sec-Fetch-Site": "same-origin",
-            "Upgrade-Insecure-Requests": "1",
-        }
-
     def read_response(self, method: str, path: str, *, referer: str = "", extra_headers=None, **kwargs):
         try:
             response = self.session.request(method, IG_ORIGIN + path, headers={**self.headers(referer), **(extra_headers or {})},
                                             timeout=TIMEOUT, allow_redirects=False, **kwargs)
-            self.set_clean_csrf()
+            self.update_csrf_from_html_or_cookies()
         except requests.RequestException:
             if method == "POST":
                 raise StopRun("IG mất kết nối khi thao tác: kết quả chưa rõ, không làm lại/báo hoàn thành.") from None
@@ -1093,12 +1070,10 @@ class Instagram:
             raise StopRun("IG yêu cầu xác minh hoặc hạn chế thao tác; đã dừng tài khoản.")
         return root
 
-    def _extract_tokens_and_viewer_from_html(self, html: str):
+    def _parse_html_tokens_and_username(self, html: str):
         if not html:
             return
-        m_csrf = re.search(r'"csrf_token"\s*:\s*"([A-Za-z0-9_-]{10,64})"', html)
-        if m_csrf:
-            self.set_clean_csrf(m_csrf.group(1))
+        self.update_csrf_from_html_or_cookies(html)
 
         for pattern in (r'"DTSGInitialData"[^}]*"token"\s*:\s*"([^"\\]+)"',
                         r'DTSGInitialData[^}]*"token":"([^"]+)"',
@@ -1114,47 +1089,57 @@ class Instagram:
                 self.lsd = m.group(1)
                 break
 
+        m_actor = re.search(r'"actorID"\s*:\s*"(\d{10,25})"', html)
+        if m_actor:
+            self.actor_id = m_actor.group(1)
+
         if not self.username:
-            # Tìm username trong phạm vi 600 ký tự quanh self.uid hoặc PolarisViewer (không bị kẹt bởi dấu } lồng nhau)
-            for anchor in (rf'"{self.uid}"', r'"PolarisViewer"', r'"viewer"'):
-                for m in re.finditer(anchor, html):
-                    chunk = html[max(0, m.start() - 400): min(len(html), m.end() + 600)]
-                    if anchor != rf'"{self.uid}"' and self.uid not in chunk:
-                        continue
-                    um = re.search(r'"username"\s*:\s*"([A-Za-z0-9_.]{1,30})"', chunk)
-                    if um and um.group(1) and not um.group(1).isdigit():
-                        self.username = um.group(1)
-                        remember_ig_username(self.uid, self.username)
-                        break
-                if self.username:
+            # Bộ regex chuẩn đã lấy được @vungocbinhyh235936 ở ảnh 2, mở rộng cho cả khoảng cách xa
+            viewer_patterns = (
+                r'"PolarisViewer"[^}]*"username"\s*:\s*"([A-Za-z0-9_.]{1,30})"',
+                r'"PolarisViewer"[\s\S]{1,3500}?"username"\s*:\s*"([A-Za-z0-9_.]{1,30})"',
+                rf'"(?:id|pk|ds_user_id)"\s*:\s*"{self.uid}"[^}}]*"username"\s*:\s*"([A-Za-z0-9_.]{1,30})"',
+                rf'"username"\s*:\s*"([A-Za-z0-9_.]{1,30})"[^}}]*"(?:id|pk|ds_user_id)"\s*:\s*"{self.uid}"',
+                rf'"{self.uid}"[\s\S]{{1,1500}}?"username"\s*:\s*"([A-Za-z0-9_.]{1,30})"',
+                rf'"username"\s*:\s*"([A-Za-z0-9_.]{1,30})"[\s\S]{{1,1500}}?"{self.uid}"',
+                r'\\"PolarisViewer\\"[\s\S]{1,3500}?\\"username\\":\\"([A-Za-z0-9_.]{1,30})\\"',
+            )
+            for vp in viewer_patterns:
+                m = re.search(vp, html)
+                if m and m.group(1) and not m.group(1).isdigit():
+                    self.username = m.group(1)
+                    remember_ig_username(self.uid, self.username)
                     break
 
-    def fetch_profile_form(self) -> dict[str, Any]:
-        """Lấy thông tin tài khoản (username, biography, email, phone_number, first_name) qua Mobile API và Web."""
-        # Cách 1: Gọi Mobile API current_user/?edit=true với bộ header Android sạch (nhanh và ổn định nhất)
-        for mob_url in (
-            "https://i.instagram.com/api/v1/accounts/current_user/?edit=true",
-            f"https://i.instagram.com/api/v1/users/{self.uid}/info/",
-        ):
+    def sync_tokens(self):
+        html = ""
+        try:
+            response = self.read_response("GET", "/")
+            if response.status_code == 200:
+                html = response.text
+                self._parse_html_tokens_and_username(html)
+        except Exception:
+            pass
+        if not html or not self.username or not self.dtsg:
             try:
-                res = self.session.get(mob_url, headers=self.mobile_headers(), timeout=TIMEOUT, allow_redirects=False)
-                self.set_clean_csrf()
-                if res.status_code == 200:
-                    root = self.decode(res)
-                    user = root.get("user")
-                    if isinstance(user, dict):
-                        uname = first(user, "username")
-                        if uname and not uname.isdigit():
-                            self.username = uname
-                            remember_ig_username(self.uid, uname)
-                        self.profile_form = {**self.profile_form, **user}
-                        if "email" in user or "biography" in user:
-                            return self.profile_form
+                headers = {**self.headers(), "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"}
+                res = self.session.get(IG_ORIGIN + "/", headers=headers, timeout=TIMEOUT, allow_redirects=True)
+                if res.status_code == 200 and res.text:
+                    self._parse_html_tokens_and_username(res.text)
             except Exception:
                 pass
+        if not self.lsd:
+            self.lsd = "9zei3OjvTBQ-9YG6E0OMzm"
 
-        # Cách 2: Gọi Web API web_form_data
-        for path in ("/api/v1/accounts/edit/web_form_data/", "/api/v1/accounts/current_user/?edit=true"):
+    def fetch_profile_form(self) -> dict[str, Any]:
+        """Lấy dữ liệu form tài khoản (username, biography, email, phone_number, first_name)."""
+        # Cách 1: Gọi các endpoint Web chuẩn
+        for path in (
+            "/api/v1/accounts/edit/web_form_data/",
+            "/api/v1/accounts/current_user/?edit=true",
+            "/api/v1/accounts/current_user/",
+            "/accounts/edit/?__a=1&__d=dis",
+        ):
             try:
                 response = self.read_response("GET", path, referer=f"{IG_ORIGIN}/accounts/edit/")
                 if response.status_code == 200:
@@ -1166,17 +1151,38 @@ class Instagram:
                             self.username = uname
                             remember_ig_username(self.uid, uname)
                         self.profile_form = {**self.profile_form, **form}
+                        if "email" in form or "biography" in form:
+                            return self.profile_form
+            except Exception:
+                pass
+
+        # Cách 2: Gọi Mobile API current_user/?edit=true hoặc users/{uid}/info/
+        for mob_url in (
+            "https://i.instagram.com/api/v1/accounts/current_user/?edit=true",
+            f"https://i.instagram.com/api/v1/users/{self.uid}/info/",
+        ):
+            try:
+                res = self.session.get(mob_url, headers=self.mobile_headers(), timeout=TIMEOUT, allow_redirects=False)
+                if res.status_code == 200:
+                    root = self.decode(res)
+                    user = root.get("user")
+                    if isinstance(user, dict):
+                        uname = first(user, "username")
+                        if uname and not uname.isdigit():
+                            self.username = uname
+                            remember_ig_username(self.uid, uname)
+                        self.profile_form = {**self.profile_form, **user}
                         return self.profile_form
             except Exception:
                 pass
 
-        # Cách 3: Bóc trực tiếp dữ liệu form từ HTML trang /accounts/edit/
+        # Cách 3: Tải trang /accounts/edit/ để bóc thông tin
         try:
-            res = self.session.get(f"{IG_ORIGIN}/accounts/edit/", headers=self.nav_headers(), timeout=TIMEOUT, allow_redirects=False)
-            self.set_clean_csrf()
+            headers = {**self.headers(f"{IG_ORIGIN}/accounts/edit/"), "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"}
+            res = self.session.get(f"{IG_ORIGIN}/accounts/edit/", headers=headers, timeout=TIMEOUT, allow_redirects=True)
             if res.status_code == 200 and res.text:
-                self._extract_tokens_and_viewer_from_html(res.text)
-                for field_key in ("email", "phone_number", "first_name", "full_name", "biography", "external_url", "username"):
+                self._parse_html_tokens_and_username(res.text)
+                for field_key in ("email", "phone_number", "first_name", "full_name", "biography", "external_url"):
                     m_f = re.search(rf'"{field_key}"\s*:\s*"([^"\\]*(?:\\.[^"\\]*)*)"', res.text)
                     if m_f:
                         try:
@@ -1185,10 +1191,6 @@ class Instagram:
                             val = m_f.group(1)
                         if val:
                             self.profile_form[field_key] = val
-                uname = first(self.profile_form, "username")
-                if uname and not uname.isdigit():
-                    self.username = uname
-                    remember_ig_username(self.uid, uname)
         except Exception:
             pass
 
@@ -1200,41 +1202,59 @@ class Instagram:
         if not verify_code:
             return False
 
-        if not self.dtsg:
-            self.sync_tokens()
+        self.sync_tokens()
         form = self.fetch_profile_form()
         current_bio = str(form.get("biography") or "").strip()
-        if current_bio and verify_code not in current_bio and len(current_bio) + 1 + len(verify_code) <= 140:
-            new_bio = f"{current_bio} {verify_code}"
-        elif verify_code in current_bio:
-            new_bio = current_bio
-        else:
-            new_bio = verify_code
+        if current_bio and verify_code in current_bio:
+            return True
 
-        # Cách 1: Gửi qua Mobile API i.instagram.com/api/v1/accounts/set_biography/ với Android Header chuẩn
-        for mob_data in (
-            {"raw_text": new_bio, "_uid": self.uid, "_uuid": str(uuid.uuid4()), "_csrftoken": self.get_csrf()},
-            {" signed_body": "SIGNATURE." + compact({"raw_text": new_bio, "_uid": self.uid, "_uuid": str(uuid.uuid4()), "_csrftoken": self.get_csrf()})},
-        ):
-            try:
-                clean_data = {k.strip(): v for k, v in mob_data.items()}
-                mob_resp = self.session.post(
-                    "https://i.instagram.com/api/v1/accounts/set_biography/",
-                    headers=self.mobile_headers(),
-                    data=clean_data,
-                    timeout=TIMEOUT,
-                    allow_redirects=False,
-                )
-                self.set_clean_csrf()
-                if mob_resp.status_code == 200:
-                    res_json = self.decode(mob_resp)
-                    if res_json.get("status") == "ok" or first(res_json, "status") == "ok":
-                        self.profile_form["biography"] = new_bio
-                        return True
-            except Exception:
-                pass
+        new_bio = verify_code
 
-        # Cách 2: Gửi qua Web API /api/v1/web/accounts/edit/ (chỉ gửi khi có email hoặc sđt hoặc tạo email dự phòng hợp lệ)
+        # Cách 1: Gửi qua endpoint set_biography trên www.instagram.com (kèm fb_dtsg & csrf chuẩn)
+        web_bio_headers = {**self.headers(f"{IG_ORIGIN}/accounts/edit/")}
+        if self.lsd:
+            web_bio_headers["X-FB-LSD"] = self.lsd
+        if self.dtsg:
+            web_bio_headers["X-FB-DTSG"] = self.dtsg
+
+        for bio_path in ("/api/v1/accounts/set_biography/", "/api/v1/web/accounts/set_biography/"):
+            for ua_try in (IG_UA, GOLIKE_UA, IG_MOBILE_UA):
+                try:
+                    h_try = {**web_bio_headers, "User-Agent": ua_try}
+                    resp = self.session.post(
+                        IG_ORIGIN + bio_path,
+                        headers=h_try,
+                        data={"raw_text": new_bio},
+                        timeout=TIMEOUT,
+                        allow_redirects=False,
+                    )
+                    self.update_csrf_from_html_or_cookies()
+                    if resp.status_code == 200:
+                        res_json = self.decode(resp)
+                        if res_json.get("status") == "ok" or first(res_json, "status") == "ok":
+                            self.profile_form["biography"] = new_bio
+                            return True
+                except Exception:
+                    pass
+
+        # Cách 2: Gửi qua Mobile API i.instagram.com/api/v1/accounts/set_biography/
+        try:
+            mob_resp = self.session.post(
+                "https://i.instagram.com/api/v1/accounts/set_biography/",
+                headers=self.mobile_headers(),
+                data={"raw_text": new_bio, "_uid": self.uid, "_uuid": str(uuid.uuid4()), "_csrftoken": self.get_csrf()},
+                timeout=TIMEOUT,
+                allow_redirects=False,
+            )
+            if mob_resp.status_code == 200:
+                res_json = self.decode(mob_resp)
+                if res_json.get("status") == "ok" or first(res_json, "status") == "ok":
+                    self.profile_form["biography"] = new_bio
+                    return True
+        except Exception:
+            pass
+
+        # Cách 3: Gửi qua Web Edit Profile /api/v1/web/accounts/edit/
         uname = str(form.get("username") or self.username or "").strip()
         email_val = str(form.get("email") or "").strip()
         phone_val = str(form.get("phone_number") or "").strip()
@@ -1250,23 +1270,21 @@ class Instagram:
             "external_url": ext_url_val,
             "chaining_enabled": "on",
         }
-        web_headers = {**self.headers(f"{IG_ORIGIN}/accounts/edit/")}
         if self.dtsg:
             payload["fb_dtsg"] = self.dtsg
         if self.lsd:
-            web_headers["X-FB-LSD"] = self.lsd
+            payload["lsd"] = self.lsd
 
-        for edit_path in ("/api/v1/web/accounts/edit/", "/api/v1/accounts/set_biography/"):
+        for edit_path in ("/api/v1/web/accounts/edit/", "/accounts/edit/", "/api/v1/accounts/edit_profile/"):
             try:
-                post_data = {"raw_text": new_bio} if "set_biography" in edit_path else payload
                 resp = self.session.post(
                     IG_ORIGIN + edit_path,
-                    headers=web_headers,
-                    data=post_data,
+                    headers=web_bio_headers,
+                    data=payload,
                     timeout=TIMEOUT,
                     allow_redirects=False,
                 )
-                self.set_clean_csrf()
+                self.update_csrf_from_html_or_cookies()
                 if resp.status_code == 200:
                     res_json = self.decode(resp)
                     if res_json.get("status") == "ok" or first(res_json, "status") == "ok":
@@ -1274,37 +1292,6 @@ class Instagram:
                         return True
             except Exception:
                 pass
-
-        # Cách 3: Gửi qua Mobile API edit_profile
-        try:
-            mob_edit_payload = {
-                "first_name": first_name_val,
-                "username": uname,
-                "biography": new_bio,
-                "external_url": ext_url_val,
-                "_uid": self.uid,
-                "_uuid": str(uuid.uuid4()),
-                "_csrftoken": self.get_csrf(),
-            }
-            if email_val:
-                mob_edit_payload["email"] = email_val
-            if phone_val:
-                mob_edit_payload["phone_number"] = phone_val
-            mob_resp2 = self.session.post(
-                "https://i.instagram.com/api/v1/accounts/edit_profile/",
-                headers=self.mobile_headers(),
-                data=mob_edit_payload,
-                timeout=TIMEOUT,
-                allow_redirects=False,
-            )
-            self.set_clean_csrf()
-            if mob_resp2.status_code == 200:
-                res_json = self.decode(mob_resp2)
-                if res_json.get("status") == "ok":
-                    self.profile_form["biography"] = new_bio
-                    return True
-        except Exception:
-            pass
 
         return False
 
@@ -1316,7 +1303,7 @@ class Instagram:
         uname = (self.username or "").lstrip("@").strip()
         if not uname:
             try:
-                self.fetch_profile_form()
+                self.sync_tokens()
                 uname = (self.username or "").lstrip("@").strip()
             except Exception:
                 pass
@@ -1329,7 +1316,7 @@ class Instagram:
             ts = int(time.time() * 1000)
             bio_found = ""
 
-            # 1. Đọc qua web_profile_info (API công khai GoLike hay dùng để check)
+            # 1. Đọc qua web_profile_info (API công khai GoLike dùng để quét tiểu sử)
             if uname:
                 try:
                     resp = self.read_response(
@@ -1349,13 +1336,18 @@ class Instagram:
             # 2. Load trực tiếp HTML trang cá nhân /{username}/ để ép làm mới cache
             if uname and (not expected_code or expected_code not in bio_found):
                 try:
+                    html_headers = {
+                        **self.headers(f"{IG_ORIGIN}/{uname}/"),
+                        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+                        "Cache-Control": "no-cache, no-store, max-age=0",
+                        "Pragma": "no-cache",
+                    }
                     html_res = self.session.get(
                         f"{IG_ORIGIN}/{uname}/?" + urlencode({"_": ts}),
-                        headers={**self.nav_headers(f"{IG_ORIGIN}/{uname}/"), "Cache-Control": "no-cache"},
+                        headers=html_headers,
                         timeout=TIMEOUT,
                         allow_redirects=True,
                     )
-                    self.set_clean_csrf()
                     if html_res.status_code == 200 and html_res.text:
                         if expected_code and expected_code in html_res.text:
                             bio_found = expected_code
@@ -1369,22 +1361,6 @@ class Instagram:
                 except Exception:
                     pass
 
-            # 3. Kiểm tra thêm qua Mobile API info nếu web đang cache
-            if expected_code and expected_code not in bio_found:
-                try:
-                    mob_res = self.session.get(
-                        f"https://i.instagram.com/api/v1/users/{self.uid}/info/",
-                        headers=self.mobile_headers(),
-                        timeout=TIMEOUT,
-                        allow_redirects=False,
-                    )
-                    if mob_res.status_code == 200:
-                        u_info = self.decode(mob_res).get("user")
-                        if isinstance(u_info, dict):
-                            bio_found = str(u_info.get("biography") or "")
-                except Exception:
-                    pass
-
             if expected_code:
                 if expected_code in bio_found:
                     code_seen = True
@@ -1394,7 +1370,7 @@ class Instagram:
                     )
                 else:
                     print(
-                        f"    [⏳] Load IG lần {idx}/{total_loads}: Đang làm mới trang @{uname} để hiện mã [{expected_code}]...",
+                        f"    [⏳] Load IG lần {idx}/{total_loads}: Chưa thấy mã [{expected_code}] trên Tiểu sử công khai (@{uname})...",
                         flush=True,
                     )
             else:
@@ -1416,52 +1392,46 @@ class Instagram:
             return
         raise StopRun("Không xác minh được phiên đăng nhập IG hoặc không lấy được username từ cookie.")
 
-    def sync_tokens(self):
-        html = ""
-        try:
-            res = self.session.get(IG_ORIGIN + "/", headers=self.nav_headers(), timeout=TIMEOUT, allow_redirects=True)
-            self.set_clean_csrf()
-            if res.status_code == 200:
-                html = res.text
-        except Exception:
-            pass
-        if not html:
-            try:
-                response = self.read_response("GET", "/")
-                if response.status_code == 200:
-                    html = response.text
-            except Exception:
-                pass
-        if html:
-            self._extract_tokens_and_viewer_from_html(html)
-        if not self.lsd:
-            self.lsd = "9zei3OjvTBQ-9YG6E0OMzm"
-
     def graphql(self, friendly: str, doc_id: str, variables: dict, referer: str = "", *, comment=False) -> dict:
-        form = {"av": self.uid if comment else "178414" + self.uid, "__d": "www", "__user": "0",
-                "__a": "1", "__req": "10" if comment else "1j", "__hs": "20519.HYP:instagram_web_pkg.2.1...0",
-                "dpr": "1", "__ccg": "EXCELLENT", "__hsi": str(int(time.time() * 1000)), "__comet_req": "7",
-                "jazoest": "26312" if comment else "26738", "fb_api_caller_class": "RelayModern",
-                "fb_api_req_friendly_name": friendly, "variables": compact(variables),
-                "server_timestamps": "true", "doc_id": doc_id}
-        if self.dtsg:
-            form["fb_dtsg"] = self.dtsg
-        if self.lsd:
-            form["lsd"] = self.lsd
-        headers = {"X-FB-Friendly-Name": friendly}
-        if "Follow" in friendly:
-            headers["X-Root-Field-Name"] = "xdt_create_friendship"
-        if self.lsd:
-            headers["X-FB-LSD"] = self.lsd
-        if self.dtsg:
-            headers["X-FB-DTSG"] = self.dtsg
-        response = self.read_response("POST", "/graphql/query", referer=referer, extra_headers=headers, data=form)
-        if response.status_code in (404, 405):
-            raise SkipJob("IG không hỗ trợ endpoint thao tác này; cần cập nhật source.")
-        root = self.decode(response)
-        if response.status_code != 200:
-            raise StopRun("IG từ chối thao tác; dừng kiểm tra, không thử POST khác.")
-        return root
+        if not self.dtsg:
+            self.sync_tokens()
+        # Danh sách ứng viên cho tham số av (tránh lỗi "a server error field_exception occured" do ghép cứng "178414" + self.uid)
+        av_candidates = []
+        for cand_av in (self.actor_id, self.uid, "178414" + self.uid, "0"):
+            if cand_av and cand_av not in av_candidates:
+                av_candidates.append(cand_av)
+
+        last_root = {}
+        for av_val in av_candidates:
+            form = {"av": av_val, "__d": "www", "__user": "0",
+                    "__a": "1", "__req": "10" if comment else "1j", "__hs": "20519.HYP:instagram_web_pkg.2.1...0",
+                    "dpr": "1", "__ccg": "EXCELLENT", "__hsi": str(int(time.time() * 1000)), "__comet_req": "7",
+                    "jazoest": "26312" if comment else "26738", "fb_api_caller_class": "RelayModern",
+                    "fb_api_req_friendly_name": friendly, "variables": compact(variables),
+                    "server_timestamps": "true", "doc_id": doc_id}
+            if self.dtsg:
+                form["fb_dtsg"] = self.dtsg
+            if self.lsd:
+                form["lsd"] = self.lsd
+            headers = {"X-FB-Friendly-Name": friendly}
+            if "Follow" in friendly:
+                headers["X-Root-Field-Name"] = "xdt_create_friendship"
+            if self.lsd:
+                headers["X-FB-LSD"] = self.lsd
+            if self.dtsg:
+                headers["X-FB-DTSG"] = self.dtsg
+            response = self.read_response("POST", "/graphql/query", referer=referer, extra_headers=headers, data=form)
+            if response.status_code in (404, 405):
+                raise SkipJob("IG không hỗ trợ endpoint thao tác này; cần cập nhật source.")
+            root = self.decode(response)
+            if response.status_code != 200:
+                raise StopRun("IG từ chối thao tác; dừng kiểm tra, không thử POST khác.")
+            last_root = root
+            err_dump = compact(root.get("errors", [])).lower()
+            if "field_exception" in err_dump:
+                continue
+            return root
+        return last_root
 
     def target_user(self, job: Job) -> str:
         if job.object_id.isdigit() and len(job.object_id) >= 5:
@@ -1477,7 +1447,7 @@ class Instagram:
             username = parts[0]
             profile_referer = f"{IG_ORIGIN}/{username}/"
 
-            # Cách 1: Lấy qua API web_profile_info (truyền đúng Referer trang profile)
+            # Cách 1: Lấy qua API web_profile_info
             try:
                 response = self.read_response(
                     "GET",
@@ -1497,21 +1467,16 @@ class Instagram:
             except Exception:
                 pass
 
-            # Cách 2: Lấy qua Mobile API web_profile_info hoặc search
-            for mob_url in (
-                "https://i.instagram.com/api/v1/users/web_profile_info/?" + urlencode({"username": username}),
-                "https://i.instagram.com/api/v1/users/search/?" + urlencode({"q": username}),
+            # Cách 2: Lấy qua API topsearch trên www.instagram.com
+            for search_path in (
+                "/api/v1/web/search/topsearch/?" + urlencode({"context": "blended", "query": username, "include_reel": "false"}),
+                "/web/search/topsearch/?" + urlencode({"context": "blended", "query": username}),
             ):
                 try:
-                    m_res = self.session.get(mob_url, headers=self.mobile_headers(), timeout=TIMEOUT, allow_redirects=False)
-                    if m_res.status_code == 200:
-                        m_root = self.decode(m_res)
-                        u_direct = obj_data(m_root).get("user")
-                        if isinstance(u_direct, dict):
-                            found_pk = first(u_direct, "pk", "id")
-                            if found_pk.isdigit() and len(found_pk) >= 5:
-                                return found_pk
-                        users_list = m_root.get("users")
+                    s_res = self.read_response("GET", search_path, referer=profile_referer)
+                    if s_res.status_code == 200:
+                        s_root = self.decode(s_res)
+                        users_list = s_root.get("users")
                         if isinstance(users_list, list):
                             for item in users_list:
                                 u_obj = item.get("user", item) if isinstance(item, dict) else {}
@@ -1522,9 +1487,10 @@ class Instagram:
                 except Exception:
                     pass
 
-            # Cách 3: Quét HTML trang cá nhân (chỉ lấy ID từ 5 chữ số trở lên gắn với username mục tiêu, tránh bốc nhầm id="0" gây lỗi field_exception)
+            # Cách 3: Quét HTML trang cá nhân (chỉ lấy ID >= 5 chữ số gắn với trang mục tiêu, loại trừ self.uid)
             try:
-                res = self.session.get(profile_referer, headers=self.nav_headers(), timeout=TIMEOUT, allow_redirects=True)
+                headers = {**self.headers(profile_referer), "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"}
+                res = self.session.get(profile_referer, headers=headers, timeout=TIMEOUT, allow_redirects=True)
                 if res.status_code == 200 and res.text:
                     is_self_profile = bool(self.username and self.username.lower() == username.lower())
                     specific_patterns = (
@@ -1537,15 +1503,14 @@ class Instagram:
                         for match in re.finditer(pat, res.text, flags=re.I):
                             cand_uid = match.group(1)
                             if cand_uid.isdigit() and len(cand_uid) >= 5:
-                                if not is_self_profile and cand_uid == self.uid:
+                                if not is_self_profile and cand_uid in (self.uid, self.actor_id):
                                     continue
                                 return cand_uid
-                    # Tìm trong phạm vi 400 ký tự quanh chuỗi "username":"<target>"
                     for m_u in re.finditer(rf'"username"\s*:\s*"{re.escape(username)}"', res.text, flags=re.I):
-                        chunk = res.text[max(0, m_u.start() - 350): min(len(res.text), m_u.end() + 350)]
+                        chunk = res.text[max(0, m_u.start() - 400): min(len(res.text), m_u.end() + 400)]
                         for m_id in re.finditer(r'"(?:id|pk|user_id)"\s*:\s*"?(\d{5,20})"?', chunk):
                             cand_uid = m_id.group(1)
-                            if not is_self_profile and cand_uid == self.uid:
+                            if not is_self_profile and cand_uid in (self.uid, self.actor_id):
                                 continue
                             return cand_uid
             except Exception:
@@ -1583,52 +1548,46 @@ class Instagram:
                 raise SkipJob("Không follow chính tài khoản đang đăng nhập.")
             root = {}
             node = None
-            try:
-                root = self.graphql("usePolarisFollowMutation", "9740159112729312", {
-                    "target_user_id": uid, "container_module": "profile",
-                    "nav_chain": "PolarisProfilePostsTabRoot:profilePage:1:via_cold_start,PolarisProfilePostsTabRoot:profilePage:3:unexpected",
-                }, job.link)
-                node = obj_data(root).get("xdt_create_friendship")
-            except Exception:
-                pass
+            ok = False
 
-            if not isinstance(node, dict):
+            # Cách 1: Thử qua REST Web endpoint /api/v1/web/friendships/{uid}/follow/ và /api/v1/friendships/create/{uid}/
+            for rest_path in (f"/api/v1/web/friendships/{uid}/follow/", f"/api/v1/friendships/create/{uid}/"):
                 try:
-                    fb_root = self.graphql("usePolarisFollowMutation", "9663809173698092", {
-                        "target_user_id": uid, "container_module": "profile",
-                        "nav_chain": "PolarisProfilePostsTabRoot:profilePage:1:via_cold_start,PolarisProfilePostsTabRoot:profilePage:3:unexpected",
-                    }, job.link)
-                    fb_node = obj_data(fb_root).get("xdt_create_friendship")
-                    if isinstance(fb_node, dict):
-                        root, node = fb_root, fb_node
+                    r_resp = self.read_response(
+                        "POST",
+                        rest_path,
+                        referer=job.link,
+                        data={"container_module": "profile", "user_id": uid},
+                    )
+                    if r_resp.status_code == 200:
+                        r_json = self.decode(r_resp)
+                        f_stat = r_json.get("friendship_status", {})
+                        if r_json.get("status") == "ok" or (
+                            isinstance(f_stat, dict) and (f_stat.get("following") is True or f_stat.get("outgoing_request") is True)
+                        ):
+                            ok = True
+                            break
                 except Exception:
                     pass
 
-            status = node.get("friendship_status", {}) if isinstance(node, dict) else {}
-            ok = (isinstance(status, dict) and (status.get("following") is True or status.get("outgoing_request") is True)) or (
-                isinstance(node, dict) and bool(first(node, "id"))) or root.get("status") == "ok"
-
+            # Cách 2: Thử qua GraphQL usePolarisFollowMutation
             if not ok:
-                # Nhánh dự phòng REST Web & Mobile API cho thao tác Follow (vượt lỗi field_exception của GraphQL)
-                for rest_path in (f"/api/v1/friendships/create/{uid}/", f"/api/v1/web/friendships/{uid}/follow/"):
+                for doc_id in ("9740159112729312", "9663809173698092"):
                     try:
-                        r_resp = self.read_response(
-                            "POST",
-                            rest_path,
-                            referer=job.link,
-                            data={"container_module": "profile", "user_id": uid},
-                        )
-                        if r_resp.status_code == 200:
-                            r_json = self.decode(r_resp)
-                            f_stat = r_json.get("friendship_status", {})
-                            if r_json.get("status") == "ok" or (
-                                isinstance(f_stat, dict) and (f_stat.get("following") is True or f_stat.get("outgoing_request") is True)
-                            ):
-                                ok = True
-                                break
+                        root = self.graphql("usePolarisFollowMutation", doc_id, {
+                            "target_user_id": uid, "container_module": "profile",
+                            "nav_chain": "PolarisProfilePostsTabRoot:profilePage:1:via_cold_start,PolarisProfilePostsTabRoot:profilePage:3:unexpected",
+                        }, job.link)
+                        node = obj_data(root).get("xdt_create_friendship")
+                        status = node.get("friendship_status", {}) if isinstance(node, dict) else {}
+                        ok = (isinstance(status, dict) and (status.get("following") is True or status.get("outgoing_request") is True)) or (
+                            isinstance(node, dict) and bool(first(node, "id"))) or root.get("status") == "ok"
+                        if ok:
+                            break
                     except Exception:
                         pass
 
+            # Cách 3: Thử qua Mobile API friendships/create
             if not ok:
                 try:
                     m_resp = self.session.post(
