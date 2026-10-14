@@ -45,6 +45,8 @@ GOLIKE_UA = ("Mozilla/5.0 (iPhone; CPU iPhone OS 17_6_1 like Mac OS X) "
              "Mobile/15E148 Safari/604.1")
 IG_UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
          "(KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36")
+IG_MOBILE_UA = ("Instagram 312.0.0.0.0 Android (33/13; 420dpi; 1080x2400; "
+                "samsung; SM-S918B; dm3q; qcom; en_US; 546000000)")
 TIMEOUT = (10, 30)
 MAX_ERRORS = 5
 MAX_EMPTY = 5
@@ -91,9 +93,9 @@ def amount(value: Any) -> Decimal:
 
 
 def accepted(root: dict) -> bool:
-    if root.get("success") is False or root.get("status") in ("error", "fail", "failed"):
+    if root.get("success") is False or root.get("status") in ("error", "fail", "failed", 400, 404, 405, 422, "400", "422"):
         return False
-    return root.get("success") is True or root.get("status") in (200, "200", "success", "ok")
+    return root.get("success") is True or root.get("status") in (200, 201, "200", "201", "success", "ok")
 
 
 def obj_data(root: dict) -> dict:
@@ -304,6 +306,53 @@ def random_wait(interval: tuple[int, int], label: str = ""):
     print("\r" + " " * 55 + "\r", end="", flush=True)
 
 
+def extract_ig_handle_from_url(raw_link: str) -> str:
+    if not raw_link:
+        return ""
+    clean = re.sub(r"^https?://(?:www\.)?instagram\.com/", "", str(raw_link).strip(), flags=re.I)
+    clean = clean.split("?")[0].split("/")[0].replace("@", "").strip()
+    if clean and re.fullmatch(r"[A-Za-z0-9_.]{1,30}", clean) and clean.lower() not in ("p", "reel", "tv", "accounts"):
+        return clean
+    return ""
+
+
+def extract_verify_code(source: Any, ignore_words: tuple[str, ...] = ()) -> str:
+    """Trích xuất mã xác thực GoLike cần dán vào tiểu sử (Bio) từ JSON hoặc thông báo lỗi."""
+    ignore_set = {w.lower() for w in ignore_words if w} | {
+        "instagram", "golike", "follow", "profile", "account", "verify", "success", "error",
+        "true", "false", "null", "none", "http", "https", "tieu", "su", "bio",
+    }
+    if isinstance(source, dict):
+        code_keys = (
+            "verify_code", "code_verify", "bio_code", "verifyCode", "codeVerify",
+            "token_verify", "content_verify", "text_verify", "ma_xac_nhan", "code",
+        )
+        for target_dict in (source, obj_data(source)):
+            if isinstance(target_dict, dict):
+                val = first(target_dict, *code_keys)
+                if val and len(val) >= 3 and not val.startswith("http") and val.lower() not in ignore_set:
+                    if not val.isdigit() or len(val) >= 4:
+                        return val
+        msg = first(source, "message", "error") or first(obj_data(source), "message", "error")
+        if msg:
+            return extract_verify_code(msg, ignore_words)
+        return ""
+
+    if isinstance(source, str) and source.strip():
+        text = source.strip()
+        patterns = (
+            r"(?:mã\s+xác\s+thực|mã\s+xác\s+minh|mã\s+code|mã\s+liên\s+kết|mã\s+bio|mã)\s*(?:là|:)?\s*[\"'“”`\[]?\s*([A-Za-z0-9_-]{4,32})\s*[\"'“”`\]]?",
+            r"[\"'“”`\[]([A-Za-z0-9_-]{4,25})[\"'“”`\]]\s*(?:vào\s+tiểu\s+sử|vào\s+bio)",
+            r"(?:tiểu\s+sử|bio)[^:]*:\s*[\"'“”`\[]?\s*([A-Za-z0-9_-]{4,32})\s*[\"'“”`\]]?",
+        )
+        for pat in patterns:
+            for m in re.finditer(pat, text, flags=re.I):
+                cand = m.group(1).strip()
+                if cand and cand.lower() not in ignore_set and not cand.startswith("http"):
+                    return cand
+    return ""
+
+
 class GoLike:
     def __init__(self, token: str, session=None, device_id: str = ""):
         self.token = re.sub(r"^Bearer\s+", "", token.strip(), flags=re.I)
@@ -324,7 +373,7 @@ class GoLike:
         self.handled: set[str] = set()
         self.last_mint_ts: float = 0.0
         self.recaptcha_strikes: int = 0
-        self.last_matched_username: str = ""
+        self.verify_code: str = ""
 
     def close(self):
         self.session.close()
@@ -375,6 +424,9 @@ class GoLike:
         self.name = first(profile, "name", "username")
         self.coin = amount(profile.get("coin", 0))
         self.temp_coin = amount(profile.get("temp_coin", 0))
+        code = extract_verify_code(profile, (self.username, self.name, str(self.user_id)))
+        if code:
+            self.verify_code = code
         if not self.username:
             raise StopRun("GoLike chưa trả đủ thông tin phiên đăng nhập.")
 
@@ -577,82 +629,177 @@ class GoLike:
         return acc_id
 
     def auto_link(self, instagram: Instagram) -> str:
+        # Bước 1: Đảm bảo lấy được @username thật và form_data từ Cookie IG
         if not getattr(instagram, "username", ""):
-            for fn in ("resolve_username", "sync_tokens", "verify"):
-                if hasattr(instagram, fn) and not getattr(instagram, "username", ""):
+            for fn in ("verify", "fetch_profile_form", "sync_tokens"):
+                if hasattr(instagram, fn):
                     try:
                         getattr(instagram, fn)()
                     except Exception:
                         pass
+                if getattr(instagram, "username", ""):
+                    break
+
         handle = (getattr(instagram, "username", "") or "").lstrip("@").strip()
         uid = getattr(instagram, "uid", "")
-
-        # Nếu vừa lấy được @username, kiểm tra lại xem đã liên kết trên GoLike chưa trước khi tạo mới
-        if handle:
-            try:
-                acc_id = self.linked_account(handle, uid)
-                return acc_id
-            except Exception:
-                pass
-
-        if not handle:
-            raise StopRun(
-                f"Không tự lấy được @username từ cookie UID {uid}. "
-                "Vui lòng liên kết thủ công tài khoản này trên web GoLike trước."
-            )
-
-        name = f"@{handle}"
+        name = f"@{handle}" if handle else f"UID {uid}"
         print(f"\n[!] Nick {name} chưa có liên kết trên GoLike. Đang tiến hành tự động liên kết...", flush=True)
 
+        if not handle or handle.isdigit():
+            raise StopRun(
+                f"Không lấy được username chữ của nick IG (UID {uid}) từ Cookie; "
+                "GoLike bắt buộc phải gửi username chữ (không nhận số UID). Hãy kiểm tra lại Cookie IG."
+            )
+
+        # Bước 2: Lấy thông tin kênh cần Follow và Mã xác thực Tiểu sử (Bio) từ GoLike
         root = self.gateway("GET", "instagram-account?limit=200")
-        data_obj = obj_data(root)
+        sub_data = obj_data(root)
         link_verify = (
-            first(root, "link_verify_follow", "link")
-            or (first(data_obj, "link_verify_follow", "link") if isinstance(data_obj, dict) else "")
+            first(root, "link_verify_follow", "verify_follow", "link")
+            or first(sub_data, "link_verify_follow", "verify_follow", "link")
         )
-        target_follow = "james111119999"
-        if link_verify:
-            clean = re.sub(r"^https?://(?:www\.)?instagram\.com/", "", str(link_verify).strip(), flags=re.I)
-            clean = clean.split("/")[0].replace("@", "").strip()
-            if clean:
-                target_follow = clean
+        target_follow = extract_ig_handle_from_url(link_verify) or "james111119999"
+        verify_code = (
+            extract_verify_code(root, (handle, target_follow, self.username))
+            or self.verify_code
+        )
 
-        print(f"  -> Đang follow kênh xác minh @{target_follow} trên Instagram...", flush=True)
-        if hasattr(instagram, "perform"):
-            try:
-                job = Job(job_id="verify_link", kind="follow", object_id=target_follow,
-                          link=f"https://www.instagram.com/{target_follow}/")
-                instagram.perform(job)
-                print(f"  [✓] Đã follow @{target_follow} thành công! Chờ 5s để GoLike đồng bộ...", flush=True)
-                time.sleep(5)
-            except Exception as exc:
-                print(f"  [!] Lưu ý khi follow @{target_follow}: {exc}", flush=True)
+        followed_targets: set[str] = set()
+        applied_bio_codes: set[str] = set()
 
+        def do_apply_bio_code(code_str: str):
+            code_str = code_str.strip()
+            if not code_str or code_str in applied_bio_codes:
+                return
+            applied_bio_codes.add(code_str)
+            print(f"  -> Đang gắn mã xác thực [{code_str}] vào Tiểu sử (Bio) Instagram @{handle}...", flush=True)
+            if hasattr(instagram, "update_bio"):
+                try:
+                    if instagram.update_bio(code_str):
+                        print(f"  [✓] Đã gắn mã [{code_str}] vào tiểu sử IG thành công!", flush=True)
+                    else:
+                        print(f"  [!] Chưa xác nhận được cập nhật tiểu sử với mã [{code_str}].", flush=True)
+                except Exception as exc:
+                    print(f"  [!] Lưu ý khi cập nhật tiểu sử IG: {exc}", flush=True)
+            if hasattr(instagram, "reload_profile"):
+                print(f"  -> Đang load lại trang cá nhân @{handle} để làm mới bộ nhớ đệm...", flush=True)
+                instagram.reload_profile()
+                time.sleep(3)
+
+        def do_follow_target(target_handle: str):
+            target_handle = target_handle.lstrip("@").strip()
+            if not target_handle or target_handle.lower() in followed_targets:
+                return
+            followed_targets.add(target_handle.lower())
+            if target_handle.lower() == handle.lower():
+                return
+            print(f"  -> Đang follow kênh xác minh @{target_handle} trên Instagram...", flush=True)
+            if hasattr(instagram, "perform"):
+                try:
+                    job = Job(
+                        job_id="verify_link",
+                        kind="follow",
+                        object_id=target_handle,
+                        link=f"https://www.instagram.com/{target_handle}/",
+                    )
+                    instagram.perform(job)
+                    print(f"  [✓] Đã follow @{target_handle} thành công!", flush=True)
+                except Exception as exc:
+                    print(f"  [!] Lưu ý khi follow @{target_handle}: {exc}", flush=True)
+            if hasattr(instagram, "reload_profile"):
+                print(f"  -> Đang load lại trang cá nhân @{handle} và chờ 5s để GoLike đồng bộ...", flush=True)
+                instagram.reload_profile()
+            time.sleep(5)
+
+        # Nếu đã có mã xác thực từ đầu thì gắn vào Bio trước
+        if verify_code:
+            do_apply_bio_code(verify_code)
+
+        # Thực hiện follow kênh xác minh (ví dụ @james111119999) và load lại profile
+        do_follow_target(target_follow)
+
+        # Bước 3: Gửi yêu cầu xác minh liên kết lên GoLike (tự động đọc mã Bio nếu GoLike trả về trong phản hồi)
         print(f"  -> Đang gửi yêu cầu xác minh liên kết @{handle} lên GoLike...", flush=True)
         candidates = [
             ("instagram-account/verify-account", {"object_id": handle}),
             ("instagram-account/verify-account", {"object_id": f"https://www.instagram.com/{handle}/"}),
             ("instagram-account/verify-account-id", {"unique_id": handle}),
+            ("instagram-account", {"instagram_username": handle, "link": f"https://www.instagram.com/{handle}/"}),
         ]
+
         last_msg = ""
-        for path, payload in candidates:
-            try:
-                res = self.gateway(
-                    "POST", path, payload,
-                    allow_status=(200, 201, 400, 404, 405, 422),
-                    check_accepted=False,
-                )
-                msg = first(res, "message", "error") or first(obj_data(res), "message", "error") or ""
-                if accepted(res) or res.get("status") in (200, 201, "200", "201") or any(
-                    k in str(res).lower() for k in ("thành công", "phê duyệt", "đã tồn tại", "đã được thêm")
-                ):
-                    break
-                if msg and "an error has occurred" not in msg.lower():
-                    last_msg = msg
-            except Exception as e:
-                err_s = str(e)
-                if "HTTP 405" not in err_s and "HTTP 404" not in err_s:
-                    last_msg = err_s
+        for round_try in range(3):
+            linked_ok = False
+            dynamic_follow = ""
+            dynamic_code = ""
+            for path, payload in candidates:
+                try:
+                    res = self.gateway(
+                        "POST",
+                        path,
+                        payload,
+                        allow_status=(200, 201, 400, 404, 405, 422),
+                        check_accepted=False,
+                    )
+                    res_data = obj_data(res)
+                    msg = first(res, "message", "error") or first(res_data, "message", "error") or ""
+
+                    if accepted(res) or any(
+                        k in msg.lower() for k in ("thành công", "phê duyệt", "đã tồn tại", "đã được thêm")
+                    ):
+                        linked_ok = True
+                        break
+
+                    # Kiểm tra xem GoLike có cấp/yêu cầu mã xác thực tiểu sử (Bio) trong phản hồi không
+                    found_code = extract_verify_code(res, (handle, target_follow, self.username))
+                    if found_code and found_code not in applied_bio_codes:
+                        dynamic_code = found_code
+
+                    # Kiểm tra xem GoLike có yêu cầu follow kênh xác minh khác không
+                    dyn_link = (
+                        first(res, "link_verify_follow", "verify_follow", "link")
+                        or first(res_data, "link_verify_follow", "verify_follow", "link")
+                    )
+                    parsed_dyn = extract_ig_handle_from_url(dyn_link)
+                    if not parsed_dyn and msg:
+                        m_follow = re.search(r"instagram\.com/([A-Za-z0-9_.]{1,30})", msg, flags=re.I)
+                        if not m_follow:
+                            m_follow = re.search(r"follow\s+@?([A-Za-z0-9_.]{3,30})", msg, flags=re.I)
+                        if m_follow:
+                            parsed_dyn = m_follow.group(1)
+                    if parsed_dyn and parsed_dyn.lower() not in followed_targets:
+                        dynamic_follow = parsed_dyn
+
+                    if msg and "an error has occurred" not in msg.lower() and "405" not in msg:
+                        last_msg = msg
+                    elif msg and not last_msg:
+                        last_msg = msg
+
+                    if dynamic_code or dynamic_follow:
+                        break
+                except StopGolike:
+                    raise
+                except Exception as e:
+                    err_s = str(e)
+                    if "HTTP 405" not in err_s and "HTTP 404" not in err_s:
+                        last_msg = err_s
+                    elif not last_msg:
+                        last_msg = err_s
+
+            if linked_ok:
+                break
+
+            need_retry = False
+            if dynamic_code:
+                do_apply_bio_code(dynamic_code)
+                need_retry = True
+            if dynamic_follow:
+                do_follow_target(dynamic_follow)
+                need_retry = True
+            if need_retry and round_try < 2:
+                print(f"  -> Đang gửi lại yêu cầu xác minh liên kết @{handle} sau khi cập nhật...", flush=True)
+                continue
+            break
 
         time.sleep(2)
         try:
@@ -752,6 +899,7 @@ class Instagram:
         self.username = ""
         self.dtsg = ""
         self.lsd = ""
+        self.profile_form: dict[str, Any] = {}
 
     def close(self):
         self.session.close()
@@ -798,25 +946,147 @@ class Instagram:
             raise StopRun("IG yêu cầu xác minh hoặc hạn chế thao tác; đã dừng tài khoản.")
         return root
 
+    def fetch_profile_form(self) -> dict[str, Any]:
+        """Lấy dữ liệu chỉnh sửa trang cá nhân (username, biography, email, sđt...) từ Instagram Web."""
+        endpoints = (
+            "/api/v1/accounts/edit/web_form_data/",
+            "/accounts/edit/?__a=1&__d=dis",
+            "/api/v1/accounts/current_user/?edit=true",
+            "/api/v1/accounts/current_user/",
+        )
+        for path in endpoints:
+            try:
+                response = self.read_response("GET", path, referer=f"{IG_ORIGIN}/accounts/edit/")
+                if response.status_code != 200:
+                    continue
+                root = self.decode(response)
+                form = root.get("form_data") or root.get("user") or obj_data(root).get("form_data") or obj_data(root).get("user")
+                if isinstance(form, dict):
+                    uname = first(form, "username")
+                    if uname:
+                        self.username = uname
+                    self.profile_form = form
+                    return form
+            except Exception:
+                pass
+        return self.profile_form
+
+    def update_bio(self, verify_code: str) -> bool:
+        """Gắn mã xác thực GoLike vào phần Tiểu sử (Biography) của tài khoản Instagram."""
+        verify_code = verify_code.strip()
+        if not verify_code:
+            return False
+
+        form = self.fetch_profile_form()
+        current_bio = str(form.get("biography") or "").strip()
+        if verify_code in current_bio:
+            return True
+
+        if current_bio and len(current_bio) + 1 + len(verify_code) <= 145:
+            new_bio = f"{current_bio} {verify_code}"
+        else:
+            new_bio = verify_code
+
+        # Cách 1: Endpoint chuyên biệt cập nhật tiểu sử của Instagram
+        for bio_path in ("/api/v1/accounts/set_biography/", "/api/v1/web/accounts/set_biography/"):
+            try:
+                resp = self.read_response(
+                    "POST",
+                    bio_path,
+                    referer=f"{IG_ORIGIN}/accounts/edit/",
+                    data={"raw_text": new_bio},
+                )
+                if resp.status_code == 200:
+                    res_json = self.decode(resp)
+                    if res_json.get("status") == "ok" or first(res_json, "status") == "ok":
+                        if isinstance(self.profile_form, dict):
+                            self.profile_form["biography"] = new_bio
+                        return True
+            except Exception:
+                pass
+
+        # Cách 2: Endpoint lưu form Edit Profile chuẩn của Instagram Web
+        payload = {
+            "first_name": str(form.get("first_name") or form.get("full_name") or ""),
+            "email": str(form.get("email") or ""),
+            "username": str(form.get("username") or self.username or ""),
+            "phone_number": str(form.get("phone_number") or ""),
+            "biography": new_bio,
+            "external_url": str(form.get("external_url") or ""),
+            "chaining_enabled": "on" if form.get("chaining_enabled", True) else "",
+        }
+        for edit_path in ("/api/v1/web/accounts/edit/", "/accounts/edit/", "/api/v1/accounts/edit_profile/"):
+            try:
+                resp = self.read_response(
+                    "POST",
+                    edit_path,
+                    referer=f"{IG_ORIGIN}/accounts/edit/",
+                    data=payload,
+                )
+                if resp.status_code == 200:
+                    res_json = self.decode(resp)
+                    if res_json.get("status") == "ok":
+                        if isinstance(self.profile_form, dict):
+                            self.profile_form["biography"] = new_bio
+                        return True
+            except Exception:
+                pass
+        return False
+
+    def reload_profile(self):
+        """Mô phỏng thao tác bấm Load lại trang cá nhân trên Instagram để cập nhật cache công khai."""
+        uname = (self.username or "").lstrip("@").strip()
+        try:
+            self.fetch_profile_form()
+            if not uname:
+                uname = (self.username or "").lstrip("@").strip()
+        except Exception:
+            pass
+        if uname:
+            try:
+                self.read_response(
+                    "GET",
+                    "/api/v1/users/web_profile_info/?" + urlencode({"username": uname}),
+                    referer=f"{IG_ORIGIN}/{uname}/",
+                )
+            except Exception:
+                pass
+            try:
+                headers = {**self.headers(f"{IG_ORIGIN}/{uname}/"), "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"}
+                self.session.get(f"{IG_ORIGIN}/{uname}/", headers=headers, timeout=TIMEOUT, allow_redirects=True)
+            except Exception:
+                pass
+
     def verify(self):
-        paths = ("/api/v1/accounts/current_user/?edit=true", "/api/v1/accounts/current_user/")
-        for path in paths:
-            response = self.read_response("GET", path)
-            if response.status_code in (404, 405):
-                continue
-            root = self.decode(response)
-            user = root.get("user", root.get("form_data"))
-            if response.status_code != 200 or root.get("status") == "fail" or not isinstance(user, dict):
-                raise StopRun("Không xác minh được phiên đăng nhập IG; không dùng profile công khai để báo Live.")
-            if first(user, "pk", "id") != self.uid or not first(user, "username"):
-                raise StopRun("Thông tin tài khoản IG không khớp cookie.")
-            self.username = first(user, "username")
+        form = self.fetch_profile_form()
+        if self.username and (not first(form, "pk", "id") or first(form, "pk", "id") == self.uid):
             self.sync_tokens()
             return
+
+        # Lớp dự phòng 1: Bóc tách username trực tiếp từ HTML trang chủ (PolarisViewer)
         self.sync_tokens()
         if self.username:
             return
-        raise StopRun("API xác minh IG không khả dụng; cần cập nhật trước khi chạy.")
+
+        # Lớp dự phòng 2: Lấy username qua Mobile API bằng UID trong cookie
+        try:
+            mob_headers = {**self.headers(), "User-Agent": IG_MOBILE_UA}
+            res = self.session.get(
+                f"https://i.instagram.com/api/v1/users/{self.uid}/info/",
+                headers=mob_headers,
+                timeout=TIMEOUT,
+                allow_redirects=False,
+            )
+            if res.status_code == 200:
+                root = self.decode(res)
+                user = root.get("user")
+                if isinstance(user, dict) and first(user, "username"):
+                    self.username = first(user, "username")
+                    return
+        except Exception:
+            pass
+
+        raise StopRun("Không xác minh được phiên đăng nhập IG hoặc không lấy được username từ cookie.")
 
     def sync_tokens(self):
         html = ""
@@ -849,40 +1119,18 @@ class Instagram:
                     self.lsd = m.group(1)
                     break
             if not self.username:
-                for u_pat in (
-                    rf'"id"\s*:\s*"{self.uid}"[^}}]*"username"\s*:\s*"([A-Za-z0-9_.]{1,30})"',
-                    rf'"username"\s*:\s*"([A-Za-z0-9_.]{1,30})"[^}}]*"id"\s*:\s*"{self.uid}"',
-                    rf'"pk"\s*:\s*"{self.uid}"[^}}]*"username"\s*:\s*"([A-Za-z0-9_.]{1,30})"',
-                    r'"viewer"\s*:\s*\{[^}]*"username"\s*:\s*"([A-Za-z0-9_.]{1,30})"',
-                ):
-                    m = re.search(u_pat, html)
-                    if m:
+                viewer_patterns = (
+                    r'"PolarisViewer"[^}]*"username"\s*:\s*"([A-Za-z0-9_.]{1,30})"',
+                    rf'"(?:id|pk|ds_user_id)"\s*:\s*"{self.uid}"[^}}]*"username"\s*:\s*"([A-Za-z0-9_.]{1,30})"',
+                    rf'"username"\s*:\s*"([A-Za-z0-9_.]{1,30})"[^}}]*"(?:id|pk|ds_user_id)"\s*:\s*"{self.uid}"',
+                )
+                for vp in viewer_patterns:
+                    m = re.search(vp, html)
+                    if m and m.group(1):
                         self.username = m.group(1)
                         break
         if not self.lsd:
             self.lsd = "9zei3OjvTBQ-9YG6E0OMzm"
-        if not self.username:
-            self.resolve_username()
-
-    def resolve_username(self):
-        if self.username:
-            return
-        for path in (
-            "/api/v1/accounts/current_user/?edit=true",
-            f"/api/v1/users/{self.uid}/info/",
-        ):
-            try:
-                res = self.read_response("GET", path)
-                if res.status_code == 200:
-                    root = self.decode(res)
-                    user = root.get("user") or root.get("form_data") or obj_data(root).get("user")
-                    if isinstance(user, dict):
-                        uname = first(user, "username")
-                        if uname:
-                            self.username = uname
-                            return
-            except Exception:
-                pass
 
     def graphql(self, friendly: str, doc_id: str, variables: dict, referer: str = "", *, comment=False) -> dict:
         form = {"av": self.uid if comment else "178414" + self.uid, "__d": "www", "__user": "0",
@@ -920,6 +1168,7 @@ class Instagram:
                 raise SkipJob("Job follow không có link profile hợp lệ.")
             username = parts[0]
 
+            # Cách 1: Lấy qua API web_profile_info
             try:
                 response = self.read_response("GET", "/api/v1/users/web_profile_info/?" + urlencode({"username": username}))
                 if response.status_code == 200:
@@ -940,22 +1189,47 @@ class Instagram:
             if job.object_id.isdigit():
                 return job.object_id
 
+            # Cách 2: Lấy qua API tìm kiếm người dùng để tránh bốc nhầm self.uid
+            for search_path in (
+                "/api/v1/web/search/topsearch/?" + urlencode({"context": "blended", "query": username}),
+                "/web/search/topsearch/?" + urlencode({"context": "blended", "query": username}),
+                "/api/v1/users/search/?" + urlencode({"q": username}),
+            ):
+                try:
+                    s_res = self.read_response("GET", search_path)
+                    if s_res.status_code == 200:
+                        s_root = self.decode(s_res)
+                        users_list = s_root.get("users")
+                        if isinstance(users_list, list):
+                            for item in users_list:
+                                u_obj = item.get("user", item) if isinstance(item, dict) else {}
+                                if isinstance(u_obj, dict) and first(u_obj, "username").lower() == username.lower():
+                                    found_pk = first(u_obj, "pk", "id")
+                                    if found_pk.isdigit():
+                                        return found_pk
+                except Exception:
+                    pass
+
+            # Cách 3: Quét HTML trang cá nhân và loại trừ self.uid của PolarisViewer
             try:
                 headers = {**self.headers(), "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"}
                 res = self.session.get(f"{IG_ORIGIN}/{username}/", headers=headers, timeout=TIMEOUT, allow_redirects=True)
                 if res.status_code == 200:
-                    for pat in (
-                        r'"profile_id"\s*:\s*"?(\d+)"?',
+                    specific_patterns = (
                         r'"profilePage_(\d+)"',
+                        r'"profile_id"\s*:\s*"?(\d+)"?',
                         rf'"username"\s*:\s*"{re.escape(username)}"[^}}]*"(?:id|pk)"\s*:\s*"?(\d+)"?',
                         rf'"(?:id|pk)"\s*:\s*"?(\d+)"?[^}}]*"username"\s*:\s*"{re.escape(username)}"',
-                    ):
-                        match = re.search(pat, res.text, flags=re.I)
-                        if match and match.group(1).isdigit() and match.group(1) != self.uid:
-                            return match.group(1)
-                    for m in re.finditer(r'"(?:profile_id|user_id)"\s*:\s*"?(\d+)"?', res.text):
-                        if m.group(1).isdigit() and m.group(1) != self.uid:
-                            return m.group(1)
+                        r'"(?:user_id|id|pk)"\s*:\s*"?(\d+)"?',
+                    )
+                    is_self_profile = bool(self.username and self.username.lower() == username.lower())
+                    for pat in specific_patterns:
+                        for match in re.finditer(pat, res.text, flags=re.I):
+                            cand_uid = match.group(1)
+                            if cand_uid.isdigit():
+                                if not is_self_profile and cand_uid == self.uid:
+                                    continue
+                                return cand_uid
             except Exception:
                 pass
             raise SkipJob(f"Không lấy được UID của @{username}.")
@@ -1010,6 +1284,26 @@ class Instagram:
             status = node.get("friendship_status", {}) if isinstance(node, dict) else {}
             ok = (isinstance(status, dict) and (status.get("following") is True or status.get("outgoing_request") is True)) or (
                 isinstance(node, dict) and bool(first(node, "id"))) or root.get("status") == "ok"
+            if not ok:
+                # Nhánh dự phòng REST API cho thao tác Follow
+                for rest_path in (f"/api/v1/friendships/create/{uid}/", f"/api/v1/web/friendships/{uid}/follow/"):
+                    try:
+                        r_resp = self.read_response(
+                            "POST",
+                            rest_path,
+                            referer=job.link,
+                            data={"container_module": "profile", "user_id": uid},
+                        )
+                        if r_resp.status_code == 200:
+                            r_json = self.decode(r_resp)
+                            f_stat = r_json.get("friendship_status", {})
+                            if r_json.get("status") == "ok" or (
+                                isinstance(f_stat, dict) and (f_stat.get("following") is True or f_stat.get("outgoing_request") is True)
+                            ):
+                                ok = True
+                                break
+                    except Exception:
+                        pass
             if not ok:
                 errors = root.get("errors") if isinstance(root, dict) else []
                 err_text = ""
