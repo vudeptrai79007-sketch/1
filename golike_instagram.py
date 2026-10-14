@@ -320,7 +320,8 @@ def extract_verify_code(source: Any, ignore_words: tuple[str, ...] = ()) -> str:
     """Trích xuất mã xác thực GoLike cần dán vào tiểu sử (Bio) từ JSON hoặc thông báo lỗi."""
     ignore_set = {w.lower() for w in ignore_words if w} | {
         "instagram", "golike", "follow", "profile", "account", "verify", "success", "error",
-        "true", "false", "null", "none", "http", "https", "tieu", "su", "bio",
+        "true", "false", "null", "none", "http", "https", "tieu", "su", "bio", "cua", "ban",
+        "vao", "trang", "ca", "nhan", "хac", "minh", " thực", "thuc",
     }
     if isinstance(source, dict):
         code_keys = (
@@ -341,9 +342,9 @@ def extract_verify_code(source: Any, ignore_words: tuple[str, ...] = ()) -> str:
     if isinstance(source, str) and source.strip():
         text = source.strip()
         patterns = (
-            r"(?:mã\s+xác\s+thực|mã\s+xác\s+minh|mã\s+code|mã\s+liên\s+kết|mã\s+bio|mã)\s*(?:là|:)?\s*[\"'“”`\[]?\s*([A-Za-z0-9_-]{4,32})\s*[\"'“”`\]]?",
-            r"[\"'“”`\[]([A-Za-z0-9_-]{4,25})[\"'“”`\]]\s*(?:vào\s+tiểu\s+sử|vào\s+bio)",
-            r"(?:tiểu\s+sử|bio)[^:]*:\s*[\"'“”`\[]?\s*([A-Za-z0-9_-]{4,32})\s*[\"'“”`\]]?",
+            r"(?:mã\s+xác\s+thực|mã\s+xác\s+minh|mã\s+code|mã\s+liên\s+kết|mã\s+bio|gắn\s+mã|thêm\s+mã|nhập\s+mã|dán\s+mã|mã)\s*(?:là|:)?\s*[\"'“”`\[]?\s*([A-Za-z0-9_-]{3,32})\s*[\"'“”`\]]?",
+            r"[\"'“”`\[]([A-Za-z0-9_-]{3,25})[\"'“”`\]]\s*(?:vào\s+tiểu\s+sử|vào\s+bio|ở\s+tiểu\s+sử)",
+            r"(?:tiểu\s+sử|bio)[^:]*:\s*[\"'“”`\[]?\s*([A-Za-z0-9_-]{3,32})\s*[\"'“”`\]]?",
         )
         for pat in patterns:
             for m in re.finditer(pat, text, flags=re.I):
@@ -629,7 +630,7 @@ class GoLike:
         return acc_id
 
     def auto_link(self, instagram: Instagram) -> str:
-        # Bước 1: Đảm bảo lấy được @username thật và form_data từ Cookie IG
+        # Bước 1: Lấy đúng @username chữ và form_data từ Cookie IG
         if not getattr(instagram, "username", ""):
             for fn in ("verify", "fetch_profile_form", "sync_tokens"):
                 if hasattr(instagram, fn):
@@ -659,32 +660,39 @@ class GoLike:
             or first(sub_data, "link_verify_follow", "verify_follow", "link")
         )
         target_follow = extract_ig_handle_from_url(link_verify) or "james111119999"
-        verify_code = (
+        current_bio_code = (
             extract_verify_code(root, (handle, target_follow, self.username))
             or self.verify_code
         )
 
         followed_targets: set[str] = set()
-        applied_bio_codes: set[str] = set()
 
-        def do_apply_bio_code(code_str: str):
+        def ensure_bio_code_visible(code_str: str):
+            """Gắn mã vào Tiểu sử và load lại trang IG 2-3 lần cho tới khi thấy mã hiện trên Tiểu sử."""
             code_str = code_str.strip()
-            if not code_str or code_str in applied_bio_codes:
+            if not code_str:
                 return
-            applied_bio_codes.add(code_str)
-            print(f"  -> Đang gắn mã xác thực [{code_str}] vào Tiểu sử (Bio) Instagram @{handle}...", flush=True)
-            if hasattr(instagram, "update_bio"):
-                try:
-                    if instagram.update_bio(code_str):
-                        print(f"  [✓] Đã gắn mã [{code_str}] vào tiểu sử IG thành công!", flush=True)
-                    else:
-                        print(f"  [!] Chưa xác nhận được cập nhật tiểu sử với mã [{code_str}].", flush=True)
-                except Exception as exc:
-                    print(f"  [!] Lưu ý khi cập nhật tiểu sử IG: {exc}", flush=True)
-            if hasattr(instagram, "reload_profile"):
-                print(f"  -> Đang load lại trang cá nhân @{handle} để làm mới bộ nhớ đệm...", flush=True)
-                instagram.reload_profile()
-                time.sleep(3)
+            for bio_attempt in range(1, 3):
+                print(
+                    f"  -> [Tiểu sử Lần {bio_attempt}] Đang gắn mã [{code_str}] vào Tiểu sử IG @{handle}...",
+                    flush=True,
+                )
+                if hasattr(instagram, "update_bio"):
+                    try:
+                        instagram.update_bio(code_str)
+                    except Exception as exc:
+                        print(f"  [!] Lưu ý khi cập nhật tiểu sử IG: {exc}", flush=True)
+
+                if hasattr(instagram, "reload_profile"):
+                    seen = instagram.reload_profile(expected_code=code_str, times=3)
+                    if seen:
+                        return
+                    print(
+                        f"  [!] Sau 3 lần load trang IG vẫn chưa thấy mã [{code_str}] nổi lên Tiểu sử; đang ép cập nhật lại...",
+                        flush=True,
+                    )
+                else:
+                    return
 
         def do_follow_target(target_handle: str):
             target_handle = target_handle.lstrip("@").strip()
@@ -707,19 +715,17 @@ class GoLike:
                 except Exception as exc:
                     print(f"  [!] Lưu ý khi follow @{target_handle}: {exc}", flush=True)
             if hasattr(instagram, "reload_profile"):
-                print(f"  -> Đang load lại trang cá nhân @{handle} và chờ 5s để GoLike đồng bộ...", flush=True)
-                instagram.reload_profile()
-            time.sleep(5)
+                instagram.reload_profile(expected_code=current_bio_code, times=2)
+            time.sleep(3)
 
-        # Nếu đã có mã xác thực từ đầu thì gắn vào Bio trước
-        if verify_code:
-            do_apply_bio_code(verify_code)
+        # Nếu đã có mã xác thực từ đầu thì gắn vào Bio và load 3 lần kiểm tra trước
+        if current_bio_code:
+            ensure_bio_code_visible(current_bio_code)
 
-        # Thực hiện follow kênh xác minh (ví dụ @james111119999) và load lại profile
+        # Thực hiện follow kênh xác minh (ví dụ @james111119999)
         do_follow_target(target_follow)
 
-        # Bước 3: Gửi yêu cầu xác minh liên kết lên GoLike (tự động đọc mã Bio nếu GoLike trả về trong phản hồi)
-        print(f"  -> Đang gửi yêu cầu xác minh liên kết @{handle} lên GoLike...", flush=True)
+        # Bước 3: Thử thêm vào GoLike -> Nếu chưa được thì Load lại IG 2-3 lần kiểm tra mã ở Tiểu sử rồi thêm lại
         candidates = [
             ("instagram-account/verify-account", {"object_id": handle}),
             ("instagram-account/verify-account", {"object_id": f"https://www.instagram.com/{handle}/"}),
@@ -728,10 +734,16 @@ class GoLike:
         ]
 
         last_msg = ""
-        for round_try in range(3):
+        max_link_rounds = 3
+        for round_try in range(1, max_link_rounds + 1):
+            print(
+                f"  -> [Đợt {round_try}/{max_link_rounds}] Đang gửi yêu cầu thêm tài khoản @{handle} vào GoLike...",
+                flush=True,
+            )
             linked_ok = False
             dynamic_follow = ""
             dynamic_code = ""
+
             for path, payload in candidates:
                 try:
                     res = self.gateway(
@@ -750,9 +762,9 @@ class GoLike:
                         linked_ok = True
                         break
 
-                    # Kiểm tra xem GoLike có cấp/yêu cầu mã xác thực tiểu sử (Bio) trong phản hồi không
+                    # Kiểm tra xem GoLike có trả mã xác thực tiểu sử (Bio) trong phản hồi không
                     found_code = extract_verify_code(res, (handle, target_follow, self.username))
-                    if found_code and found_code not in applied_bio_codes:
+                    if found_code and found_code != current_bio_code:
                         dynamic_code = found_code
 
                     # Kiểm tra xem GoLike có yêu cầu follow kênh xác minh khác không
@@ -786,28 +798,43 @@ class GoLike:
                     elif not last_msg:
                         last_msg = err_s
 
-            if linked_ok:
-                break
+            # Kiểm tra xem tài khoản đã vào danh sách GoLike chưa
+            time.sleep(2)
+            try:
+                account_id = self.linked_account(handle, uid)
+                print(f"  [✓] TỰ ĐỘNG LIÊN KẾT THÀNH CÔNG! Account ID GoLike: {account_id}\n", flush=True)
+                return account_id
+            except Exception:
+                if linked_ok:
+                    time.sleep(3)
+                    try:
+                        account_id = self.linked_account(handle, uid)
+                        print(f"  [✓] TỰ ĐỘNG LIÊN KẾT THÀNH CÔNG! Account ID GoLike: {account_id}\n", flush=True)
+                        return account_id
+                    except Exception:
+                        pass
 
-            need_retry = False
-            if dynamic_code:
-                do_apply_bio_code(dynamic_code)
-                need_retry = True
-            if dynamic_follow:
-                do_follow_target(dynamic_follow)
-                need_retry = True
-            if need_retry and round_try < 2:
-                print(f"  -> Đang gửi lại yêu cầu xác minh liên kết @{handle} sau khi cập nhật...", flush=True)
-                continue
-            break
+            if round_try < max_link_rounds:
+                if last_msg:
+                    print(f"  [!] GoLike chưa duyệt ngay ({last_msg}).", flush=True)
+                if dynamic_code:
+                    current_bio_code = dynamic_code
+                    ensure_bio_code_visible(current_bio_code)
+                elif current_bio_code:
+                    print(
+                        f"  -> Đang load lại trang IG @{handle} 3 lần để đảm bảo mã [{current_bio_code}] hiện ở Tiểu sử rồi thêm lại...",
+                        flush=True,
+                    )
+                    seen_now = instagram.reload_profile(expected_code=current_bio_code, times=3)
+                    if not seen_now:
+                        ensure_bio_code_visible(current_bio_code)
+                else:
+                    print(f"  -> Đang load lại trang IG @{handle} 3 lần để làm mới cache rồi thêm lại vào GoLike...", flush=True)
+                    instagram.reload_profile(times=3)
 
-        time.sleep(2)
-        try:
-            account_id = self.linked_account(handle, uid)
-            print(f"  [✓] TỰ ĐỘNG LIÊN KẾT THÀNH CÔNG! Account ID GoLike: {account_id}\n", flush=True)
-            return account_id
-        except Exception:
-            pass
+                if dynamic_follow:
+                    do_follow_target(dynamic_follow)
+                time.sleep(3)
 
         err_detail = f" ({last_msg})" if last_msg else ""
         raise StopRun(f"Tự động liên kết {name} thất bại{err_detail}. Vui lòng liên kết thủ công trên web GoLike.")
@@ -979,15 +1006,14 @@ class Instagram:
 
         form = self.fetch_profile_form()
         current_bio = str(form.get("biography") or "").strip()
-        if verify_code in current_bio:
-            return True
-
-        if current_bio and len(current_bio) + 1 + len(verify_code) <= 145:
+        if current_bio and verify_code not in current_bio and len(current_bio) + 1 + len(verify_code) <= 140:
             new_bio = f"{current_bio} {verify_code}"
+        elif verify_code in current_bio:
+            new_bio = current_bio
         else:
             new_bio = verify_code
 
-        # Cách 1: Endpoint chuyên biệt cập nhật tiểu sử của Instagram
+        # Cách 1: Endpoint chuyên biệt cập nhật tiểu sử của Instagram Web
         for bio_path in ("/api/v1/accounts/set_biography/", "/api/v1/web/accounts/set_biography/"):
             try:
                 resp = self.read_response(
@@ -1031,31 +1057,117 @@ class Instagram:
                         return True
             except Exception:
                 pass
-        return False
 
-    def reload_profile(self):
-        """Mô phỏng thao tác bấm Load lại trang cá nhân trên Instagram để cập nhật cache công khai."""
-        uname = (self.username or "").lstrip("@").strip()
+        # Cách 3: Gửi qua Mobile API i.instagram.com (thường cập nhật cache nhanh hơn Web)
         try:
-            self.fetch_profile_form()
-            if not uname:
-                uname = (self.username or "").lstrip("@").strip()
+            mob_headers = {**self.headers(f"{IG_ORIGIN}/accounts/edit/"), "User-Agent": IG_MOBILE_UA}
+            mob_resp = self.session.post(
+                "https://i.instagram.com/api/v1/accounts/set_biography/",
+                headers=mob_headers,
+                data={"raw_text": new_bio, "_uid": self.uid, "_uuid": str(uuid.uuid4())},
+                timeout=TIMEOUT,
+            )
+            if mob_resp.status_code == 200:
+                res_json = self.decode(mob_resp)
+                if res_json.get("status") == "ok":
+                    if isinstance(self.profile_form, dict):
+                        self.profile_form["biography"] = new_bio
+                    return True
         except Exception:
             pass
-        if uname:
+
+        return False
+
+    def reload_profile(self, expected_code: str = "", times: int = 3) -> bool:
+        """
+        Load lại trang cá nhân IG 2-3 lần liên tiếp và kiểm tra xem mã xác thực
+        đã thực sự hiển thị trên phần Tiểu sử (Biography) công khai hay chưa.
+        """
+        uname = (self.username or "").lstrip("@").strip()
+        if not uname:
             try:
-                self.read_response(
-                    "GET",
-                    "/api/v1/users/web_profile_info/?" + urlencode({"username": uname}),
-                    referer=f"{IG_ORIGIN}/{uname}/",
-                )
+                self.fetch_profile_form()
+                uname = (self.username or "").lstrip("@").strip()
             except Exception:
                 pass
-            try:
-                headers = {**self.headers(f"{IG_ORIGIN}/{uname}/"), "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"}
-                self.session.get(f"{IG_ORIGIN}/{uname}/", headers=headers, timeout=TIMEOUT, allow_redirects=True)
-            except Exception:
-                pass
+
+        expected_code = expected_code.strip()
+        code_seen = not bool(expected_code)
+        total_loads = max(1, times)
+
+        for idx in range(1, total_loads + 1):
+            ts = int(time.time() * 1000)
+            bio_found_in_this_load = ""
+
+            # 1. Load qua API web_profile_info (API đọc profile công khai)
+            if uname:
+                try:
+                    resp = self.read_response(
+                        "GET",
+                        "/api/v1/users/web_profile_info/?" + urlencode({"username": uname, "_": ts}),
+                        referer=f"{IG_ORIGIN}/{uname}/",
+                        extra_headers={"Cache-Control": "no-cache, no-store", "Pragma": "no-cache"},
+                    )
+                    if resp.status_code == 200:
+                        root = self.decode(resp)
+                        user_obj = obj_data(root).get("user")
+                        if isinstance(user_obj, dict):
+                            bio_found_in_this_load = str(user_obj.get("biography") or "")
+                except Exception:
+                    pass
+
+            # 2. Load trực tiếp HTML trang cá nhân /{username}/ để ép làm mới CDN cache
+            if uname:
+                try:
+                    html_headers = {
+                        **self.headers(f"{IG_ORIGIN}/{uname}/"),
+                        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+                        "Cache-Control": "no-cache, no-store, max-age=0",
+                        "Pragma": "no-cache",
+                    }
+                    html_res = self.session.get(
+                        f"{IG_ORIGIN}/{uname}/?" + urlencode({"_": ts}),
+                        headers=html_headers,
+                        timeout=TIMEOUT,
+                        allow_redirects=True,
+                    )
+                    if html_res.status_code == 200 and not bio_found_in_this_load:
+                        m_bio = re.search(r'"biography"\s*:\s*"([^"]*)"', html_res.text)
+                        if m_bio:
+                            try:
+                                bio_found_in_this_load = json.loads(f'"{m_bio.group(1)}"')
+                            except Exception:
+                                bio_found_in_this_load = m_bio.group(1)
+                        elif expected_code and expected_code in html_res.text:
+                            bio_found_in_this_load = expected_code
+                except Exception:
+                    pass
+
+            # 3. Kiểm tra thêm trong web_form_data nếu chưa đọc được từ trang công khai
+            if not bio_found_in_this_load:
+                form = self.fetch_profile_form()
+                if isinstance(form, dict):
+                    bio_found_in_this_load = str(form.get("biography") or "")
+
+            if expected_code:
+                if expected_code in bio_found_in_this_load:
+                    code_seen = True
+                    print(
+                        f"    [✓] Load IG lần {idx}/{total_loads}: Đã thấy mã [{expected_code}] trong Tiểu sử (@{uname})!",
+                        flush=True,
+                    )
+                else:
+                    print(
+                        f"    [⏳] Load IG lần {idx}/{total_loads}: Chưa thấy mã [{expected_code}] nổi lên Tiểu sử, đang load tiếp...",
+                        flush=True,
+                    )
+            else:
+                print(f"    [🔄] Đã load lại trang IG @{uname} ({idx}/{total_loads})...", flush=True)
+
+            if idx < total_loads:
+                time.sleep(2)
+
+        return code_seen
 
     def verify(self):
         form = self.fetch_profile_form()
