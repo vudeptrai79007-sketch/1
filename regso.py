@@ -58,7 +58,6 @@ if 'distutils' not in sys.modules:
 import os
 import time
 import threading
-import sys
 import random
 import re
 from datetime import datetime
@@ -151,14 +150,14 @@ class Colors:
 def banner():
     os.system('clear' if os.name == 'posix' else 'cls')
     built_in_print(f"""{Colors.PRIMARY}
- ██████╗ ██╗  ██╗██████╗  ██████╗ ███╗   ███╗███████╗
-██╔════╝ ██║  ██║██╔══██╗██╔═══██╗████╗ ████║██╔════╝
-██║  ███╗███████║██████╔╝██║   ██║██╔████╔██║█████╗  
-██║   ██║██╔══██║██╔══██╗██║   ██║██║╚██╔╝██║██╔══╝  
-╚██████╔╝██║  ██║██║  ██║╚██████╔╝██║ ╚═╝ ██║███████╗
- ╚═════╝ ╚═╝  ╚═╝╚═╝  ╚═╝ ╚═════╝ ╚═╝    ╚═╝╚══════╝
+  ██████╗ ██╗  ██╗██████╗  ██████╗ ███╗   ███╗███████╗
+ ██╔════╝ ██║  ██║██╔══██╗██╔═══██╗████╗ ████║██╔════╝
+ ██║  ███╗███████║██████╔╝██║   ██║██╔████╔██║█████╗  
+ ██║   ██║██╔══██║██╔══██╗██║   ██║██║╚██╔╝██║██╔══╝  
+ ╚██████╔╝██║  ██║██║  ██║╚██████╔╝██║ ╚═╝ ██║███████╗
+  ╚═════╝ ╚═╝  ╚═╝╚═╝  ╚═╝ ╚═════╝ ╚═╝   ╚═╝╚══════╝
 {Colors.RESET}""")
-    built_in_print(f"{Colors.INFO}Phiên Bản: v17.5 (Bypass 100% bốc nhầm số trong Tên Email){Colors.RESET}")
+    built_in_print(f"{Colors.INFO}Phiên Bản: v18.0 (Fix Form Meta IG - 100% Nam - Full Bypass){Colors.RESET}")
     built_in_print(f"{Colors.LINE}{'─'*70}{Colors.RESET}\n")
 
 def load_config():
@@ -202,17 +201,25 @@ def save_account(thread_id, email_str, password, username, full_name, mode="auto
     except Exception as e: 
         print(f"Lỗi khi lưu file: {e}")
 
-def VietnameseNameGenerator():
-    first = random.choice(["Nguyen", "Tran", "Le", "Pham", "Hoang", "Huynh", "Vu", "Dang", "Bui", "Do"])
-    middle = random.choice(["Van", "Thi", "Minh", "Hoang", "Anh", "Bao", "Gia", "Khanh", "Ngoc", "Phuong"])
-    last = random.choice(["An", "Binh", "Cuong", "Dung", "Anh", "Bich", "Chi", "Diep", "Dung", "Hai", "Hung"])
-    full_name = f"{first} {middle} {last}"
-    cleaned = re.sub(r'[^a-zA-Z0-9]', '', full_name.lower())
+# Hàm này sinh 100% tên Nam (Cả Tên và Chữ lót)
+def VietnameseMaleNameGenerator():
+    ho_list = ["Nguyen", "Tran", "Le", "Pham", "Hoang", "Huynh", "Vu", "Dang", "Bui", "Do"]
+    middle_list = ["Van", "Minh", "Hoang", "Duc", "Dinh", "Gia", "Bao", "Quang", "Tuan", "Xuan"]
+    ten_list = ["An", "Binh", "Cuong", "Dung", "Hung", "Hai", "Son", "Tien", "Trung", "Vinh", "Nam", "Phuc", "Thanh", "Khoa"]
+
+    ho = random.choice(ho_list)
+    middle = random.choice(middle_list)
+    ten = random.choice(ten_list)
     
+    ho_part = f"{ho} {middle}"
+    ten_part = ten
+    full_name = f"{ho_part} {ten_part}"
+    
+    cleaned = re.sub(r'[^a-zA-Z0-9]', '', full_name.lower())
     extra_chars = "".join(random.choices("abcdefghijklmnopqrstuvwxyz", k=2))
     username = f"{cleaned}{extra_chars}{random.randint(10000, 999999)}"
     
-    return full_name, username
+    return ho_part, ten_part, full_name, username
 
 # >>> HỆ THỐNG XỬ LÝ PROXY ĐA NĂNG <<<
 def parse_proxy(proxy_str):
@@ -823,7 +830,7 @@ class starts(threading.Thread):
             mail_service = None
             hotmail_service = None
             autosms_service = None
-            full_name, username = VietnameseNameGenerator()
+            ho_fb, ten_fb, full_name, username = VietnameseMaleNameGenerator()
             chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%"
             secure_pass = "".join(random.choice(chars) for _ in range(12))
 
@@ -868,6 +875,7 @@ class starts(threading.Thread):
                     print(f"{Colors.color_text(f'[{self.thread_id}] Lỗi: Không thể thuê số điện thoại từ API (Hết số hoặc Sai Key)!', Colors.ERROR)}")
                     return False
 
+            contact_for_signup = used_email
             print(f"{Colors.color_text(f'[{self.thread_id}] Đang dùng Email/SĐT: {used_email}', Colors.INFO)}")
 
             driver = None
@@ -1004,117 +1012,135 @@ class starts(threading.Thread):
                         except: pass
 
                 try:
-                    wait.until(EC.presence_of_all_elements_located((By.XPATH, '//select | //*[@role="combobox"]')))
-                    inputs = driver.find_elements(By.TAG_NAME, "input")
+                    # Chờ form load (Chờ thẻ input xuất hiện)
+                    wait.until(EC.presence_of_element_located((By.TAG_NAME, 'input')))
+                    time.sleep(3)
                     
-                    if len(inputs) >= 4:
-                        print(f"{Colors.color_text(f'[{self.thread_id}] Điền Email/SĐT...', Colors.INFO)}")
-                        human_type(inputs[0], used_email)
+                    # Hàm dò tìm thẻ nhập liệu tương thích với cả IG cũ và Meta mới
+                    def get_meta_element(xpaths):
+                        for xp in xpaths:
+                            try:
+                                els = driver.find_elements(By.XPATH, xp)
+                                for el in els:
+                                    if el.is_displayed(): return el
+                            except: continue
+                        return None
                         
-                        print(f"{Colors.color_text(f'[{self.thread_id}] Điền Mật khẩu...', Colors.INFO)}")
-                        human_type(inputs[1], secure_pass)
-                        
-                        print(f"{Colors.color_text(f'[{self.thread_id}] Bắt đầu chọn Ngày Sinh bằng Script Console...', Colors.INFO)}")
+                    # 1. Điền Họ và Tên (nếu có - giao diện Meta mới)
+                    lastname_el = get_meta_element([
+                        "//input[@name='lastname']", "//input[@aria-label='Họ']", 
+                        "//input[contains(@placeholder, 'Họ')]"
+                    ])
+                    firstname_el = get_meta_element([
+                        "//input[@name='firstname']", "//input[@aria-label='Tên']", 
+                        "//input[contains(@placeholder, 'Tên')]"
+                    ])
+
+                    if lastname_el and firstname_el:
+                        print(f"{Colors.color_text(f'[{self.thread_id}] Nhận diện Form Meta -> Điền Họ ({ho_fb})...', Colors.INFO)}")
+                        human_type(lastname_el, ho_fb)
+                        time.sleep(0.3)
+                        print(f"{Colors.color_text(f'[{self.thread_id}] Nhận diện Form Meta -> Điền Tên ({ten_fb})...', Colors.INFO)}")
+                        human_type(firstname_el, ten_fb)
+                        time.sleep(0.3)
+                    else:
+                        # Fallback về giao diện IG gốc
+                        fullname_el = get_meta_element(["//input[@name='fullName']", "//input[contains(@aria-label, 'Tên đầy đủ')]"])
+                        if fullname_el:
+                            print(f"{Colors.color_text(f'[{self.thread_id}] Điền Tên đầy đủ ({full_name})...', Colors.INFO)}")
+                            human_type(fullname_el, full_name)
+                            time.sleep(0.3)
+
+                    # 2. Chọn Ngày Sinh và Giới Tính (Mặc định NAM) - Chỉ chạy nếu là Meta Form
+                    is_meta_form = driver.execute_script("return document.querySelectorAll('select, [role=\"combobox\"]').length > 0;")
+                    if is_meta_form:
+                        gender_text = "Nam"
+                        print(f"{Colors.color_text(f'[{self.thread_id}] Chọn Ngày Sinh ({current_day}/{current_month}/{current_year}) và Giới tính ({gender_text})...', Colors.INFO)}")
                         try:
-                            driver.set_script_timeout(15)
-                            js_script = '''
-                            const day = arguments[0];
-                            const month = arguments[1];
-                            const year = arguments[2];
-                            const callback = arguments[arguments.length - 1];
+                            driver.set_script_timeout(20)
+                            js_dropdowns = """
+                            const day = arguments[0], month = arguments[1], year = arguments[2], genderText = arguments[3], callback = arguments[4];
+                            
+                            async function clickDropdownAndSelect(boxLabelPartial, targetValueStr) {
+                                let combos = Array.from(document.querySelectorAll('[role="combobox"], select'));
+                                let box = combos.find(c => {
+                                    let txt = (c.innerText || c.getAttribute('aria-label') || c.title || "").toLowerCase();
+                                    return txt.includes(boxLabelPartial.toLowerCase());
+                                });
+                                
+                                if(!box) return false;
+                                
+                                if(box.tagName.toLowerCase() === 'select') {
+                                    let nativeSetter = Object.getOwnPropertyDescriptor(window.HTMLSelectElement.prototype, "value").set;
+                                    nativeSetter.call(box, targetValueStr);
+                                    box.dispatchEvent(new Event('change', { bubbles: true }));
+                                    return true;
+                                }
+                                
+                                box.scrollIntoView({block: 'center'});
+                                box.click(); 
+                                await new Promise(r => setTimeout(r, 600)); 
+                                
+                                let options = Array.from(document.querySelectorAll('[role="option"], li'));
+                                let opt = options.find(o => {
+                                    let txt = (o.innerText || "").trim().toLowerCase();
+                                    let tv = String(targetValueStr).toLowerCase();
+                                    return txt === tv || txt === "0" + tv || txt === "tháng " + tv || txt === "tháng 0" + tv || txt === "m" + tv;
+                                });
+                                
+                                if(opt) {
+                                    opt.scrollIntoView({block: 'nearest'});
+                                    opt.click();
+                                    await new Promise(r => setTimeout(r, 500));
+                                    return true;
+                                } else {
+                                    document.body.click();
+                                    await new Promise(r => setTimeout(r, 300));
+                                    return false;
+                                }
+                            }
 
                             (async function() {
                                 try {
-                                    const selects = Array.from(document.querySelectorAll('select'));
-                                    if (selects.length >= 3) {
-                                        function setSelectVal(el, val) {
-                                            let nativeSetter = Object.getOwnPropertyDescriptor(window.HTMLSelectElement.prototype, "value").set;
-                                            nativeSetter.call(el, val);
-                                            el.dispatchEvent(new Event('change', { bubbles: true }));
-                                        }
-                                        
-                                        for (let sel of selects) {
-                                            const t = (sel.title || "").toLowerCase();
-                                            if (t.includes("tháng") || t.includes("month")) {
-                                                setSelectVal(sel, month);
-                                            } else if (t.includes("ngày") || t.includes("day")) {
-                                                setSelectVal(sel, day);
-                                            } else if (t.includes("năm") || t.includes("year")) {
-                                                setSelectVal(sel, year);
-                                            }
-                                        }
-                                        await new Promise(r => setTimeout(r, 1000));
-                                        return callback("SUCCESS");
-                                    }
-
-                                    const comboboxes = Array.from(document.querySelectorAll('[role="combobox"]'));
-                                    if (comboboxes.length < 3) return callback("ERROR: Không tìm thấy 3 ô combobox!");
-
-                                    const monthNum = parseInt(month, 10);
-                                    const enMonths = ["january", "february", "march", "april", "may", "june", "july", "august", "september", "october", "november", "december"];
-                                    const viMonths = ["tháng 1", "tháng 2", "tháng 3", "tháng 4", "tháng 5", "tháng 6", "tháng 7", "tháng 8", "tháng 9", "tháng 10", "tháng 11", "tháng 12"];
-                                    const possibleMonths = [String(monthNum), "0" + monthNum, enMonths[monthNum-1], viMonths[monthNum-1]];
-
-                                    async function clickOption(box, possibleValues) {
-                                        box.scrollIntoView({ block: 'center' });
-                                        box.click();
-                                        await new Promise(r => setTimeout(r, 600));
-                                        
-                                        const options = Array.from(document.querySelectorAll('div, span, li, option'));
-                                        const matched = options.filter(el => {
-                                            if (el.offsetHeight === 0 && !el.getClientRects().length) return false;
-                                            const txt = el.innerText?.trim().toLowerCase() || "";
-                                            return possibleValues.includes(txt);
-                                        });
-
-                                        if (matched.length > 0) {
-                                            const target = matched[matched.length - 1];
-                                            target.scrollIntoView({ block: 'nearest' });
-                                            target.click();
-                                            await new Promise(r => setTimeout(r, 400));
-                                            return true;
-                                        }
-                                        
-                                        document.body.click(); 
-                                        await new Promise(r => setTimeout(r, 200));
-                                        return false;
-                                    }
-
-                                    const htmlLang = document.documentElement.lang.toLowerCase();
-                                    if (htmlLang.includes('vi')) {
-                                        await clickOption(comboboxes[0], [String(day), "0" + day]);
-                                        await clickOption(comboboxes[1], possibleMonths);
-                                        await clickOption(comboboxes[2], [String(year)]);
-                                    } else {
-                                        await clickOption(comboboxes[0], possibleMonths);
-                                        await clickOption(comboboxes[1], [String(day), "0" + day]);
-                                        await clickOption(comboboxes[2], [String(year)]);
-                                    }
-
+                                    await clickDropdownAndSelect("ngày", day);
+                                    await clickDropdownAndSelect("tháng", month);
+                                    await clickDropdownAndSelect("năm", year);
+                                    await clickDropdownAndSelect("giới tính", genderText);
                                     callback("SUCCESS");
-                                } catch (err) {
-                                    callback("ERROR: " + err.toString());
+                                } catch (e) {
+                                    callback("ERROR: " + e.toString());
                                 }
                             })();
-                            '''
-                            result = driver.execute_async_script(js_script, current_day, current_month, current_year)
-                            if result == "SUCCESS":
-                                print(f"{Colors.color_text(f'[{self.thread_id}] Đã chạy xong JS chọn: {current_day}/{current_month}/{current_year}', Colors.SUCCESS)}")
-                            else:
-                                print(f"{Colors.color_text(f'[{self.thread_id}] JS chạy lỗi: {result}', Colors.WARNING)}")
-                                
+                            """
+                            res = driver.execute_async_script(js_dropdowns, current_day, current_month, current_year, gender_text)
+                            if "ERROR" in res:
+                                print(f"{Colors.color_text(f'[{self.thread_id}] Cảnh báo JS Dropdown: {res}', Colors.WARNING)}")
                         except Exception as e:
-                            print(f"{Colors.color_text(f'[{self.thread_id}] Lỗi tải khối Ngày Sinh (JS): {e}', Colors.ERROR)}")
-                            
-                        print(f"{Colors.color_text(f'[{self.thread_id}] Điền Họ Tên...', Colors.INFO)}")
-                        human_type(inputs[2], full_name)
-                        
-                        print(f"{Colors.color_text(f'[{self.thread_id}] Xử lý form Username...', Colors.INFO)}")
-                        human_type(inputs[3], username, is_username=True)
-                    else:
-                        print(f"{Colors.color_text(f'[{self.thread_id}] Lỗi: Giao diện IG bị thay đổi!', Colors.ERROR)}")
-                        return False
+                            print(f"{Colors.color_text(f'[{self.thread_id}] Lỗi chạy script Combobox: {e}', Colors.ERROR)}")
+
+                    # 3. Điền Email / SĐT
+                    print(f"{Colors.color_text(f'[{self.thread_id}] Điền Email/SĐT ({contact_for_signup})...', Colors.INFO)}")
+                    email_el = get_meta_element([
+                        "//input[contains(@aria-label, 'Số di động') or contains(@aria-label, 'email') or contains(@placeholder, 'Số di động') or contains(@placeholder, 'email') or @name='reg_email__' or @name='emailOrPhone']"
+                    ])
+                    if email_el: human_type(email_el, contact_for_signup)
+                    time.sleep(1)
                     
+                    # 4. Điền Mật khẩu
+                    print(f"{Colors.color_text(f'[{self.thread_id}] Điền Mật khẩu...', Colors.INFO)}")
+                    pass_el = get_meta_element([
+                        "//input[@type='password' or @name='reg_passwd__' or @name='password' or contains(@aria-label, 'Mật khẩu') or contains(@placeholder, 'Mật khẩu')]"
+                    ])
+                    if pass_el: human_type(pass_el, secure_pass)
+                    time.sleep(1)
+
+                    # 5. Điền Username (Nếu form là form IG chuẩn có yêu cầu chọn username)
+                    username_el = get_meta_element(["//input[@name='username']", "//input[contains(@aria-label, 'Tên người dùng')]"])
+                    if username_el:
+                        print(f"{Colors.color_text(f'[{self.thread_id}] Điền Username ({username})...', Colors.INFO)}")
+                        human_type(username_el, username, is_username=True)
+                        time.sleep(1)
+
                     print(f"{Colors.color_text(f'[{self.thread_id}] Đã điền xong. Ngâm form 10s trước khi bấm nút Đăng Ký...', Colors.WARNING)}")
                     time.sleep(10)
 
@@ -1204,7 +1230,7 @@ class starts(threading.Thread):
                                 except:
                                     print(f"{Colors.color_text(f'[{self.thread_id}] Không tìm thấy nút qua Selenium, fallback phím ENTER...', Colors.WARNING)}")
                                     try:
-                                        inputs[3].send_keys(Keys.ENTER)
+                                        if pass_el: pass_el.send_keys(Keys.ENTER)
                                         print(f"{Colors.color_text(f'[{self.thread_id}] Đã bấm ENTER thành công!', Colors.SUCCESS)}")
                                     except: pass
 
