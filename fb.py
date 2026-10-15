@@ -139,6 +139,7 @@ DEFAULT_DELAY_CONFIG = {
     'lay_token_android': True   # True = Gọi Graph API lấy thêm Token EAAAAU sau khi reg
 }
 
+# Danh sách lưu toàn bộ Trình duyệt để hỏi đóng vào cuối cùng
 ALL_DRIVERS = []
 GLOBAL_USED_PHONES = set()
 GLOBAL_USED_NAMES = set()
@@ -187,7 +188,7 @@ def banner():
  ╚██████╔╝██║  ██║██║  ██║╚██████╔╝██║ ╚═╝ ██║███████╗
   ╚═════╝ ╚═╝  ╚═╝╚═╝  ╚═╝ ╚═════╝ ╚═╝     ╚═╝╚══════╝
 {Colors.RESET}""")
-    built_in_print(f"{Colors.INFO}Phiên Bản: FB Reg Meta Form - 100% Nam - Dropdown JS Fix{Colors.RESET}")
+    built_in_print(f"{Colors.INFO}Phiên Bản: v20.0 Ultimate (FB Reg Index Form - 100% Nam - Dropdown JS Fix){Colors.RESET}")
     built_in_print(f"{Colors.LINE}{'─'*75}{Colors.RESET}\n")
 
 def load_config():
@@ -291,7 +292,10 @@ def save_account(thread_id, email_str, password, uid, full_name, mode="auto", co
     try:
         with open(file_tong, 'a', encoding='utf-8') as f: 
             f.write(dinh_dang_luu)
-        content = (f"Luồng: {thread_id}\nUID: {uid}\nHọ Tên: {full_name}\nEmail/SĐT: {email_str}\nPass: {password}\n2FA: {two_fa}\nAccess Token: {access_token}\nCookie: {cookie}\n")
+        content = (
+            f"Luồng: {thread_id}\nUID: {uid}\nHọ Tên: {full_name}\nEmail/SĐT: {email_str}\n"
+            f"Pass: {password}\n2FA: {two_fa}\nAccess Token: {access_token}\nCookie: {cookie}\n"
+        )
         with open(filename, 'w', encoding='utf-8') as f: 
             f.write(content)
     except Exception as e: 
@@ -337,7 +341,7 @@ def VietnameseMaleNameGenerator(used_names=None):
     
     return last_name_fb, first_name_fb, full_name, username
 
-# ========== CLASS FACEBOOK MÃ HÓA RSA/AES ==========
+# ========== CLASS FACEBOOK MÃ HÓA RSA/AES & LẤY TOKEN ANDROID (TỪ BẢN ADB) ==========
 class Facebook:
     def MaHoaMatKhau(self, mat_khau):
         try:
@@ -369,10 +373,8 @@ class Facebook:
             buf.write(encrypted_passwd)
             encoded = base64.b64encode(buf.getvalue()).decode('utf-8')
             return f"#PWD_FB4A:2:{current_time}:{encoded}"
-        except KeyboardInterrupt:
-            raise KeyboardInterrupt
-        except Exception:
-            return mat_khau
+        except KeyboardInterrupt: raise KeyboardInterrupt
+        except Exception: return mat_khau
 
     @staticmethod
     def _tao_machine_id():
@@ -392,12 +394,10 @@ class Facebook:
         self.machine_id = self._tao_machine_id()
         self.jazoest = ''.join(random.choices(string.digits, k=5))
         self.HEADERS = {
-            'content-type': 'application/x-www-form-urlencoded',
-            'x-fb-net-hni': '45201', 'zero-rated': '0', 'x-fb-sim-hni': '45201',
-            'x-fb-connection-quality': 'EXCELLENT', 'x-fb-friendly-name': 'authenticate',
-            'x-fb-connection-bandwidth': '78032897', 'x-tigon-is-retry': 'False',
-            'authorization': 'OAuth null', 'x-fb-connection-type': 'WIFI',
-            'x-fb-device-group': '3342', 'priority': 'u=3,i', 'x-fb-http-engine': 'Liger',
+            'content-type': 'application/x-www-form-urlencoded', 'x-fb-net-hni': '45201', 'zero-rated': '0',
+            'x-fb-sim-hni': '45201', 'x-fb-connection-quality': 'EXCELLENT', 'x-fb-friendly-name': 'authenticate',
+            'x-fb-connection-bandwidth': '78032897', 'x-tigon-is-retry': 'False', 'authorization': 'OAuth null',
+            'x-fb-connection-type': 'WIFI', 'x-fb-device-group': '3342', 'priority': 'u=3,i', 'x-fb-http-engine': 'Liger',
             'x-fb-client-ip': 'True', 'x-fb-server-cluster': 'True',
             'x-fb-request-analytics-tags': '{"network_tags":{"product":"350685531728","retry_attempt":"0"},"application_tags":"unknown"}',
             'user-agent': 'Dalvik/2.1.0 (Linux; U; Android 9; 23113RKC6C Build/PQ3A.190705.08211809) [FBAN/FB4A;FBAV/417.0.0.33.65;FBPN/com.facebook.katana;FBLC/vi_VN;FBBV/480086274;FBCR/MobiFone;FBMF/Redmi;FBBD/Redmi;FBDV/23113RKC6C;FBSV/9;FBCA/x86:armeabi-v7a;FBDM/{density=1.5,width=1280,height=720};FB_FW/1;FBRV/0;]'
@@ -405,11 +405,10 @@ class Facebook:
 
     def DangNhap(self, app_token=APP_TOKEN):
         self.data = {
-            'email': self.email, 'password': self.mat_khau, 'generate_session_cookies': '1',
-            'locale': 'vi_VN', 'client_country_code': 'VN', 'access_token': app_token,
-            'api_key': self.API_KEY, 'adid': self.adid, 'account_switcher_uids': f'["{self.email}"]',
-            'source': 'login', 'machine_id': self.machine_id, 'jazoest': self.jazoest,
-            'meta_inf_fbmeta': 'V2_UNTAGGED', 'fb_api_req_friendly_name': 'authenticate',
+            'email': self.email, 'password': self.mat_khau, 'generate_session_cookies': '1', 'locale': 'vi_VN',
+            'client_country_code': 'VN', 'access_token': app_token, 'api_key': self.API_KEY, 'adid': self.adid,
+            'account_switcher_uids': f'["{self.email}"]', 'source': 'login', 'machine_id': self.machine_id,
+            'jazoest': self.jazoest, 'meta_inf_fbmeta': 'V2_UNTAGGED', 'fb_api_req_friendly_name': 'authenticate',
             'fb_api_caller_class': 'Fb4aAuthHandler', 'sig': self.SIG
         }
         try:
@@ -434,11 +433,12 @@ class Facebook:
                 cookies_list = ket_qua.get('session_cookies', [])
                 cookies_string = '; '.join((f"{c['name']}={c['value']}" for c in cookies_list))
                 return {'status': 200, 'data': {'cookies': cookies_string, 'token': access_token}}
-            return {'status': 401, 'msg': ket_qua.get('error', {}).get('message', 'Đăng nhập thất bại')}
+            error_msg = ket_qua.get('error', {}).get('message', 'Đăng nhập thất bại')
+            return {'status': 401, 'msg': error_msg}
         except KeyboardInterrupt: raise KeyboardInterrupt
         except Exception as e: return {'status': 401, 'msg': str(e)}
 
-# >>> HỆ THỐNG XỬ LÝ PROXY <<<
+# >>> HỆ THỐNG XỬ LÝ PROXY ĐA NĂNG <<<
 def parse_proxy(proxy_str):
     if not proxy_str: return None
     p_str = str(proxy_str).strip()
@@ -447,6 +447,7 @@ def parse_proxy(proxy_str):
         if p_str.lower().startswith(proto):
             p_str = p_str[len(proto):]
             break
+
     if "@" in p_str:
         try:
             auth_part, host_part = p_str.split("@", 1)
@@ -454,6 +455,7 @@ def parse_proxy(proxy_str):
             ip, port = host_part.split(":", 1)
             return {"ip": ip.strip(), "port": port.strip(), "user": u.strip(), "pass": pwd.strip()}
         except Exception: pass
+
     parts = [x.strip() for x in p_str.split(":") if x.strip()]
     if len(parts) == 2: return {"ip": parts[0], "port": parts[1], "user": None, "pass": None}
     elif len(parts) == 4:
@@ -572,7 +574,7 @@ class LocalProxyForwarder:
         try: self.server_socket.close()
         except: pass
 
-# ==================== CLASS XỬ LÝ EMAIL ====================
+# ==================== CÁC CLASS XỬ LÝ EMAIL ====================
 class MailService:
     def __init__(self, proxy=None):
         self.base_url = "https://api.mail.tm"
@@ -776,8 +778,7 @@ class GmailIMAPService:
             except Exception: pass
             time.sleep(random.uniform(6.0, 10.0)) 
         return None
-
-class HotmailAPIService:
+        class HotmailAPIService:
     def __init__(self, data_line, api_mode, proxy=None):
         self.url = "https://smail1s.com/get_messages"
         self.data_line = data_line.strip()
@@ -950,7 +951,8 @@ def generate_dot_variants(gmail):
             variants.append(value + "@" + domain)
     random.shuffle(variants)
     return variants
-    # ==================== MAIN THREAD ====================
+
+# ==================== MAIN THREAD ====================
 class starts(threading.Thread):
     def __init__(self, thread_id, mode, account_count, data_source, delay_config, manual_password=None, base_gmail=None, app_password=None, api_mode=None, avatar_folder="", proxies_list=None, autosms_api_key=None, autosms_country="vn"):
         super().__init__()
@@ -999,7 +1001,7 @@ class starts(threading.Thread):
             hotmail_service = None
             autosms_service = None
             
-            # GỌI HÀM TẠO TÊN 100% NAM ĐÃ CHUẨN HOÁ
+            # GỌI HÀM TẠO TÊN 100% NAM
             last_name_fb, first_name_fb, full_name, username = VietnameseMaleNameGenerator(self.used_names)
             
             if self.delay_config.get('mat_khau_fb'):
@@ -1153,102 +1155,115 @@ class starts(threading.Thread):
                         try: element.send_keys(Keys.TAB)
                         except: pass
 
-                # ==================== ĐIỀN FORM ĐĂNG KÝ FACEBOOK (GIAO DIỆN META MỚI) ====================
+                # ==================== ĐIỀN FORM ĐĂNG KÝ FACEBOOK (DỰA VÀO INDEX HIỂN THỊ) ====================
                 try:
-                    # Chờ form load xong
-                    wait.until(EC.presence_of_element_located((By.TAG_NAME, 'input')))
-                    time.sleep(3)
+                    print(f"{Colors.color_text(f'[{self.thread_id}] Đang phân tích các ô nhập liệu trên Form Meta...', Colors.INFO)}")
 
-                    def get_meta_element(xpaths):
-                        for xp in xpaths:
-                            try:
-                                els = driver.find_elements(By.XPATH, xp)
-                                for el in els:
-                                    if el.is_displayed(): return el
-                            except: continue
-                        return None
+                    # 1. Chờ form tải hoàn tất (ít nhất phải có 4 ô input văn bản)
+                    wait.until(EC.presence_of_all_elements_located((By.XPATH, "//input[not(@type='hidden') and not(@type='checkbox') and not(@type='radio')]")))
+                    time.sleep(2)
 
-                    # 1. ĐIỀN EMAIL / SỐ ĐIỆN THOẠI
-                    print(f"{Colors.color_text(f'[{self.thread_id}] Điền Email/SĐT ({contact_for_signup})...', Colors.INFO)}")
-                    email_el = get_meta_element([
-                        "//input[contains(@aria-label, 'Số di động') or contains(@aria-label, 'email') or contains(@placeholder, 'Số di động') or contains(@placeholder, 'email') or @name='reg_email__']"
-                    ])
-                    if email_el: human_type(email_el, contact_for_signup)
-                    time.sleep(1)
+                    # Lấy danh sách TẤT CẢ các ô input đang hiển thị trên màn hình
+                    visible_inputs = []
+                    for inp in driver.find_elements(By.XPATH, "//input[not(@type='hidden') and not(@type='checkbox') and not(@type='radio')]"):
+                        if inp.is_displayed():
+                            visible_inputs.append(inp)
 
-                    # 2. Xử lý ô Xác nhận email
-                    confirm_el = get_meta_element(["//input[@name='reg_email_confirmation__']"])
-                    if confirm_el:
-                        human_type(confirm_el, contact_for_signup)
-                        time.sleep(1)
+                    if len(visible_inputs) >= 4:
+                        # Giao diện chuẩn hiển thị theo thứ tự: [0] Họ, [1] Tên, [2] SĐT/Email, [3] Mật khẩu
+                        ho_el = visible_inputs[0]
+                        ten_el = visible_inputs[1]
+                        email_el = visible_inputs[2]
+                        pass_el = visible_inputs[3]
 
-                    # 3. Điền Họ và Tên
-                    print(f"{Colors.color_text(f'[{self.thread_id}] Điền Họ ({last_name_fb}) và Tên ({first_name_fb})...', Colors.INFO)}")
-                    lastname_el = get_meta_element([
-                        "//input[@name='lastname']", "//input[@aria-label='Họ']", "//input[contains(@placeholder, 'Họ')]"
-                    ])
-                    firstname_el = get_meta_element([
-                        "//input[@name='firstname']", "//input[@aria-label='Tên']", "//input[contains(@placeholder, 'Tên')]"
-                    ])
+                        # Điền Họ và Tên
+                        print(f"{Colors.color_text(f'[{self.thread_id}] Điền Họ ({last_name_fb}) và Tên ({first_name_fb})...', Colors.INFO)}")
+                        human_type(ho_el, last_name_fb)
+                        time.sleep(self.delay_config['delay_nhap_ho'])
+                        human_type(ten_el, first_name_fb)
+                        time.sleep(self.delay_config['delay_nhap_ten'])
 
-                    if lastname_el: human_type(lastname_el, last_name_fb)
-                    time.sleep(0.3)
-                    if firstname_el: human_type(firstname_el, first_name_fb)
-                    time.sleep(1)
+                        # Điền Email/SĐT
+                        print(f"{Colors.color_text(f'[{self.thread_id}] Điền Email/SĐT ({contact_for_signup})...', Colors.INFO)}")
+                        human_type(email_el, contact_for_signup)
+                        time.sleep(self.delay_config['delay_nhap_sdt_email'])
 
-                    # 4. CHỌN NGÀY THÁNG NĂM VÀ GIỚI TÍNH BẰNG SCRIPT ÉP TƯƠNG TÁC (CLICK MENU THẢ XUỐNG)
+                        # Kiểm tra xem FB có bật thêm ô "Nhập lại Email" không
+                        time.sleep(1.5)
+                        visible_inputs_after = [inp for inp in driver.find_elements(By.XPATH, "//input[not(@type='hidden') and not(@type='checkbox') and not(@type='radio')]") if inp.is_displayed()]
+                        if len(visible_inputs_after) >= 5 and ("email" in contact_for_signup.lower() or "@" in contact_for_signup):
+                            print(f"{Colors.color_text(f'[{self.thread_id}] Nhận diện có ô Xác nhận Email, tiến hành điền...', Colors.INFO)}")
+                            human_type(visible_inputs_after[3], contact_for_signup)
+                            pass_el = visible_inputs_after[4] # Đẩy pass_el lùi lại 1 vị trí
+
+                        # Điền Mật khẩu
+                        print(f"{Colors.color_text(f'[{self.thread_id}] Điền Mật khẩu...', Colors.INFO)}")
+                        human_type(pass_el, secure_pass)
+                        time.sleep(self.delay_config['delay_nhap_mat_khau'])
+                    else:
+                        print(f"{Colors.color_text(f'[{self.thread_id}] Không tìm đủ 4 ô nhập liệu! Cấu trúc form chưa load xong.', Colors.ERROR)}")
+                        return False
+
+                    # ==========================================
+                    # 2. XỬ LÝ DROPDOWN (NGÀY, THÁNG, NĂM, GIỚI TÍNH) THEO INDEX
+                    # ==========================================
                     gender_text = "Nam"
                     print(f"{Colors.color_text(f'[{self.thread_id}] Chọn Ngày Sinh ({current_day}/{current_month}/{current_year}) và Giới tính ({gender_text})...', Colors.INFO)}")
 
                     try:
-                        driver.set_script_timeout(20)
+                        driver.set_script_timeout(25)
                         js_dropdowns = """
-                        const day = arguments[0], month = arguments[1], year = arguments[2], genderText = arguments[3], callback = arguments[4];
+                        const day = arguments[0], month = arguments[1], year = arguments[2], gender = arguments[3], callback = arguments[4];
 
-                        async function clickDropdownAndSelect(boxLabelPartial, targetValueStr) {
-                            let combos = Array.from(document.querySelectorAll('[role="combobox"], select'));
-                            let box = combos.find(c => {
-                                let txt = (c.innerText || c.getAttribute('aria-label') || c.title || "").toLowerCase();
-                                return txt.includes(boxLabelPartial.toLowerCase());
-                            });
+                        async function selectComboboxByIndex(index, searchValue) {
+                            // Lấy tất cả các nút thả xuống (combobox) hiển thị trên màn hình
+                            let combos = Array.from(document.querySelectorAll('div[role="combobox"], select'));
+                            if (combos.length <= index) return false;
 
-                            if(!box) return false;
+                            let box = combos[index];
 
+                            // Tương thích lùi nếu xài thẻ select kiểu cũ
                             if(box.tagName.toLowerCase() === 'select') {
                                 let nativeSetter = Object.getOwnPropertyDescriptor(window.HTMLSelectElement.prototype, "value").set;
-                                nativeSetter.call(box, targetValueStr);
+                                nativeSetter.call(box, searchValue);
                                 box.dispatchEvent(new Event('change', { bubbles: true }));
                                 return true;
                             }
 
+                            // Giao diện Meta: Click vào Combobox để mở menu
                             box.scrollIntoView({block: 'center'});
                             box.click();
-                            await new Promise(r => setTimeout(r, 600));
+                            await new Promise(r => setTimeout(r, 800)); // Đợi menu xổ xuống hoàn toàn
 
-                            let options = Array.from(document.querySelectorAll('[role="option"], li'));
+                            // Tìm chính xác text hiển thị trong menu
+                            let options = Array.from(document.querySelectorAll('div[role="option"], li'));
                             let opt = options.find(o => {
                                 let txt = (o.innerText || "").trim().toLowerCase();
-                                return txt === String(targetValueStr).toLowerCase() || txt.includes(String(targetValueStr).toLowerCase());
+                                let search = String(searchValue).toLowerCase();
+                                // Fix lỗi tháng: "5" khớp với "Tháng 5" hoặc "05"
+                                return txt === search || txt === "tháng " + search || txt === "0" + search;
                             });
 
                             if(opt) {
-                                opt.scrollIntoView({block: 'nearest'});
-                                opt.click();
-                                await new Promise(r => setTimeout(r, 500));
+                                opt.scrollIntoView({block: 'center'});
+                                opt.click(); // Bấm chọn
+                                await new Promise(r => setTimeout(r, 600));
                                 return true;
                             } else {
-                                document.body.click();
-                                await new Promise(r => setTimeout(r, 300));
+                                // Nếu không tìm thấy, click ra ngoài đóng menu
+                                document.body.click(); 
+                                await new Promise(r => setTimeout(r, 400));
                                 return false;
                             }
                         }
 
                         (async function() {
                             try {
-                                await clickDropdownAndSelect("ngày", day);
-                                await clickDropdownAndSelect("tháng", month);
-                                await clickDropdownAndSelect("năm", year);
-                                await clickDropdownAndSelect("giới tính", genderText);
+                                // Trình tự nút thả xuống trên form: 0=Ngày, 1=Tháng, 2=Năm, 3=Giới tính
+                                await selectComboboxByIndex(0, day);
+                                await selectComboboxByIndex(1, month);
+                                await selectComboboxByIndex(2, year);
+                                await selectComboboxByIndex(3, gender);
                                 callback("SUCCESS");
                             } catch (e) {
                                 callback("ERROR: " + e.toString());
@@ -1261,841 +1276,836 @@ class starts(threading.Thread):
                     except Exception as e:
                         print(f"{Colors.color_text(f'[{self.thread_id}] Lỗi chạy script Combobox: {e}', Colors.ERROR)}")
 
-                    time.sleep(1)
-
-                    # 5. ĐIỀN MẬT KHẨU
-                    print(f"{Colors.color_text(f'[{self.thread_id}] Điền Mật khẩu...', Colors.INFO)}")
-                    try:
-                        pass_xpath = "//input[@type='password' or @name='reg_passwd__' or contains(@aria-label, 'Mật khẩu') or contains(@placeholder, 'Mật khẩu')]"
-                        reg_pass_el = driver.find_element(By.XPATH, pass_xpath)
-                        human_type(reg_pass_el, secure_pass)
-                    except Exception as e:
-                        print(f"{Colors.color_text(f'[{self.thread_id}] Không tìm thấy ô Mật khẩu: {e}', Colors.WARNING)}")
-                    time.sleep(1)
+                    time.sleep(self.delay_config['delay_chon_gioi_tinh'])
 
                     ngam_form = self.delay_config['delay_ngam_form_truoc_submit']
                     print(f"{Colors.color_text(f'[{self.thread_id}] Đã điền xong. Ngâm form {ngam_form}s trước khi bấm nút Đăng Ký...', Colors.WARNING)}")
                     time.sleep(ngam_form)
 
-                    uid_moc = 0
-                    if self.mode in ["3", "4"] and imap_service:
-                        uid_moc = imap_service.get_latest_uid()
-                    elif self.mode == "5" and hotmail_service:
-                        print(f"{Colors.color_text(f'[{self.thread_id}] Khởi tạo mốc hộp thư để tránh đọc thư cũ...', Colors.INFO)}")
-                        hotmail_service.init_baseline()
-
-                    print(f"{Colors.color_text(f'[{self.thread_id}] Cuộn trang xuống cuối để tìm nút Gửi...', Colors.INFO)}")
-                    driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-                    time.sleep(1)
-
-                    print(f"{Colors.color_text(f'[{self.thread_id}] Click ra ngoài form để kích hoạt Validate...', Colors.INFO)}")
-                    driver.execute_script("document.body.click();")
-                    
-                    val_wait = self.delay_config['delay_validate_form']
-                    print(f"{Colors.color_text(f'[{self.thread_id}] Chờ form validate... ({val_wait}s)', Colors.WARNING)}")
-                    time.sleep(val_wait)
-                    
-                    with SUBMIT_LOCK:
-                        print(f"{Colors.color_text(f'[{self.thread_id}] Đang tìm và nhấn nút Gửi/Đăng Ký (Sign up)...', Colors.INFO)}")
-                        try:
-                            click_result = driver.execute_script("""
-                                let submitBtn = document.querySelector('button[name="websubmit"], button[type="submit"]');
-
-                                if (!submitBtn) {
-                                    const allClickables = Array.from(document.querySelectorAll('button, div[role="button"]'));
-                                    submitBtn = allClickables.find(b => {
-                                        const text = (b.innerText || b.textContent || "").trim().toLowerCase();
-                                        return text === "submit" || text === "sign up" || text === "đăng ký" || text === "gửi" || text === "next" 
-                                            || text.includes("submit") || text.includes("sign up") || text.includes("đăng ký");
-                                    });
-                                }
-
-                                if (!submitBtn) {
-                                    const spans = Array.from(document.querySelectorAll('span')).filter(s => {
-                                        const t = s.innerText?.trim().toLowerCase() || "";
-                                        return t === "submit" || t === "sign up" || t === "đăng ký" || t === "gửi" || t === "next";
-                                    });
-                                    if (spans.length > 0) {
-                                        let p = spans[0].closest('button, div[role="button"]');
-                                        if (p) submitBtn = p;
-                                    }
-                                }
-
-                                if (submitBtn) {
-                                    submitBtn.disabled = false;
-                                    submitBtn.removeAttribute('disabled');
-                                    submitBtn.style.pointerEvents = 'auto';
-                                    submitBtn.scrollIntoView({ block: 'center' });
-                                    
-                                    submitBtn.focus();
-                                    submitBtn.click(); 
-
-                                    ['mousedown', 'mouseup', 'click'].forEach(eventType => {
-                                        var evt = new MouseEvent(eventType, {
-                                            view: window,
-                                            bubbles: true,
-                                            cancelable: true,
-                                            clientX: submitBtn.getBoundingClientRect().x + 20,
-                                            clientY: submitBtn.getBoundingClientRect().y + 10
-                                        });
-                                        submitBtn.dispatchEvent(evt);
-                                    });
-                                    
-                                    return "CLICKED";
-                                }
-                                
-                                const form = document.querySelector('form');
-                                if (form) {
-                                    form.submit();
-                                    return "FORM_SUBMITTED";
-                                }
-
-                                return "NOT_FOUND";
-                            """)
-                            
-                            if click_result in ["CLICKED", "FORM_SUBMITTED"]:
-                                print(f"{Colors.color_text(f'[{self.thread_id}] ĐÃ BẤM NÚT SUBMIT/GỬI THÀNH CÔNG (Bằng Script)!', Colors.SUCCESS)}")
-                            else:
-                                print(f"{Colors.color_text(f'[{self.thread_id}] JS không tìm thấy, thử click qua Selenium button[type=submit]...', Colors.WARNING)}")
-                                try:
-                                    btn_selenium = driver.find_element(By.CSS_SELECTOR, "button[name='websubmit'], button[type='submit']")
-                                    driver.execute_script("arguments[0].click();", btn_selenium)
-                                    print(f"{Colors.color_text(f'[{self.thread_id}] Đã click nút Submit qua Selenium thành công!', Colors.SUCCESS)}")
-                                except:
-                                    print(f"{Colors.color_text(f'[{self.thread_id}] Không tìm thấy nút qua Selenium, fallback phím ENTER...', Colors.WARNING)}")
-                                    try:
-                                        if reg_pass_el: reg_pass_el.send_keys(Keys.ENTER)
-                                        print(f"{Colors.color_text(f'[{self.thread_id}] Đã bấm ENTER thành công!', Colors.SUCCESS)}")
-                                    except: pass
-
-                        except Exception as ex:
-                            print(f"{Colors.color_text(f'[{self.thread_id}] Lỗi khi chạy Script click nút: {ex}', Colors.WARNING)}")
-                        
-                        sau_sub = self.delay_config['delay_sau_khi_submit']
-                        print(f"{Colors.color_text(f'[{self.thread_id}] Đã bấm gửi form, chờ load OTP ({sau_sub}s)...', Colors.SUCCESS)}")
-                        time.sleep(sau_sub) 
-                    
                 except Exception as e:
                     print(f"{Colors.color_text(f'[{self.thread_id}] Lỗi quá trình điền form: {e}', Colors.ERROR)}")
                     time.sleep(5)
                     return False
 
-                # ==================== NẾU DÙNG MỒI SĐT +84: ĐỔI SANG XÁC NHẬN EMAIL ====================
-                if use_phone_bait:
-                    print(f"{Colors.color_text(f'[{self.thread_id}] Đang thực hiện đổi từ SĐT mồi ({contact_for_signup}) sang Email ({used_email})...', Colors.INFO)}")
-                    try:
-                        driver.execute_script("""
-                            let links = Array.from(document.querySelectorAll('a, button, div[role="button"], span'));
-                            for (let el of links) {
-                                let txt = (el.innerText || el.textContent || "").trim().toLowerCase();
-                                if (txt.includes('cập nhật thông liên hệ') || txt.includes('update contact info') || txt.includes('xác nhận bằng email') || txt.includes('confirm by email') || txt.includes('thay đổi thông tin')) {
-                                    let btn = el.closest('a, button, [role="button"]') || el;
-                                    btn.click();
-                                    break;
-                                }
-                            }
-                        """)
-                        time.sleep(4)
-                        new_mail_inputs = driver.find_elements(By.XPATH, "//input[@name='new' or @name='contactpoint' or @type='email' or @type='text']")
-                        for nmi in new_mail_inputs:
-                            if nmi.is_displayed():
-                                human_type(nmi, used_email)
-                                break
-                        time.sleep(1.5)
-                        driver.execute_script("""
-                            let btns = Array.from(document.querySelectorAll('button, input[type="submit"], div[role="button"]'));
-                            for (let b of btns) {
-                                let txt = (b.innerText || b.value || b.textContent || "").trim().toLowerCase();
-                                if (['thêm', 'add', 'cập nhật', 'update', 'tiếp tục', 'continue'].includes(txt) || b.name === 'change') {
-                                    b.click();
-                                    break;
-                                }
-                            }
-                        """)
-                        time.sleep(6)
-                    except Exception as e:
-                        print(f"{Colors.color_text(f'[{self.thread_id}] Cảnh báo khi đổi SĐT sang Email: {e}', Colors.WARNING)}")
+                uid_moc = 0
+                if self.mode in ["3", "4"] and imap_service:
+                    uid_moc = imap_service.get_latest_uid()
+                elif self.mode == "5" and hotmail_service:
+                    print(f"{Colors.color_text(f'[{self.thread_id}] Khởi tạo mốc hộp thư để tránh đọc thư cũ...', Colors.INFO)}")
+                    hotmail_service.init_baseline()
 
-                # ==================== NHẬN DIỆN Ô NHẬP OTP ĐA LỚP ====================
-                print(f"{Colors.color_text(f'[{self.thread_id}] Chờ giao diện nhập OTP...', Colors.INFO)}")
-                otp_input = None
-                locators = [
-                    (By.NAME, "code"),
-                    (By.ID, "code_in_cliff"),
-                    (By.NAME, "email_confirmation_code"),
-                    (By.NAME, "confirmationCode"),
-                    (By.XPATH, "//input[contains(@name, 'code')]"),
-                    (By.XPATH, "//input[contains(@aria-label, 'FB-')]"),
-                    (By.XPATH, "//input[contains(@aria-label, 'Mã')]"),
-                    (By.XPATH, "//input[contains(@aria-label, 'Code')]"),
-                    (By.XPATH, "//input[@type='text' or @type='number' or @type='tel']")
-                ]
-                time.sleep(3)
+                print(f"{Colors.color_text(f'[{self.thread_id}] Cuộn trang xuống cuối để tìm nút Gửi...', Colors.INFO)}")
+                driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+                time.sleep(1)
+
+                print(f"{Colors.color_text(f'[{self.thread_id}] Click ra ngoài form để kích hoạt Validate...', Colors.INFO)}")
+                driver.execute_script("document.body.click();")
                 
+                val_wait = self.delay_config['delay_validate_form']
+                print(f"{Colors.color_text(f'[{self.thread_id}] Chờ form validate... ({val_wait}s)', Colors.WARNING)}")
+                time.sleep(val_wait)
+                
+                with SUBMIT_LOCK:
+                    print(f"{Colors.color_text(f'[{self.thread_id}] Đang tìm và nhấn nút Gửi/Đăng Ký (Sign up)...', Colors.INFO)}")
+                    try:
+                        click_result = driver.execute_script("""
+                            let submitBtn = document.querySelector('button[name="websubmit"], button[type="submit"]');
+
+                            if (!submitBtn) {
+                                const allClickables = Array.from(document.querySelectorAll('button, div[role="button"]'));
+                                submitBtn = allClickables.find(b => {
+                                    const text = (b.innerText || b.textContent || "").trim().toLowerCase();
+                                    return text === "submit" || text === "sign up" || text === "đăng ký" || text === "gửi" || text === "next" 
+                                        || text.includes("submit") || text.includes("sign up") || text.includes("đăng ký");
+                                });
+                            }
+
+                            if (!submitBtn) {
+                                const spans = Array.from(document.querySelectorAll('span')).filter(s => {
+                                    const t = s.innerText?.trim().toLowerCase() || "";
+                                    return t === "submit" || t === "sign up" || t === "đăng ký" || t === "gửi" || t === "next";
+                                });
+                                if (spans.length > 0) {
+                                    let p = spans[0].closest('button, div[role="button"]');
+                                    if (p) submitBtn = p;
+                                }
+                            }
+
+                            if (submitBtn) {
+                                submitBtn.disabled = false;
+                                submitBtn.removeAttribute('disabled');
+                                submitBtn.style.pointerEvents = 'auto';
+                                submitBtn.scrollIntoView({ block: 'center' });
+                                
+                                submitBtn.focus();
+                                submitBtn.click(); 
+
+                                ['mousedown', 'mouseup', 'click'].forEach(eventType => {
+                                    var evt = new MouseEvent(eventType, {
+                                        view: window,
+                                        bubbles: true,
+                                        cancelable: true,
+                                        clientX: submitBtn.getBoundingClientRect().x + 20,
+                                        clientY: submitBtn.getBoundingClientRect().y + 10
+                                    });
+                                    submitBtn.dispatchEvent(evt);
+                                });
+                                
+                                return "CLICKED";
+                            }
+                            
+                            const form = document.querySelector('form');
+                            if (form) {
+                                form.submit();
+                                return "FORM_SUBMITTED";
+                            }
+
+                            return "NOT_FOUND";
+                        """)
+                        
+                        if click_result in ["CLICKED", "FORM_SUBMITTED"]:
+                            print(f"{Colors.color_text(f'[{self.thread_id}] ĐÃ BẤM NÚT SUBMIT/GỬI THÀNH CÔNG (Bằng Script)!', Colors.SUCCESS)}")
+                        else:
+                            print(f"{Colors.color_text(f'[{self.thread_id}] JS không tìm thấy, thử click qua Selenium button[type=submit]...', Colors.WARNING)}")
+                            try:
+                                btn_selenium = driver.find_element(By.CSS_SELECTOR, "button[name='websubmit'], button[type='submit']")
+                                driver.execute_script("arguments[0].click();", btn_selenium)
+                                print(f"{Colors.color_text(f'[{self.thread_id}] Đã click nút Submit qua Selenium thành công!', Colors.SUCCESS)}")
+                            except:
+                                print(f"{Colors.color_text(f'[{self.thread_id}] Không tìm thấy nút qua Selenium, fallback phím ENTER...', Colors.WARNING)}")
+                                try:
+                                    pass_el.send_keys(Keys.ENTER)
+                                    print(f"{Colors.color_text(f'[{self.thread_id}] Đã bấm ENTER thành công!', Colors.SUCCESS)}")
+                                except: pass
+
+                    except Exception as ex:
+                        print(f"{Colors.color_text(f'[{self.thread_id}] Lỗi khi chạy Script click nút: {ex}', Colors.WARNING)}")
+                    
+                    sau_sub = self.delay_config['delay_sau_khi_submit']
+                    print(f"{Colors.color_text(f'[{self.thread_id}] Đã bấm gửi form, chờ load OTP ({sau_sub}s)...', Colors.SUCCESS)}")
+                    time.sleep(sau_sub) 
+                
+            except Exception as e:
+                print(f"{Colors.color_text(f'[{self.thread_id}] Lỗi quá trình khởi tạo form: {e}', Colors.ERROR)}")
+                time.sleep(5)
+                return False
+
+            # ==================== NẾU DÙNG MỒI SĐT +84: ĐỔI SANG XÁC NHẬN EMAIL ====================
+            if use_phone_bait:
+                print(f"{Colors.color_text(f'[{self.thread_id}] Đang thực hiện đổi từ SĐT mồi ({contact_for_signup}) sang Email ({used_email})...', Colors.INFO)}")
+                try:
+                    driver.execute_script("""
+                        let links = Array.from(document.querySelectorAll('a, button, div[role="button"], span'));
+                        for (let el of links) {
+                            let txt = (el.innerText || el.textContent || "").trim().toLowerCase();
+                            if (txt.includes('cập nhật thông tin liên hệ') || txt.includes('update contact info') || txt.includes('xác nhận bằng email') || txt.includes('confirm by email') || txt.includes('thay đổi thông tin')) {
+                                let btn = el.closest('a, button, [role="button"]') || el;
+                                btn.click();
+                                break;
+                            }
+                        }
+                    """)
+                    time.sleep(4)
+                    new_mail_inputs = driver.find_elements(By.XPATH, "//input[@name='new' or @name='contactpoint' or @type='email' or @type='text']")
+                    for nmi in new_mail_inputs:
+                        if nmi.is_displayed():
+                            human_type(nmi, used_email)
+                            break
+                    time.sleep(1.5)
+                    driver.execute_script("""
+                        let btns = Array.from(document.querySelectorAll('button, input[type="submit"], div[role="button"]'));
+                        for (let b of btns) {
+                            let txt = (b.innerText || b.value || b.textContent || "").trim().toLowerCase();
+                            if (['thêm', 'add', 'cập nhật', 'update', 'tiếp tục', 'continue'].includes(txt) || b.name === 'change') {
+                                b.click();
+                                break;
+                            }
+                        }
+                    """)
+                    time.sleep(6)
+                except Exception as e:
+                    print(f"{Colors.color_text(f'[{self.thread_id}] Cảnh báo khi đổi SĐT sang Email: {e}', Colors.WARNING)}")
+
+            # ==================== NHẬN DIỆN Ô NHẬP OTP ĐA LỚP ====================
+            print(f"{Colors.color_text(f'[{self.thread_id}] Chờ giao diện nhập OTP...', Colors.INFO)}")
+            otp_input = None
+            locators = [
+                (By.NAME, "code"),
+                (By.ID, "code_in_cliff"),
+                (By.NAME, "email_confirmation_code"),
+                (By.NAME, "confirmationCode"),
+                (By.XPATH, "//input[contains(@name, 'code')]"),
+                (By.XPATH, "//input[contains(@aria-label, 'FB-')]"),
+                (By.XPATH, "//input[contains(@aria-label, 'Mã')]"),
+                (By.XPATH, "//input[contains(@aria-label, 'Code')]"),
+                (By.XPATH, "//input[@type='text' or @type='number' or @type='tel']")
+            ]
+            time.sleep(3)
+            
+            for loc in locators:
+                try:
+                    els = driver.find_elements(*loc)
+                    for el in els:
+                        if el.is_displayed():
+                            otp_input = el
+                            break
+                    if otp_input: break
+                except: pass
+            
+            if not otp_input:
+                try:
+                    driver.execute_script("window.scrollTo(0, document.body.scrollHeight/2);")
+                    time.sleep(1)
+                    otp_input = driver.execute_script("return document.querySelector('input[type=\"text\"], input[name*=\"code\"], input');")
+                except: pass
+
+            if not otp_input:
+                print(f"{Colors.color_text(f'[{self.thread_id}] Lỗi: Không thể tìm thấy ô nhập OTP trên giao diện.', Colors.ERROR)}")
+                time.sleep(5)
+                return False
+            
+            print(f"{Colors.color_text(f'[{self.thread_id}] Đã nhận diện được ô nhập OTP thành công!', Colors.SUCCESS)}")
+            
+            # ==================== CƠ CHẾ LẤY & NGÂM OTP ĐĂNG KÝ VỚI VÒNG LẶP RETRY ====================
+            otp_code = None
+            max_resend_attempts = int(self.delay_config.get('so_lan_thu_get_code', 2))
+            
+            for attempt in range(max_resend_attempts + 1):
+                if STOP_EVENT.is_set(): return False
+                
+                start_otp_wait = time.time()
+                
+                if self.mode == "2" and not (mail_service and mail_service.token):
+                    with OTP_LOCK:
+                        PAUSE_FOR_INPUT.clear()
+                        built_in_print(f"\n{Colors.color_text(f'[{self.thread_id}] Lần {attempt+1}: MỜI SẾP NHẬP OTP CHO [{used_email}] TỪ BÀN PHÍM: ', Colors.SUCCESS)}", end="")
+                        otp_code = input().strip()
+                        PAUSE_FOR_INPUT.set()
+                else:
+                    target_wait = self.delay_config['delay_ngam_otp'] if self.mode in ["3", "4", "5", "6"] else 0
+                    if target_wait > 0:
+                        print(f"{Colors.color_text(f'[{self.thread_id}] Lần {attempt+1}: Bắt đầu quét OTP và ngâm form {target_wait}s...', Colors.INFO)}")
+                    else:
+                        print(f"{Colors.color_text(f'[{self.thread_id}] Lần {attempt+1}: Đang chờ lấy mã OTP...', Colors.INFO)}")
+
+                    timeout_per_attempt = 100 
+                    if self.mode == "1" or (self.mode == "2" and mail_service and mail_service.token):
+                        otp_code = mail_service.get_otp_code(timeout=timeout_per_attempt, force_8_digits=False)
+                    elif self.mode in ["3", "4"]:
+                        otp_code = imap_service.get_otp_code(target_email=used_email, since_uid=uid_moc, timeout=timeout_per_attempt, force_8_digits=False)
+                    elif self.mode == "5":
+                        otp_code = hotmail_service.get_otp_code(timeout=100, force_8_digits=False) 
+                    elif self.mode == "6" and autosms_service:
+                        otp_code = autosms_service.get_otp_code(timeout=120)
+                
+                if otp_code:
+                    if self.mode in ["3", "4", "5", "6"]:
+                        elapsed = time.time() - start_otp_wait
+                        remaining = target_wait - elapsed
+                        if remaining > 0:
+                            print(f"{Colors.color_text(f'[{self.thread_id}] Đã lấy được mã ({otp_code}) ở giây thứ {int(elapsed)}! Đang ngâm form đợi hết {target_wait}s...', Colors.WARNING)}")
+                            for w in range(int(remaining), 0, -5):
+                                if STOP_EVENT.is_set(): return False
+                                print(f"{Colors.color_text(f'[{self.thread_id}] Thời gian ngâm OTP còn lại: {w}s...', Colors.INFO)}")
+                                time.sleep(min(5, w))
+                            print(f"{Colors.color_text(f'[{self.thread_id}] Đã ngâm đủ {target_wait}s. Chuẩn bị điền mã OTP!', Colors.SUCCESS)}")
+                    break 
+                
+                if attempt < max_resend_attempts:
+                    print(f"{Colors.color_text(f'[{self.thread_id}] Lần {attempt+1} không thấy mã. Tiến hành click yêu cầu Gửi lại mã...', Colors.WARNING)}")
+                    
+                    clicked_didnt_receive = driver.execute_script("""
+                        let btns = Array.from(document.querySelectorAll('a, button, div[role="button"], span'));
+                        for (let b of btns) {
+                            let txt = (b.innerText || b.textContent || "").trim().toLowerCase();
+                            if (txt.includes('không nhận được mã') || txt.includes("didn't receive") || txt.includes("did not receive") || txt.includes('gửi lại email') || txt.includes('send email again')) {
+                                let clickable = b.closest('a, button, [role="button"]') || b;
+                                clickable.click();
+                                return true;
+                            }
+                        }
+                        return false;
+                    """)
+                    
+                    if clicked_didnt_receive:
+                        time.sleep(3) 
+                        clicked_resend = driver.execute_script("""
+                            let btns = Array.from(document.querySelectorAll('button, div[role="button"], a, span'));
+                            for (let b of btns) {
+                                let txt = (b.innerText || b.textContent || "").trim().toLowerCase();
+                                if (txt.includes('gửi lại') || txt.includes('resend') || txt.includes('send email again')) {
+                                    let clickable = b.closest('button, [role="button"], a') || b;
+                                    clickable.click();
+                                    return true;
+                                }
+                            }
+                            return false;
+                        """)
+                        if clicked_resend:
+                            print(f"{Colors.color_text(f'[{self.thread_id}] Đã yêu cầu GỬI LẠI MÃ thành công. Chờ thư/sim mới...', Colors.INFO)}")
+                            time.sleep(5)
+                        else:
+                            print(f"{Colors.color_text(f'[{self.thread_id}] Đã kích hoạt gửi lại mã trực tiếp. Chờ thư/sim mới...', Colors.INFO)}")
+                            time.sleep(5)
+                    else:
+                        print(f"{Colors.color_text(f'[{self.thread_id}] Lỗi: Không tìm thấy nút Tôi không nhận được mã / Gửi lại email!', Colors.ERROR)}")
+
+            if not otp_code:
+                print(f"{Colors.color_text(f'[{self.thread_id}] Lỗi: Đã thử Gửi lại {max_resend_attempts} lần nhưng vẫn KHÔNG CÓ MÃ. Báo Mail/Sim Die và bỏ qua acc!', Colors.ERROR)}")
+                if self.mode == "6" and autosms_service:
+                    print(f"{Colors.color_text(f'[{self.thread_id}] Đang hoàn tiền đơn thuê sim...', Colors.INFO)}")
+                    autosms_service.cancel_order()
+                time.sleep(5)
+                return False
+
+            # ==================== TIẾN HÀNH ĐIỀN MÃ LÊN WEB ====================
+            print(f"{Colors.color_text(f'[{self.thread_id}] Bắt đầu điền mã OTP: {otp_code} vào trang Web...', Colors.SUCCESS)}")
+            
+            try:
+                fresh_input = None
                 for loc in locators:
                     try:
                         els = driver.find_elements(*loc)
                         for el in els:
                             if el.is_displayed():
-                                otp_input = el
+                                fresh_input = el
                                 break
-                        if otp_input: break
+                        if fresh_input: break
                     except: pass
                 
-                if not otp_input:
+                target_input = fresh_input if fresh_input else otp_input
+                
+                try:
+                    human_type(target_input, otp_code)
+                except Exception:
+                    print(f"{Colors.color_text(f'[{self.thread_id}] Selenium bị chặn, đang ép điền mã bằng JavaScript...', Colors.WARNING)}")
+                    driver.execute_script("""
+                        let input = arguments[0];
+                        let value = arguments[1];
+                        let nativeInputValueSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value").set;
+                        nativeInputValueSetter.call(input, value);
+                        input.dispatchEvent(new Event('input', { bubbles: true }));
+                        input.dispatchEvent(new Event('change', { bubbles: true }));
+                    """, target_input, otp_code)
+            except Exception as ex:
+                print(f"{Colors.color_text(f'[{self.thread_id}] Lỗi nghiêm trọng lúc điền ({ex}), dùng JS quét toàn cục...', Colors.WARNING)}")
+                driver.execute_script("""
+                    let input = document.querySelector('input[name*="code"], input#code_in_cliff, input[type="text"]');
+                    if(input) {
+                        let value = arguments[0];
+                        let nativeInputValueSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value").set;
+                        nativeInputValueSetter.call(input, value);
+                        input.dispatchEvent(new Event('input', { bubbles: true }));
+                        input.dispatchEvent(new Event('change', { bubbles: true }));
+                    }
+                """, otp_code)
+                
+            time.sleep(1.5)
+            
+            print(f"{Colors.color_text(f'[{self.thread_id}] Đang tiến hành Gửi mã OTP...', Colors.INFO)}")
+            time.sleep(2)
+
+            click_success = False
+
+            try:
+                print(f"{Colors.color_text(f'[{self.thread_id}] Thử click nút Tiếp tục/Xác nhận bằng vòng lặp JavaScript...', Colors.INFO)}")
+                click_result = driver.execute_script("""
+                    const btns = Array.from(document.querySelectorAll('button, div[role="button"], input[type="submit"]'));
+                    for (let b of btns) {
+                        const text = (b.innerText || b.value || b.textContent || "").trim().toLowerCase();
+                        if (b.name === "confirm" || text === "tiếp tục" || text === "next" || text === "confirm" || text === "continue" || text === "xác nhận" || b.type === "submit") {
+                            b.disabled = false;
+                            b.removeAttribute('disabled');
+                            b.click();
+                            return "CLICKED";
+                        }
+                    }
+                    return "NOT_FOUND";
+                """)
+                if click_result == "CLICKED":
+                    click_success = True
+            except: pass
+
+            if not click_success:
+                try:
+                    print(f"{Colors.color_text(f'[{self.thread_id}] Thử click nút Tiếp tục bằng Selenium...', Colors.INFO)}")
+                    btn_xpath = "//button[@name='confirm' or contains(translate(., 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'tiếp tục') or contains(translate(., 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'continue') or @type='submit']"
+                    submit_btn = WebDriverWait(driver, 5).until(EC.element_to_be_clickable((By.XPATH, btn_xpath)))
+                    driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", submit_btn)
+                    time.sleep(0.5)
+                    driver.execute_script("arguments[0].click();", submit_btn)
+                    click_success = True
+                except Exception: pass
+
+            if not click_success:
+                try:
+                    print(f"{Colors.color_text(f'[{self.thread_id}] Thử submit bằng phím ENTER...', Colors.INFO)}")
+                    target_input.send_keys(Keys.ENTER)
+                    click_success = True
+                    time.sleep(1)
+                except Exception: pass
+
+            if click_success:
+                print(f"{Colors.color_text(f'[{self.thread_id}] ĐÃ BẤM GỬI OTP THÀNH CÔNG!', Colors.SUCCESS)}")
+            else:
+                print(f"{Colors.color_text(f'[{self.thread_id}] KHÔNG THỂ BẤM NÚT, trình duyệt có thể bị treo.', Colors.ERROR)}")
+
+            # ==================== CHỜ TẢI TRANG CHỦ & KIỂM TRA ACC DIE ====================
+            load_tc_wait = self.delay_config['delay_cho_load_trang_chu']
+            print(f"{Colors.color_text(f'[{self.thread_id}] Chờ FB xử lý OTP và load trang chủ ({load_tc_wait}s)...', Colors.INFO)}")
+            time.sleep(load_tc_wait)
+
+            # Bấm đóng popup "Đã xác nhận tài khoản / OK" nếu xuất hiện
+            try:
+                driver.execute_script("""
+                    let btns = Array.from(document.querySelectorAll('button, div[role="button"], a'));
+                    for (let b of btns) {
+                        let txt = (b.innerText || b.textContent || "").trim().toLowerCase();
+                        if (txt === "ok" || txt === "tiếp tục" || txt === "continue") {
+                            try { b.click(); } catch(e) {}
+                        }
+                    }
+                """)
+                time.sleep(5)
+            except: pass
+            
+            # 1. KIỂM TRA SỚM ĐỂ XÁC ĐỊNH ACC SỐNG/CHẾT TRƯỚC KHI UP AVATAR
+            print(f"{Colors.color_text(f'[{self.thread_id}] Đang kiểm tra xem acc có bị Checkpoint/Die không...', Colors.INFO)}")
+            cookies_list = driver.get_cookies()
+            cookie_dict = {c['name']: c['value'] for c in cookies_list}
+            fb_uid = cookie_dict.get('c_user', '')
+            
+            current_url = driver.current_url.lower()
+            page_source = driver.page_source.lower()
+            
+            is_dead = False
+            if "checkpoint" in current_url or "challenge" in current_url or "suspended" in current_url:
+                is_dead = True
+            elif "tài khoản của bạn đã bị tạm ngưng" in page_source or "đình chỉ tài khoản" in page_source or "we suspended your account" in page_source:
+                is_dead = True
+            elif not fb_uid or not cookie_dict.get('xs'):
+                is_dead = True
+                
+            if is_dead:
+                print(f"\n{Colors.color_text('─'*70, Colors.LINE)}")
+                print(f"{Colors.color_text(f'[{self.thread_id}] LỖI: TÀI KHOẢN ĐÃ DIE / CHECKPOINT!', Colors.ERROR)}")
+                print(f"{Colors.color_text('─'*70, Colors.LINE)}\n")
+                return "DEAD" 
+
+            print(f"{Colors.color_text(f'[{self.thread_id}] TÀI KHOẢN SỐNG (UID: {fb_uid})! Chuẩn bị up Avatar...', Colors.SUCCESS)}")
+
+            # --- 2. LOGIC UP AVATAR DESKTOP (GIỮ NGUYÊN HOOK FILE INPUT + NÚT LƯU FB) ---
+            if self.avatar_folder and os.path.exists(self.avatar_folder):
+                images = [f for f in os.listdir(self.avatar_folder) if f.lower().endswith(('.png', '.jpg', '.jpeg', '.webp'))]
+                if images:
+                    print(f"{Colors.color_text(f'[{self.thread_id}] Bắt đầu quy trình up Avatar từ URL trang cá nhân...', Colors.INFO)}")
                     try:
-                        driver.execute_script("window.scrollTo(0, document.body.scrollHeight/2);")
-                        time.sleep(1)
-                        otp_input = driver.execute_script("return document.querySelector('input[type=\"text\"], input[name*=\"code\"], input');")
-                    except: pass
-
-                if not otp_input:
-                    print(f"{Colors.color_text(f'[{self.thread_id}] Lỗi: Không thể tìm thấy ô nhập OTP trên giao diện.', Colors.ERROR)}")
-                    time.sleep(5)
-                    return False
-                
-                print(f"{Colors.color_text(f'[{self.thread_id}] Đã nhận diện được ô nhập OTP thành công!', Colors.SUCCESS)}")
-                
-                # ==================== CƠ CHẾ LẤY & NGÂM OTP ĐĂNG KÝ VỚI VÒNG LẶP RETRY ====================
-                otp_code = None
-                max_resend_attempts = int(self.delay_config.get('so_lan_thu_get_code', 2))
-                
-                for attempt in range(max_resend_attempts + 1):
-                    if STOP_EVENT.is_set(): return False
-                    
-                    start_otp_wait = time.time()
-                    
-                    if self.mode == "2" and not (mail_service and mail_service.token):
-                        with OTP_LOCK:
-                            PAUSE_FOR_INPUT.clear()
-                            built_in_print(f"\n{Colors.color_text(f'[{self.thread_id}] Lần {attempt+1}: MỜI SẾP NHẬP OTP CHO [{used_email}] TỪ BÀN PHÍM: ', Colors.SUCCESS)}", end="")
-                            otp_code = input().strip()
-                            PAUSE_FOR_INPUT.set()
-                    else:
-                        target_wait = self.delay_config['delay_ngam_otp'] if self.mode in ["3", "4", "5", "6"] else 0
-                        if target_wait > 0:
-                            print(f"{Colors.color_text(f'[{self.thread_id}] Lần {attempt+1}: Bắt đầu quét OTP và ngâm form {target_wait}s...', Colors.INFO)}")
-                        else:
-                            print(f"{Colors.color_text(f'[{self.thread_id}] Lần {attempt+1}: Đang chờ lấy mã OTP...', Colors.INFO)}")
-
-                        timeout_per_attempt = 100 
-                        if self.mode == "1" or (self.mode == "2" and mail_service and mail_service.token):
-                            otp_code = mail_service.get_otp_code(timeout=timeout_per_attempt, force_8_digits=False)
-                        elif self.mode in ["3", "4"]:
-                            otp_code = imap_service.get_otp_code(target_email=used_email, since_uid=uid_moc, timeout=timeout_per_attempt, force_8_digits=False)
-                        elif self.mode == "5":
-                            otp_code = hotmail_service.get_otp_code(timeout=100, force_8_digits=False) 
-                        elif self.mode == "6" and autosms_service:
-                            otp_code = autosms_service.get_otp_code(timeout=120)
-                    
-                    if otp_code:
-                        if self.mode in ["3", "4", "5", "6"]:
-                            elapsed = time.time() - start_otp_wait
-                            remaining = target_wait - elapsed
-                            if remaining > 0:
-                                print(f"{Colors.color_text(f'[{self.thread_id}] Đã lấy được mã ({otp_code}) ở giây thứ {int(elapsed)}! Đang ngâm form đợi hết {target_wait}s...', Colors.WARNING)}")
-                                for w in range(int(remaining), 0, -5):
-                                    if STOP_EVENT.is_set(): return False
-                                    print(f"{Colors.color_text(f'[{self.thread_id}] Thời gian ngâm OTP còn lại: {w}s...', Colors.INFO)}")
-                                    time.sleep(min(5, w))
-                                print(f"{Colors.color_text(f'[{self.thread_id}] Đã ngâm đủ {target_wait}s. Chuẩn bị điền mã OTP!', Colors.SUCCESS)}")
-                        break 
-                    
-                    if attempt < max_resend_attempts:
-                        print(f"{Colors.color_text(f'[{self.thread_id}] Lần {attempt+1} không thấy mã. Tiến hành click yêu cầu Gửi lại mã...', Colors.WARNING)}")
+                        image_path = os.path.abspath(os.path.join(self.avatar_folder, random.choice(images)))
                         
-                        clicked_didnt_receive = driver.execute_script("""
-                            let btns = Array.from(document.querySelectorAll('a, button, div[role="button"], span'));
-                            for (let b of btns) {
-                                let txt = (b.innerText || b.textContent || "").trim().toLowerCase();
-                                if (txt.includes('không nhận được mã') || txt.includes("didn't receive") || txt.includes("did not receive") || txt.includes('gửi lại email') || txt.includes('send email again')) {
-                                    let clickable = b.closest('a, button, [role="button"]') || b;
+                        driver.get("https://www.facebook.com/profile.php")
+                        time.sleep(8)
+                        
+                        if "checkpoint" in driver.current_url.lower() or "suspended" in driver.current_url.lower():
+                            print(f"{Colors.color_text(f'[{self.thread_id}] Acc vừa die (Checkpoint) khi truy cập profile! Bỏ qua up avatar.', Colors.ERROR)}")
+                        else:
+                            driver.execute_script("""
+                                if (!window.hookedFileClick) {
+                                    window.originalClick = window.HTMLInputElement.prototype.click;
+                                    window.HTMLInputElement.prototype.click = function() {
+                                        if (this.type === 'file') {
+                                            this.style.display = 'block';
+                                            this.style.opacity = '1';
+                                            this.style.visibility = 'visible';
+                                            this.style.position = 'fixed';
+                                            this.style.top = '0';
+                                            this.style.left = '0';
+                                            this.style.zIndex = '99999';
+                                        } else {
+                                            window.originalClick.call(this);
+                                        }
+                                    };
+                                    window.hookedFileClick = true;
+                                }
+
+                                let avatarBtn = document.querySelector('[aria-label*="ảnh đại diện"], [aria-label*="profile picture"], [aria-label*="Update profile picture"], svg[aria-label*="ảnh đại diện"]');
+                                if (avatarBtn) {
+                                    let clickable = avatarBtn.closest('div[role="button"], button, a') || avatarBtn;
                                     clickable.click();
-                                    return true;
                                 }
-                            }
-                            return false;
-                        """)
-                        
-                        if clicked_didnt_receive:
-                            time.sleep(3) 
-                            clicked_resend = driver.execute_script("""
-                                let btns = Array.from(document.querySelectorAll('button, div[role="button"], a, span'));
-                                for (let b of btns) {
-                                    let txt = (b.innerText || b.textContent || "").trim().toLowerCase();
-                                    if (txt.includes('gửi lại') || txt.includes('resend') || txt.includes('send email again')) {
-                                        let clickable = b.closest('button, [role="button"], a') || b;
-                                        clickable.click();
-                                        return true;
-                                    }
-                                }
-                                return false;
                             """)
-                            if clicked_resend:
-                                print(f"{Colors.color_text(f'[{self.thread_id}] Đã yêu cầu GỬI LẠI MÃ thành công. Chờ thư/sim mới...', Colors.INFO)}")
-                                time.sleep(5)
-                            else:
-                                print(f"{Colors.color_text(f'[{self.thread_id}] Đã kích hoạt gửi lại mã trực tiếp. Chờ thư/sim mới...', Colors.INFO)}")
-                                time.sleep(5)
-                        else:
-                            print(f"{Colors.color_text(f'[{self.thread_id}] Lỗi: Không tìm thấy nút Tôi không nhận được mã / Gửi lại email!', Colors.ERROR)}")
-
-                if not otp_code:
-                    print(f"{Colors.color_text(f'[{self.thread_id}] Lỗi: Đã thử Gửi lại {max_resend_attempts} lần nhưng vẫn KHÔNG CÓ MÃ. Báo Mail/Sim Die và bỏ qua acc!', Colors.ERROR)}")
-                    if self.mode == "6" and autosms_service:
-                        print(f"{Colors.color_text(f'[{self.thread_id}] Đang hoàn tiền đơn thuê sim...', Colors.INFO)}")
-                        autosms_service.cancel_order()
-                    time.sleep(5)
-                    return False
-
-                # ==================== TIẾN HÀNH ĐIỀN MÃ LÊN WEB ====================
-                print(f"{Colors.color_text(f'[{self.thread_id}] Bắt đầu điền mã OTP: {otp_code} vào trang Web...', Colors.SUCCESS)}")
-                
-                try:
-                    fresh_input = None
-                    for loc in locators:
-                        try:
-                            els = driver.find_elements(*loc)
-                            for el in els:
-                                if el.is_displayed():
-                                    fresh_input = el
-                                    break
-                            if fresh_input: break
-                        except: pass
-                    
-                    target_input = fresh_input if fresh_input else otp_input
-                    
-                    try:
-                        human_type(target_input, otp_code)
-                    except Exception:
-                        print(f"{Colors.color_text(f'[{self.thread_id}] Selenium bị chặn, đang ép điền mã bằng JavaScript...', Colors.WARNING)}")
-                        driver.execute_script("""
-                            let input = arguments[0];
-                            let value = arguments[1];
-                            let nativeInputValueSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value").set;
-                            nativeInputValueSetter.call(input, value);
-                            input.dispatchEvent(new Event('input', { bubbles: true }));
-                            input.dispatchEvent(new Event('change', { bubbles: true }));
-                        """, target_input, otp_code)
-                except Exception as ex:
-                    print(f"{Colors.color_text(f'[{self.thread_id}] Lỗi nghiêm trọng lúc điền ({ex}), dùng JS quét toàn cục...', Colors.WARNING)}")
-                    driver.execute_script("""
-                        let input = document.querySelector('input[name*="code"], input#code_in_cliff, input[type="text"]');
-                        if(input) {
-                            let value = arguments[0];
-                            let nativeInputValueSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value").set;
-                            nativeInputValueSetter.call(input, value);
-                            input.dispatchEvent(new Event('input', { bubbles: true }));
-                            input.dispatchEvent(new Event('change', { bubbles: true }));
-                        }
-                    """, otp_code)
-                    
-                time.sleep(1.5)
-                
-                print(f"{Colors.color_text(f'[{self.thread_id}] Đang tiến hành Gửi mã OTP...', Colors.INFO)}")
-                time.sleep(2)
-
-                click_success = False
-
-                try:
-                    print(f"{Colors.color_text(f'[{self.thread_id}] Thử click nút Tiếp tục/Xác nhận bằng vòng lặp JavaScript...', Colors.INFO)}")
-                    click_result = driver.execute_script("""
-                        const btns = Array.from(document.querySelectorAll('button, div[role="button"], input[type="submit"]'));
-                        for (let b of btns) {
-                            const text = (b.innerText || b.value || b.textContent || "").trim().toLowerCase();
-                            if (b.name === "confirm" || text === "tiếp tục" || text === "next" || text === "confirm" || text === "continue" || text === "xác nhận" || b.type === "submit") {
-                                b.disabled = false;
-                                b.removeAttribute('disabled');
-                                b.click();
-                                return "CLICKED";
-                            }
-                        }
-                        return "NOT_FOUND";
-                    """)
-                    if click_result == "CLICKED":
-                        click_success = True
-                except: pass
-
-                if not click_success:
-                    try:
-                        print(f"{Colors.color_text(f'[{self.thread_id}] Thử click nút Tiếp tục bằng Selenium...', Colors.INFO)}")
-                        btn_xpath = "//button[@name='confirm' or contains(translate(., 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'tiếp tục') or contains(translate(., 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'continue') or @type='submit']"
-                        submit_btn = WebDriverWait(driver, 5).until(EC.element_to_be_clickable((By.XPATH, btn_xpath)))
-                        driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", submit_btn)
-                        time.sleep(0.5)
-                        driver.execute_script("arguments[0].click();", submit_btn)
-                        click_success = True
-                    except Exception: pass
-
-                if not click_success:
-                    try:
-                        print(f"{Colors.color_text(f'[{self.thread_id}] Thử submit bằng phím ENTER...', Colors.INFO)}")
-                        target_input.send_keys(Keys.ENTER)
-                        click_success = True
-                        time.sleep(1)
-                    except Exception: pass
-
-                if click_success:
-                    print(f"{Colors.color_text(f'[{self.thread_id}] ĐÃ BẤM GỬI OTP THÀNH CÔNG!', Colors.SUCCESS)}")
-                else:
-                    print(f"{Colors.color_text(f'[{self.thread_id}] KHÔNG THỂ BẤM NÚT, trình duyệt có thể bị treo.', Colors.ERROR)}")
-
-                # ==================== CHỜ TẢI TRANG CHỦ & KIỂM TRA ACC DIE ====================
-                load_tc_wait = self.delay_config['delay_cho_load_trang_chu']
-                print(f"{Colors.color_text(f'[{self.thread_id}] Chờ FB xử lý OTP và load trang chủ ({load_tc_wait}s)...', Colors.INFO)}")
-                time.sleep(load_tc_wait)
-
-                # Bấm đóng popup "Đã xác nhận tài khoản / OK" nếu xuất hiện
-                try:
-                    driver.execute_script("""
-                        let btns = Array.from(document.querySelectorAll('button, div[role="button"], a'));
-                        for (let b of btns) {
-                            let txt = (b.innerText || b.textContent || "").trim().toLowerCase();
-                            if (txt === "ok" || txt === "tiếp tục" || txt === "continue") {
-                                try { b.click(); } catch(e) {}
-                            }
-                        }
-                    """)
-                    time.sleep(5)
-                except: pass
-                
-                # 1. KIỂM TRA SỚM ĐỂ XÁC ĐỊNH ACC SỐNG/CHẾT TRƯỚC KHI UP AVATAR
-                print(f"{Colors.color_text(f'[{self.thread_id}] Đang kiểm tra xem acc có bị Checkpoint/Die không...', Colors.INFO)}")
-                cookies_list = driver.get_cookies()
-                cookie_dict = {c['name']: c['value'] for c in cookies_list}
-                fb_uid = cookie_dict.get('c_user', '')
-                
-                current_url = driver.current_url.lower()
-                page_source = driver.page_source.lower()
-                
-                is_dead = False
-                if "checkpoint" in current_url or "challenge" in current_url or "suspended" in current_url:
-                    is_dead = True
-                elif "tài khoản của bạn đã bị tạm ngưng" in page_source or "đình chỉ tài khoản" in page_source or "we suspended your account" in page_source:
-                    is_dead = True
-                elif not fb_uid or not cookie_dict.get('xs'):
-                    is_dead = True
-                    
-                if is_dead:
-                    print(f"\n{Colors.color_text('─'*70, Colors.LINE)}")
-                    print(f"{Colors.color_text(f'[{self.thread_id}] LỖI: TÀI KHOẢN ĐÃ DIE / CHECKPOINT!', Colors.ERROR)}")
-                    print(f"{Colors.color_text('─'*70, Colors.LINE)}\n")
-                    return "DEAD" 
-
-                print(f"{Colors.color_text(f'[{self.thread_id}] TÀI KHOẢN SỐNG (UID: {fb_uid})! Chuẩn bị up Avatar...', Colors.SUCCESS)}")
-
-                # --- 2. LOGIC UP AVATAR DESKTOP (GIỮ NGUYÊN HOOK FILE INPUT + NÚT LƯU FB) ---
-                if self.avatar_folder and os.path.exists(self.avatar_folder):
-                    images = [f for f in os.listdir(self.avatar_folder) if f.lower().endswith(('.png', '.jpg', '.jpeg', '.webp'))]
-                    if images:
-                        print(f"{Colors.color_text(f'[{self.thread_id}] Bắt đầu quy trình up Avatar từ URL trang cá nhân...', Colors.INFO)}")
-                        try:
-                            image_path = os.path.abspath(os.path.join(self.avatar_folder, random.choice(images)))
+                            time.sleep(3)
                             
-                            driver.get("https://www.facebook.com/profile.php")
-                            time.sleep(8)
+                            file_inputs = driver.find_elements(By.XPATH, "//input[@type='file']")
                             
-                            if "checkpoint" in driver.current_url.lower() or "suspended" in driver.current_url.lower():
-                                print(f"{Colors.color_text(f'[{self.thread_id}] Acc vừa die (Checkpoint) khi truy cập profile! Bỏ qua up avatar.', Colors.ERROR)}")
-                            else:
+                            if file_inputs:
+                                file_inputs[-1].send_keys(image_path) 
+                                print(f"{Colors.color_text(f'[{self.thread_id}] Đã chèn file ảnh avatar! Chờ 6s để bấm nút Lưu...', Colors.SUCCESS)}")
+                                time.sleep(6)
                                 driver.execute_script("""
-                                    if (!window.hookedFileClick) {
-                                        window.originalClick = window.HTMLInputElement.prototype.click;
-                                        window.HTMLInputElement.prototype.click = function() {
-                                            if (this.type === 'file') {
-                                                this.style.display = 'block';
-                                                this.style.opacity = '1';
-                                                this.style.visibility = 'visible';
-                                                this.style.position = 'fixed';
-                                                this.style.top = '0';
-                                                this.style.left = '0';
-                                                this.style.zIndex = '99999';
-                                            } else {
-                                                window.originalClick.call(this);
-                                            }
-                                        };
-                                        window.hookedFileClick = true;
-                                    }
-
-                                    let avatarBtn = document.querySelector('[aria-label*="ảnh đại diện"], [aria-label*="profile picture"], [aria-label*="Update profile picture"], svg[aria-label*="ảnh đại diện"]');
-                                    if (avatarBtn) {
-                                        let clickable = avatarBtn.closest('div[role="button"], button, a') || avatarBtn;
-                                        clickable.click();
+                                    let saveBtns = Array.from(document.querySelectorAll('div[aria-label="Lưu"], div[aria-label="Save"], div[role="button"], button, span'));
+                                    for (let el of saveBtns) {
+                                        let txt = (el.innerText || el.textContent || "").trim().toLowerCase();
+                                        let aria = (el.getAttribute("aria-label") || "").toLowerCase();
+                                        if (txt === "lưu" || txt === "save" || aria === "lưu" || aria === "save") {
+                                            let btn = el.closest('div[role="button"], button') || el;
+                                            btn.click();
+                                            break;
+                                        }
                                     }
                                 """)
-                                time.sleep(3)
+                                time.sleep(10) 
+                            else:
+                                print(f"{Colors.color_text(f'[{self.thread_id}] Không tìm thấy khung upload ảnh trên trang cá nhân.', Colors.WARNING)}")
                                 
-                                file_inputs = driver.find_elements(By.XPATH, "//input[@type='file']")
-                                
-                                if file_inputs:
-                                    file_inputs[-1].send_keys(image_path) 
-                                    print(f"{Colors.color_text(f'[{self.thread_id}] Đã chèn file ảnh avatar! Chờ 6s để bấm nút Lưu...', Colors.SUCCESS)}")
-                                    time.sleep(6)
-                                    driver.execute_script("""
-                                        let saveBtns = Array.from(document.querySelectorAll('div[aria-label="Lưu"], div[aria-label="Save"], div[role="button"], button, span'));
-                                        for (let el of saveBtns) {
-                                            let txt = (el.innerText || el.textContent || "").trim().toLowerCase();
-                                            let aria = (el.getAttribute("aria-label") || "").toLowerCase();
-                                            if (txt === "lưu" || txt === "save" || aria === "lưu" || aria === "save") {
-                                                let btn = el.closest('div[role="button"], button') || el;
-                                                btn.click();
-                                                break;
-                                            }
-                                        }
-                                    """)
-                                    time.sleep(10) 
-                                else:
-                                    print(f"{Colors.color_text(f'[{self.thread_id}] Không tìm thấy khung upload ảnh trên trang cá nhân.', Colors.WARNING)}")
-                                    
-                        except Exception as e:
-                            print(f"{Colors.color_text(f'[{self.thread_id}] Lỗi trong quá trình up avatar: {e}', Colors.WARNING)}")
-                    else:
-                        print(f"{Colors.color_text(f'[{self.thread_id}] Thư mục avatar trống, không có ảnh nào để up.', Colors.WARNING)}")
+                    except Exception as e:
+                        print(f"{Colors.color_text(f'[{self.thread_id}] Lỗi trong quá trình up avatar: {e}', Colors.WARNING)}")
                 else:
-                    print(f"{Colors.color_text(f'[{self.thread_id}] Không cấu hình Up Avatar, bỏ qua bước này.', Colors.INFO)}")
+                    print(f"{Colors.color_text(f'[{self.thread_id}] Thư mục avatar trống, không có ảnh nào để up.', Colors.WARNING)}")
+            else:
+                print(f"{Colors.color_text(f'[{self.thread_id}] Không cấu hình Up Avatar, bỏ qua bước này.', Colors.INFO)}")
 
-                # ==================== TÍCH HỢP TỰ ĐỘNG BẬT 2FA (AUTHENTICATOR APP) ====================
-                print(f"{Colors.color_text(f'[{self.thread_id}] Đang tiến hành cài đặt 2FA (Hỗ trợ song ngữ Anh - Việt)...', Colors.INFO)}")
-                two_fa_secret = ""
-                try:
-                    driver.get("https://accountscenter.facebook.com/password_and_security/two_factor/")
-                    time.sleep(7)
+            # ==================== TÍCH HỢP TỰ ĐỘNG BẬT 2FA (AUTHENTICATOR APP) ====================
+            print(f"{Colors.color_text(f'[{self.thread_id}] Đang tiến hành cài đặt 2FA (Hỗ trợ song ngữ Anh - Việt)...', Colors.INFO)}")
+            two_fa_secret = ""
+            try:
+                driver.get("https://accountscenter.facebook.com/password_and_security/two_factor/")
+                time.sleep(7)
 
-                    # 1. Chọn tài khoản / Màn hình đệm
-                    print(f"{Colors.color_text(f'[{self.thread_id}] Xử lý chọn tài khoản / màn hình đệm Meta...', Colors.INFO)}")
-                    for _ in range(4):
-                        try:
-                            clicked_buffer = driver.execute_script("""
-                                let targetUser = arguments[0].toLowerCase();
-                                let allElements = Array.from(document.querySelectorAll('*'));
-                                
-                                for(let el of allElements) {
-                                    let txt = (el.innerText || el.textContent || '').trim().toLowerCase();
-                                    if((txt.includes(targetUser) || txt.includes('facebook')) && txt.length < 60) {
-                                        let clickable = el.closest('div[role="button"], a[role="link"], button');
-                                        if(clickable) { clickable.click(); return 'CLICK_USER'; }
-                                    }
-                                }
-                                return 'NOT_FOUND';
-                            """, first_name_fb)
-                            if clicked_buffer != 'NOT_FOUND':
-                                time.sleep(4)
-                                break
-                            time.sleep(2)
-                        except Exception: pass
-
-                    # 2. BẮT ĐẦU: Nhận diện nút "Bắt đầu" (Get started) theo đúng giao diện Thiết lập bảo vệ tăng cường
-                    print(f"{Colors.color_text(f'[{self.thread_id}] Chờ và bấm nút Bắt đầu (Get started)...', Colors.INFO)}")
-                    for _ in range(6):
-                        clicked_start = driver.execute_script("""
-                            let allElements = Array.from(document.querySelectorAll('button, div[role="button"], span'));
+                # 1. Chọn tài khoản / Màn hình đệm
+                print(f"{Colors.color_text(f'[{self.thread_id}] Xử lý chọn tài khoản / màn hình đệm Meta...', Colors.INFO)}")
+                for _ in range(4):
+                    try:
+                        clicked_buffer = driver.execute_script("""
+                            let targetUser = arguments[0].toLowerCase();
+                            let allElements = Array.from(document.querySelectorAll('*'));
+                            
                             for(let el of allElements) {
                                 let txt = (el.innerText || el.textContent || '').trim().toLowerCase();
-                                if(txt === 'bắt đầu' || txt === 'get started') {
-                                    let btn = el.closest('button, [role="button"]') || el;
-                                    btn.click();
-                                    return true;
+                                if((txt.includes(targetUser) || txt.includes('facebook')) && txt.length < 60) {
+                                    let clickable = el.closest('div[role="button"], a[role="link"], button');
+                                    if(clickable) { clickable.click(); return 'CLICK_USER'; }
                                 }
                             }
-                            return false;
-                        """)
-                        if clicked_start:
-                            print(f"{Colors.color_text(f'[{self.thread_id}] ĐÃ BẤM NÚT Bắt đầu THÀNH CÔNG!', Colors.SUCCESS)}")
+                            return 'NOT_FOUND';
+                        """, first_name_fb)
+                        if clicked_buffer != 'NOT_FOUND':
                             time.sleep(4)
                             break
-                        time.sleep(1.5)
+                        time.sleep(2)
+                    except Exception: pass
 
-                    # ========================================================================
-                    # 3. XỬ LÝ MÀN HÌNH "KIỂM TRA EMAIL CỦA BẠN" (BẮT XÁC MINH 8 SỐ & QUAY LẠI LUỒNG 2FA)
-                    # ========================================================================
-                    is_email_check_screen = False
-                    for _ in range(6):
-                        is_email_check_screen = driver.execute_script("""
-                            let txt = (document.body.innerText || document.body.textContent || '').toLowerCase();
-                            return txt.includes('kiểm tra email') || txt.includes('check your email') || txt.includes('mã bảo mật') || txt.includes('security code') || txt.includes('kiểm tra tin nhắn');
-                        """)
-                        if is_email_check_screen: break
-                        time.sleep(1.5)
-
-                    if is_email_check_screen:
-                        print(f"{Colors.color_text(f'[{self.thread_id}] ĐÃ HIỆN MÀN HÌNH Kiểm tra email của bạn. Bắt đầu quét MÃ 8 SỐ trong nội dung thư...', Colors.WARNING)}")
-                        
-                        verify_code = None
-                        if self.mode == "1" or (self.mode == "2" and mail_service and mail_service.token):
-                            verify_code = mail_service.get_otp_code(timeout=120, force_8_digits=True)
-                        elif self.mode in ["3", "4"]:
-                            verify_code = imap_service.get_otp_code(target_email=used_email, since_uid=uid_moc, timeout=120, force_8_digits=True)
-                        elif self.mode == "5":
-                            verify_code = hotmail_service.get_otp_code(timeout=180, force_8_digits=True)
-                        elif self.mode == "6" and autosms_service:
-                            verify_code = autosms_service.get_otp_code(timeout=120)
-
-                        if verify_code:
-                            print(f"{Colors.color_text(f'[{self.thread_id}] ĐÃ LẤY ĐƯỢC MÃ 8 SỐ CHUẨN XÁC: {verify_code}. Tiến hành điền...', Colors.SUCCESS)}")
-                            driver.execute_script("""
-                                let val = arguments[0];
-                                let inp = document.querySelector('input[type="text"], input[type="tel"], input:not([type="hidden"])');
-                                if (inp) {
-                                    let nativeInputValueSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value").set;
-                                    nativeInputValueSetter.call(inp, val);
-                                    inp.dispatchEvent(new Event('input', { bubbles: true }));
-                                    inp.dispatchEvent(new Event('change', { bubbles: true }));
-                                }
-                            """, verify_code)
-                            time.sleep(1.5)
-                            
-                            # Bấm Tiếp tục/Xác nhận để vượt qua màn hình 8 số
-                            driver.execute_script("""
-                                let btns = Array.from(document.querySelectorAll('button, div[role="button"]'));
-                                for(let b of btns){
-                                    let t = (b.innerText || b.textContent || "").trim().toLowerCase();
-                                    if(['tiếp tục', 'next', 'continue', 'gửi', 'tiếp', 'xác nhận', 'submit'].includes(t)){
-                                        if(!b.disabled) { b.click(); return; }
-                                    }
-                                }
-                            """)
-                            print(f"{Colors.color_text(f'[{self.thread_id}] Đã gửi mã 8 số! Đang quay trở lại luồng thiết lập 2FA...', Colors.INFO)}")
-                            time.sleep(8)
-
-                            # Đảm bảo sau khi hoàn tất xác minh email 8 số sẽ quay lại đúng giao diện thiết lập 2FA
-                            if "two_factor" not in driver.current_url.lower():
-                                driver.get("https://accountscenter.facebook.com/password_and_security/two_factor/")
-                                time.sleep(5)
-                            driver.execute_script("""
-                                let targetUser = arguments[0].toLowerCase();
-                                let allElements = Array.from(document.querySelectorAll('*'));
-                                for(let el of allElements) {
-                                    let txt = (el.innerText || el.textContent || '').trim().toLowerCase();
-                                    if((txt.includes(targetUser) || txt.includes('facebook')) && txt.length < 60) {
-                                        let clickable = el.closest('div[role="button"], a[role="link"], button');
-                                        if(clickable) { clickable.click(); break; }
-                                    }
-                                }
-                            """, first_name_fb)
-                            time.sleep(4)
-                        else:
-                            print(f"{Colors.color_text(f'[{self.thread_id}] Không nhận được mã 8 số từ email/sim! Bỏ qua 2FA.', Colors.ERROR)}")
-                    
-                    # ========================================================================
-                    # 4. ĐẢM BẢO CHỌN PHƯƠNG THỨC "AUTHENTICATION APP" (Nếu nó chưa tự nhảy)
-                    # ========================================================================
-                    try:
-                        clicked_app = driver.execute_script("""
-                            let all = Array.from(document.querySelectorAll('*'));
-                            for(let el of all) {
-                                let txt = (el.innerText || el.textContent || '').trim().toLowerCase();
-                                if(txt.includes('authentication app') || txt.includes('ứng dụng xác thực') || txt.includes('duo mobile')) {
-                                    let clickable = el.closest('div[role="button"], label, div[tabindex], button, [role="radio"]') || el;
-                                    clickable.click();
-                                    return true;
-                                }
+                # 2. BẮT ĐẦU: Nhận diện nút "Bắt đầu" (Get started) theo đúng giao diện Thiết lập bảo vệ tăng cường
+                print(f"{Colors.color_text(f'[{self.thread_id}] Chờ và bấm nút Bắt đầu (Get started)...', Colors.INFO)}")
+                for _ in range(6):
+                    clicked_start = driver.execute_script("""
+                        let allElements = Array.from(document.querySelectorAll('button, div[role="button"], span'));
+                        for(let el of allElements) {
+                            let txt = (el.innerText || el.textContent || '').trim().toLowerCase();
+                            if(txt === 'bắt đầu' || txt === 'get started') {
+                                let btn = el.closest('button, [role="button"]') || el;
+                                btn.click();
+                                return true;
                             }
-                            return false;
-                        """)
-                        if clicked_app:
-                            time.sleep(2)
-                            # Bấm Tiếp tục
-                            driver.execute_script("""
-                                let btns = Array.from(document.querySelectorAll('button, div[role="button"], span'));
-                                for(let b of btns) {
-                                    let txt = (b.innerText || b.textContent || '').trim().toLowerCase();
-                                    if(['continue', 'next', 'tiếp tục', 'tiếp'].includes(txt)) {
-                                        let clickable = b.closest('button, [role="button"]') || b;
-                                        if(!clickable.disabled) { clickable.click(); return; }
-                                    }
-                                }
-                            """)
-                            time.sleep(5)
-                    except: pass
-
-                    # ========================================================================
-                    # 5. TRÍCH XUẤT SECRET KEY VÀ NHẬP OTP LÊN MÀN HÌNH "HƯỚNG DẪN THIẾT LẬP"
-                    # ========================================================================
-                    print(f"{Colors.color_text(f'[{self.thread_id}] Đang tìm và bóc tách Secret Key 2FA bằng Clipboard Hook...', Colors.INFO)}")
-                    
-                    # Bơm Hook chặn sự kiện Clipboard
-                    driver.execute_script("""
-                        window.hooked2FAKey = "";
-                        if (navigator.clipboard && !window.clipboardHooked) {
-                            const originalWriteText = navigator.clipboard.writeText;
-                            navigator.clipboard.writeText = function(text) {
-                                let clean = (text || '').replace(/\\s+/g, '').toUpperCase();
-                                if (clean.length >= 16 && /^[A-Z2-7]+$/.test(clean)) {
-                                    window.hooked2FAKey = clean;
-                                }
-                                return originalWriteText.apply(this, arguments);
-                            };
-                            window.clipboardHooked = true;
                         }
+                        return false;
                     """)
+                    if clicked_start:
+                        print(f"{Colors.color_text(f'[{self.thread_id}] ĐÃ BẤM NÚT Bắt đầu THÀNH CÔNG!', Colors.SUCCESS)}")
+                        time.sleep(4)
+                        break
+                    time.sleep(1.5)
 
-                    for attempt_2fa in range(6):
-                        if STOP_EVENT.is_set(): return False
-                        
-                        # Click ép các nút "Sao chép khóa" hoặc "Copy key"
+                # ========================================================================
+                # 3. XỬ LÝ MÀN HÌNH "KIỂM TRA EMAIL CỦA BẠN" (BẮT XÁC MINH 8 SỐ & QUAY LẠI LUỒNG 2FA)
+                # ========================================================================
+                is_email_check_screen = False
+                for _ in range(6):
+                    is_email_check_screen = driver.execute_script("""
+                        let txt = (document.body.innerText || document.body.textContent || '').toLowerCase();
+                        return txt.includes('kiểm tra email') || txt.includes('check your email') || txt.includes('mã bảo mật') || txt.includes('security code') || txt.includes('kiểm tra tin nhắn');
+                    """)
+                    if is_email_check_screen: break
+                    time.sleep(1.5)
+
+                if is_email_check_screen:
+                    print(f"{Colors.color_text(f'[{self.thread_id}] ĐÃ HIỆN MÀN HÌNH Kiểm tra email của bạn. Bắt đầu quét MÃ 8 SỐ trong nội dung thư...', Colors.WARNING)}")
+                    
+                    verify_code = None
+                    if self.mode == "1" or (self.mode == "2" and mail_service and mail_service.token):
+                        verify_code = mail_service.get_otp_code(timeout=120, force_8_digits=True)
+                    elif self.mode in ["3", "4"]:
+                        verify_code = imap_service.get_otp_code(target_email=used_email, since_uid=uid_moc, timeout=120, force_8_digits=True)
+                    elif self.mode == "5":
+                        verify_code = hotmail_service.get_otp_code(timeout=180, force_8_digits=True)
+                    elif self.mode == "6" and autosms_service:
+                        verify_code = autosms_service.get_otp_code(timeout=120)
+
+                    if verify_code:
+                        print(f"{Colors.color_text(f'[{self.thread_id}] ĐÃ LẤY ĐƯỢC MÃ 8 SỐ CHUẨN XÁC: {verify_code}. Tiến hành điền...', Colors.SUCCESS)}")
                         driver.execute_script("""
-                            let els = Array.from(document.querySelectorAll('span, div, button, a'));
-                            for(let el of els) {
-                                let txt = (el.innerText || el.textContent || '').trim().toLowerCase();
-                                if(txt === 'sao chép khóa' || txt === 'copy key' || txt.includes('sao chép') || txt.includes("can't scan") || txt.includes("không quét được")) {
-                                    try { el.click(); } catch(e) {}
+                            let val = arguments[0];
+                            let inp = document.querySelector('input[type="text"], input[type="tel"], input:not([type="hidden"])');
+                            if (inp) {
+                                let nativeInputValueSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value").set;
+                                nativeInputValueSetter.call(inp, val);
+                                inp.dispatchEvent(new Event('input', { bubbles: true }));
+                                inp.dispatchEvent(new Event('change', { bubbles: true }));
+                            }
+                        """, verify_code)
+                        time.sleep(1.5)
+                        
+                        # Bấm Tiếp tục/Xác nhận để vượt qua màn hình 8 số
+                        driver.execute_script("""
+                            let btns = Array.from(document.querySelectorAll('button, div[role="button"]'));
+                            for(let b of btns){
+                                let t = (b.innerText || b.textContent || "").trim().toLowerCase();
+                                if(['tiếp tục', 'next', 'continue', 'gửi', 'tiếp', 'xác nhận', 'submit'].includes(t)){
+                                    if(!b.disabled) { b.click(); return; }
                                 }
                             }
                         """)
-                        time.sleep(2)
+                        print(f"{Colors.color_text(f'[{self.thread_id}] Đã gửi mã 8 số! Đang quay trở lại luồng thiết lập 2FA...', Colors.INFO)}")
+                        time.sleep(8)
 
-                        # Check Hook Clipboard
-                        key_from_clipboard = driver.execute_script("return window.hooked2FAKey;")
-                        if key_from_clipboard and len(key_from_clipboard) >= 16:
-                            two_fa_secret = key_from_clipboard
-                            break
-
-                        # Fallback Regex quét Text
-                        extracted_key = driver.execute_script("""
-                            let text = document.body.innerText || "";
-                            let match = text.match(/\\b([A-Z2-7]{4}[\\s-]*){8}\\b/i);
-                            if (match) {
-                                return match[0].replace(/[^A-Z2-7]/gi, '').toUpperCase();
+                        # Đảm bảo sau khi hoàn tất xác minh email 8 số sẽ quay lại đúng giao diện thiết lập 2FA
+                        if "two_factor" not in driver.current_url.lower():
+                            driver.get("https://accountscenter.facebook.com/password_and_security/two_factor/")
+                            time.sleep(5)
+                        driver.execute_script("""
+                            let targetUser = arguments[0].toLowerCase();
+                            let allElements = Array.from(document.querySelectorAll('*'));
+                            for(let el of allElements) {
+                                let txt = (el.innerText || el.textContent || '').trim().toLowerCase();
+                                if((txt.includes(targetUser) || txt.includes('facebook')) && txt.length < 60) {
+                                    let clickable = el.closest('div[role="button"], a[role="link"], button');
+                                    if(clickable) { clickable.click(); break; }
+                                }
                             }
-                            return null;
-                        """)
-                        if extracted_key and len(extracted_key) >= 16:
-                            two_fa_secret = extracted_key
-                            break
-
+                        """, first_name_fb)
+                        time.sleep(4)
+                    else:
+                        print(f"{Colors.color_text(f'[{self.thread_id}] Không nhận được mã 8 số từ email/sim! Bỏ qua 2FA.', Colors.ERROR)}")
+                
+                # ========================================================================
+                # 4. ĐẢM BẢO CHỌN PHƯƠNG THỨC "AUTHENTICATION APP" (Nếu nó chưa tự nhảy)
+                # ========================================================================
+                try:
+                    clicked_app = driver.execute_script("""
+                        let all = Array.from(document.querySelectorAll('*'));
+                        for(let el of all) {
+                            let txt = (el.innerText || el.textContent || '').trim().toLowerCase();
+                            if(txt.includes('authentication app') || txt.includes('ứng dụng xác thực') || txt.includes('duo mobile')) {
+                                let clickable = el.closest('div[role="button"], label, div[tabindex], button, [role="radio"]') || el;
+                                clickable.click();
+                                return true;
+                            }
+                        }
+                        return false;
+                    """)
+                    if clicked_app:
                         time.sleep(2)
-
-                    if two_fa_secret:
-                        print(f"{Colors.color_text(f'[{self.thread_id}] ĐÃ LẤY CHUẨN XÁC SECRET KEY 2FA: {two_fa_secret}', Colors.SUCCESS)}")
-
-                        # Bấm nút màu xanh "Nhập mã" / "Tiếp tục"
+                        # Bấm Tiếp tục
                         driver.execute_script("""
                             let btns = Array.from(document.querySelectorAll('button, div[role="button"], span'));
                             for(let b of btns) {
                                 let txt = (b.innerText || b.textContent || '').trim().toLowerCase();
-                                if(['nhập mã', 'enter code', 'next', 'continue', 'tiếp tục', 'tiếp'].includes(txt)) {
+                                if(['continue', 'next', 'tiếp tục', 'tiếp'].includes(txt)) {
                                     let clickable = b.closest('button, [role="button"]') || b;
-                                    let rect = clickable.getBoundingClientRect();
-                                    if(rect.width > 0 && rect.height > 0 && !clickable.disabled) {
-                                        clickable.click();
-                                        return;
-                                    }
-                                }
-                            }
-                        """)
-                        time.sleep(4)
-
-                        # Sinh mã OTP 6 số từ pyotp
-                        totp = pyotp.TOTP(two_fa_secret)
-                        current_otp = totp.now()
-                        print(f"{Colors.color_text(f'[{self.thread_id}] Đã sinh mã OTP 6 số ({current_otp}). Đang điền...', Colors.INFO)}")
-
-                        # Điền mã OTP vào các ô
-                        inputs = driver.find_elements(By.TAG_NAME, "input")
-                        for inp in inputs:
-                            if inp.is_displayed() and inp.get_attribute("type") != "file":
-                                try: inp.clear()
-                                except: pass
-                                for digit in current_otp:
-                                    inp.send_keys(digit)
-                                    time.sleep(0.08)
-                                time.sleep(1)
-                                try: inp.send_keys(Keys.ENTER)
-                                except: pass
-                                driver.execute_script("document.body.click();")
-                                break
-
-                        time.sleep(3)
-
-                        # Bấm nút Xong / Tiếp tục cuối cùng
-                        driver.execute_script("""
-                            let btns = Array.from(document.querySelectorAll('button, div[role="button"]'));
-                            btns.reverse();
-                            for(let b of btns){
-                                let t = (b.innerText || b.textContent || "").trim().toLowerCase();
-                                if(['xong', 'done', 'tiếp', 'tiếp tục', 'next', 'continue', 'submit', 'xác nhận'].includes(t)){
-                                    let rect = b.getBoundingClientRect();
-                                    if(rect.width > 0 && rect.height > 0 && !b.disabled && b.getAttribute('aria-disabled') !== 'true') {
-                                        b.click();
-                                        return;
-                                    }
+                                    if(!clickable.disabled) { clickable.click(); return; }
                                 }
                             }
                         """)
                         time.sleep(5)
-                        print(f"{Colors.color_text(f'[{self.thread_id}] BẬT 2FA THÀNH CÔNG RỰC RỠ!', Colors.SUCCESS)}")
-                    else:
-                        print(f"{Colors.color_text(f'[{self.thread_id}] Không nhận diện được Secret Key 2FA trên giao diện.', Colors.WARNING)}")
-                except Exception as e:
-                    print(f"{Colors.color_text(f'[{self.thread_id}] Quá trình 2FA gặp lỗi: {e}', Colors.WARNING)}")
+                except: pass
 
-                # ==================== LẤY LẠI COOKIE LẦN CUỐI, TOKEN ANDROID & LƯU ACC ====================
-                print(f"{Colors.color_text(f'[{self.thread_id}] Đang tiến hành lấy Cookie lưu tài khoản...', Colors.INFO)}")
+                # ========================================================================
+                # 5. TRÍCH XUẤT SECRET KEY VÀ NHẬP OTP LÊN MÀN HÌNH "HƯỚNG DẪN THIẾT LẬP"
+                # ========================================================================
+                print(f"{Colors.color_text(f'[{self.thread_id}] Đang tìm và bóc tách Secret Key 2FA bằng Clipboard Hook...', Colors.INFO)}")
                 
-                cookies_list = driver.get_cookies()
-                cookie_dict = {c['name']: c['value'] for c in cookies_list}
-                fb_uid = cookie_dict.get('c_user', fb_uid)
-                
-                cookie_str = (
-                    f"datr={cookie_dict.get('datr', '')}; "
-                    f"sb={cookie_dict.get('sb', '')}; "
-                    f"c_user={fb_uid}; "
-                    f"xs={cookie_dict.get('xs', '')}; "
-                    f"fr={cookie_dict.get('fr', '')}; "
-                    f"wd={cookie_dict.get('wd', '1920x1080')}"
-                )
+                # Bơm Hook chặn sự kiện Clipboard
+                driver.execute_script("""
+                    window.hooked2FAKey = "";
+                    if (navigator.clipboard && !window.clipboardHooked) {
+                        const originalWriteText = navigator.clipboard.writeText;
+                        navigator.clipboard.writeText = function(text) {
+                            let clean = (text || '').replace(/\\s+/g, '').toUpperCase();
+                            if (clean.length >= 16 && /^[A-Z2-7]+$/.test(clean)) {
+                                window.hooked2FAKey = clean;
+                            }
+                            return originalWriteText.apply(this, arguments);
+                        };
+                        window.clipboardHooked = true;
+                    }
+                """)
 
-                access_token = ""
-                if self.delay_config.get('lay_token_android', True):
-                    print(f"{Colors.color_text(f'[{self.thread_id}] Đang gọi Graph API lấy Access Token Android (EAAAAU...)...', Colors.INFO)}")
-                    try:
-                        fb_api = Facebook(email=fb_uid or used_email, mat_khau=secure_pass, auth=two_fa_secret, proxy=req_proxy)
-                        ket_qua_token = fb_api.DangNhap(APP_TOKEN)
-                        if ket_qua_token.get('status') == 200:
-                            access_token = ket_qua_token['data'].get('token', '')
-                            print(f"{Colors.color_text(f'[{self.thread_id}] Đã lấy Access Token Android thành công!', Colors.SUCCESS)}")
-                        else:
-                            msg_err = ket_qua_token.get('msg')
-                            print(f"{Colors.color_text(f'[{self.thread_id}] Không lấy được Token Android: {msg_err}', Colors.WARNING)}")
-                    except Exception as ex_tk:
-                        print(f"{Colors.color_text(f'[{self.thread_id}] Lỗi lấy Token Android: {ex_tk}', Colors.WARNING)}")
-                
-                print(f"\n{Colors.color_text('─'*70, Colors.LINE)}")
-                print(f"{Colors.color_text(f'[{self.thread_id}] THÀNH CÔNG ACC {account_index}!', Colors.SUCCESS)}")
-                print(f"{Colors.KEY}UID:       {Colors.USERNAME}{fb_uid}{Colors.RESET}")
-                print(f"{Colors.KEY}Email/SĐT: {Colors.EMAIL}{used_email}{Colors.RESET}")
-                print(f"{Colors.KEY}Pass:      {Colors.PASSWORD}{secure_pass}{Colors.RESET}")
-                print(f"{Colors.KEY}2FA:       {Colors.WARNING}{two_fa_secret if two_fa_secret else 'Lỗi không có'}{Colors.RESET}")
-                print(f"{Colors.KEY}Token:     {Colors.INFO}{access_token[:35] + '...' if access_token else 'Trống'}{Colors.RESET}")
-                print(f"{Colors.KEY}Cookie:    {Colors.VALUE}{cookie_str if cookie_str else 'Trống'}{Colors.RESET}")
-                print(f"{Colors.color_text('─'*70, Colors.LINE)}\n")
-                
-                save_account(self.thread_id, used_email, secure_pass, fb_uid, full_name, f"mode_{self.mode}", cookie_str, two_fa_secret, access_token)
-                
-                return True
-                
+                for attempt_2fa in range(6):
+                    if STOP_EVENT.is_set(): return False
+                    
+                    # Click ép các nút "Sao chép khóa" hoặc "Copy key"
+                    driver.execute_script("""
+                        let els = Array.from(document.querySelectorAll('span, div, button, a'));
+                        for(let el of els) {
+                            let txt = (el.innerText || el.textContent || '').trim().toLowerCase();
+                            if(txt === 'sao chép khóa' || txt === 'copy key' || txt.includes('sao chép') || txt.includes("can't scan") || txt.includes("không quét được")) {
+                                try { el.click(); } catch(e) {}
+                            }
+                        }
+                    """)
+                    time.sleep(2)
+
+                    # Check Hook Clipboard
+                    key_from_clipboard = driver.execute_script("return window.hooked2FAKey;")
+                    if key_from_clipboard and len(key_from_clipboard) >= 16:
+                        two_fa_secret = key_from_clipboard
+                        break
+
+                    # Fallback Regex quét Text
+                    extracted_key = driver.execute_script("""
+                        let text = document.body.innerText || "";
+                        let match = text.match(/\\b([A-Z2-7]{4}[\\s-]*){8}\\b/i);
+                        if (match) {
+                            return match[0].replace(/[^A-Z2-7]/gi, '').toUpperCase();
+                        }
+                        return null;
+                    """)
+                    if extracted_key and len(extracted_key) >= 16:
+                        two_fa_secret = extracted_key
+                        break
+
+                    time.sleep(2)
+
+                if two_fa_secret:
+                    print(f"{Colors.color_text(f'[{self.thread_id}] ĐÃ LẤY CHUẨN XÁC SECRET KEY 2FA: {two_fa_secret}', Colors.SUCCESS)}")
+
+                    # Bấm nút màu xanh "Nhập mã" / "Tiếp tục"
+                    driver.execute_script("""
+                        let btns = Array.from(document.querySelectorAll('button, div[role="button"], span'));
+                        for(let b of btns) {
+                            let txt = (b.innerText || b.textContent || '').trim().toLowerCase();
+                            if(['nhập mã', 'enter code', 'next', 'continue', 'tiếp tục', 'tiếp'].includes(txt)) {
+                                let clickable = b.closest('button, [role="button"]') || b;
+                                let rect = clickable.getBoundingClientRect();
+                                if(rect.width > 0 && rect.height > 0 && !clickable.disabled) {
+                                    clickable.click();
+                                    return;
+                                }
+                            }
+                        }
+                    """)
+                    time.sleep(4)
+
+                    # Sinh mã OTP 6 số từ pyotp
+                    totp = pyotp.TOTP(two_fa_secret)
+                    current_otp = totp.now()
+                    print(f"{Colors.color_text(f'[{self.thread_id}] Đã sinh mã OTP 6 số ({current_otp}). Đang điền...', Colors.INFO)}")
+
+                    # Điền mã OTP vào các ô
+                    inputs = driver.find_elements(By.TAG_NAME, "input")
+                    for inp in inputs:
+                        if inp.is_displayed() and inp.get_attribute("type") != "file":
+                            try: inp.clear()
+                            except: pass
+                            for digit in current_otp:
+                                inp.send_keys(digit)
+                                time.sleep(0.08)
+                            time.sleep(1)
+                            try: inp.send_keys(Keys.ENTER)
+                            except: pass
+                            driver.execute_script("document.body.click();")
+                            break
+
+                    time.sleep(3)
+
+                    # Bấm nút Xong / Tiếp tục cuối cùng
+                    driver.execute_script("""
+                        let btns = Array.from(document.querySelectorAll('button, div[role="button"]'));
+                        btns.reverse();
+                        for(let b of btns){
+                            let t = (b.innerText || b.textContent || "").trim().toLowerCase();
+                            if(['xong', 'done', 'tiếp', 'tiếp tục', 'next', 'continue', 'submit', 'xác nhận'].includes(t)){
+                                let rect = b.getBoundingClientRect();
+                                if(rect.width > 0 && rect.height > 0 && !b.disabled && b.getAttribute('aria-disabled') !== 'true') {
+                                    b.click();
+                                    return;
+                                }
+                            }
+                        }
+                    """)
+                    time.sleep(5)
+                    print(f"{Colors.color_text(f'[{self.thread_id}] BẬT 2FA THÀNH CÔNG RỰC RỠ!', Colors.SUCCESS)}")
+                else:
+                    print(f"{Colors.color_text(f'[{self.thread_id}] Không nhận diện được Secret Key 2FA trên giao diện.', Colors.WARNING)}")
             except Exception as e:
-                print(f"{Colors.color_text(f'[{self.thread_id}] Gặp Lỗi Ngoại Lệ: {e}', Colors.ERROR)}")
-                return False
-        
-        success_count = 0
-        for i in range(1, self.account_count + 1):
-            if STOP_EVENT.is_set(): break
+                print(f"{Colors.color_text(f'[{self.thread_id}] Quá trình 2FA gặp lỗi: {e}', Colors.WARNING)}")
+
+            # ==================== LẤY LẠI COOKIE LẦN CUỐI, TOKEN ANDROID & LƯU ACC ====================
+            print(f"{Colors.color_text(f'[{self.thread_id}] Đang tiến hành lấy Cookie lưu tài khoản...', Colors.INFO)}")
             
-            status = create_one_account(i)
+            cookies_list = driver.get_cookies()
+            cookie_dict = {c['name']: c['value'] for c in cookies_list}
+            fb_uid = cookie_dict.get('c_user', fb_uid)
             
-            if status == True: 
-                success_count += 1
-            elif status == "DEAD":
-                print(f"{Colors.color_text(f'[{self.thread_id}] Dừng luồng này vì acc đã Die, bảo toàn các tài nguyên còn lại!', Colors.WARNING)}")
-                break 
-            else:
-                print(f"{Colors.color_text(f'[{self.thread_id}] Dừng luồng do lỗi quá trình tạo, bảo toàn tài nguyên!', Colors.WARNING)}")
-                break 
-                
-            time.sleep(self.delay_config.get('delay_giua_cac_lan_chay', 6.0))
+            cookie_str = (
+                f"datr={cookie_dict.get('datr', '')}; "
+                f"sb={cookie_dict.get('sb', '')}; "
+                f"c_user={fb_uid}; "
+                f"xs={cookie_dict.get('xs', '')}; "
+                f"fr={cookie_dict.get('fr', '')}; "
+                f"wd={cookie_dict.get('wd', '1920x1080')}"
+            )
+
+            access_token = ""
+            if self.delay_config.get('lay_token_android', True):
+                print(f"{Colors.color_text(f'[{self.thread_id}] Đang gọi Graph API lấy Access Token Android (EAAAAU...)...', Colors.INFO)}")
+                try:
+                    fb_api = Facebook(email=fb_uid or used_email, mat_khau=secure_pass, auth=two_fa_secret, proxy=req_proxy)
+                    ket_qua_token = fb_api.DangNhap(APP_TOKEN)
+                    if ket_qua_token.get('status') == 200:
+                        access_token = ket_qua_token['data'].get('token', '')
+                        print(f"{Colors.color_text(f'[{self.thread_id}] Đã lấy Access Token Android thành công!', Colors.SUCCESS)}")
+                    else:
+                        msg_err = ket_qua_token.get('msg')
+                        print(f"{Colors.color_text(f'[{self.thread_id}] Không lấy được Token Android: {msg_err}', Colors.WARNING)}")
+                except Exception as ex_tk:
+                    print(f"{Colors.color_text(f'[{self.thread_id}] Lỗi lấy Token Android: {ex_tk}', Colors.WARNING)}")
+            
+            print(f"\n{Colors.color_text('─'*70, Colors.LINE)}")
+            print(f"{Colors.color_text(f'[{self.thread_id}] THÀNH CÔNG ACC {account_index}!', Colors.SUCCESS)}")
+            print(f"{Colors.KEY}UID:       {Colors.USERNAME}{fb_uid}{Colors.RESET}")
+            print(f"{Colors.KEY}Email/SĐT: {Colors.EMAIL}{used_email}{Colors.RESET}")
+            print(f"{Colors.KEY}Pass:      {Colors.PASSWORD}{secure_pass}{Colors.RESET}")
+            print(f"{Colors.KEY}2FA:       {Colors.WARNING}{two_fa_secret if two_fa_secret else 'Lỗi không có'}{Colors.RESET}")
+            print(f"{Colors.KEY}Token:     {Colors.INFO}{access_token[:35] + '...' if access_token else 'Trống'}{Colors.RESET}")
+            print(f"{Colors.KEY}Cookie:    {Colors.VALUE}{cookie_str if cookie_str else 'Trống'}{Colors.RESET}")
+            print(f"{Colors.color_text('─'*70, Colors.LINE)}\n")
+            
+            save_account(self.thread_id, used_email, secure_pass, fb_uid, full_name, f"mode_{self.mode}", cookie_str, two_fa_secret, access_token)
+            
+            return True
+            
+        except Exception as e:
+            print(f"{Colors.color_text(f'[{self.thread_id}] Gặp Lỗi Ngoại Lệ: {e}', Colors.ERROR)}")
+            return False
+    
+    success_count = 0
+    for i in range(1, self.account_count + 1):
+        if STOP_EVENT.is_set(): break
         
-        print(f"\n{Colors.color_text(f'[{self.thread_id}] TỔNG KẾT TAB: {success_count}/{self.account_count} THÀNH CÔNG', Colors.TITLE)}")
+        status = create_one_account(i)
+        
+        if status == True: 
+            success_count += 1
+        elif status == "DEAD":
+            print(f"{Colors.color_text(f'[{self.thread_id}] Dừng luồng này vì acc đã Die, bảo toàn các tài nguyên còn lại!', Colors.WARNING)}")
+            break 
+        else:
+            print(f"{Colors.color_text(f'[{self.thread_id}] Dừng luồng do lỗi quá trình tạo, bảo toàn tài nguyên!', Colors.WARNING)}")
+            break 
+            
+        time.sleep(self.delay_config.get('delay_giua_cac_lan_chay', 6.0))
+    
+    print(f"\n{Colors.color_text(f'[{self.thread_id}] TỔNG KẾT TAB: {success_count}/{self.account_count} THÀNH CÔNG', Colors.TITLE)}")
 
 # ==================== MENU CHÍNH ====================
 def select_mode():
