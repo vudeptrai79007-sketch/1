@@ -1,0 +1,1673 @@
+# --- SHIM CHO PYTHON 3.12+ (Khắc phục hoàn toàn lỗi thiếu distutils và .version) ---
+import sys
+import socket
+import select
+import base64
+import sys
+import io
+
+# Tự động cấu hình mã hóa UTF-8 cho Windows Console tránh lỗi UnicodeEncodeError
+if sys.platform.startswith('win'):
+    try:
+        sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+        sys.stderr.reconfigure(encoding='utf-8', errors='replace')
+    except Exception:
+        pass
+import types
+import re
+if 'distutils' not in sys.modules:
+    distutils_mod = types.ModuleType('distutils')
+    distutils_version_mod = types.ModuleType('distutils.version')
+    class LooseVersion:
+        def __init__(self, vstring=None):
+            if vstring:
+                self.parse(vstring)
+        def parse(self, vstring):
+            self.vstring = vstring
+            component_re = re.compile(r'(\d+)')
+            components = [int(x) if x.isdigit() else x for x in component_re.split(vstring) if x and x != '.']
+            self.version = components
+        def __lt__(self, other):
+            other_v = other.version if isinstance(other, LooseVersion) else LooseVersion(other).version
+            return self.version < other_v
+        def __le__(self, other):
+            other_v = other.version if isinstance(other, LooseVersion) else LooseVersion(other).version
+            return self.version <= other_v
+        def __eq__(self, other):
+            other_v = other.version if isinstance(other, LooseVersion) else LooseVersion(other).version
+            return self.version == other_v
+        def __ne__(self, other):
+            other_v = other.version if isinstance(other, LooseVersion) else LooseVersion(other).version
+            return self.version != other_v
+        def __gt__(self, other):
+            other_v = other.version if isinstance(other, LooseVersion) else LooseVersion(other).version
+            return self.version > other_v
+        def __ge__(self, other):
+            other_v = other.version if isinstance(other, LooseVersion) else LooseVersion(other).version
+            return self.version >= other_v
+        def __str__(self):
+            return self.vstring
+        def __repr__(self):
+            return f"LooseVersion ('{self.vstring}')"
+    distutils_version_mod.LooseVersion = LooseVersion
+    distutils_mod.version = distutils_version_mod
+    sys.modules['distutils'] = distutils_mod
+    sys.modules['distutils.version'] = distutils_version_mod
+# -----------------------------------------------------------------------------------
+
+import os
+import time
+import threading
+import random
+from datetime import datetime
+import uuid
+import imaplib
+import email
+from email.header import decode_header
+import json
+import traceback
+import string
+import hashlib
+import struct
+
+# ===== THƯ VIỆN CHROME CHO PC, PYOTP & MÃ HÓA RSA/AES =====
+try:
+    import undetected_chromedriver as uc
+    from selenium.webdriver.common.by import By
+    from selenium.webdriver.support.ui import WebDriverWait
+    from selenium.webdriver.support import expected_conditions as EC
+    from selenium.webdriver.support.ui import Select
+    from selenium.webdriver.common.keys import Keys
+    import requests
+    from requests.adapters import HTTPAdapter
+    from urllib3.util.retry import Retry
+    import pyotp
+    from Crypto.Cipher import AES, PKCS1_v1_5
+    from Crypto.PublicKey import RSA
+    from Crypto.Random import get_random_bytes
+except ImportError:
+    print("Đang cài đặt thư viện thiếu (undetected-chromedriver, selenium, requests, pyotp, pycryptodome)...")
+    os.system("pip install undetected-chromedriver selenium requests pyotp pycryptodome")
+    import undetected_chromedriver as uc
+    from selenium.webdriver.common.by import By
+    from selenium.webdriver.support.ui import WebDriverWait
+    from selenium.webdriver.support import expected_conditions as EC
+    from selenium.webdriver.support.ui import Select
+    from selenium.webdriver.common.keys import Keys
+    import requests
+    from requests.adapters import HTTPAdapter
+    from urllib3.util.retry import Retry
+    import pyotp
+    from Crypto.Cipher import AES, PKCS1_v1_5
+    from Crypto.PublicKey import RSA
+    from Crypto.Random import get_random_bytes
+
+# BIẾN TOÀN CỤC & CÁC KHÓA (LOCK)
+STOP_EVENT = threading.Event()
+OTP_LOCK = threading.Lock() 
+DATA_LOCK = threading.Lock()
+BROWSER_LOCK = threading.Lock()  
+INPUT_LOCK = threading.Lock()    
+TYPE_LOCK = threading.Lock() 
+SUBMIT_LOCK = threading.Lock() 
+PRINT_LOCK = threading.Lock()
+DRIVER_LOCK = threading.Lock()
+RESOURCE_LOCK = threading.Lock()
+
+CONFIG_FILE = "config_gmail.json"
+DELAY_CONFIG_FILE = "config_reg_fb.json"
+BASE_YEAR = random.randint(1995, 2005)
+APP_TOKEN = '350685531728|62f8ce9f74b12f84c123cc23437a4a32'
+
+DEFAULT_DELAY_CONFIG = {
+    'delay_mo_facebook': 10.0,
+    'delay_nhap_ho': 0.3,
+    'delay_nhap_ten': 0.3,
+    'delay_chon_ngay_sinh': 1.0,
+    'delay_chon_gioi_tinh': 0.5,
+    'delay_nhap_sdt_email': 1.0,
+    'delay_nhap_mat_khau': 1.0,
+    'delay_ngam_form_truoc_submit': 10.0,
+    'delay_validate_form': 5.0,
+    'delay_sau_khi_submit': 15.0,
+    'delay_ngam_otp': 60.0,
+    'delay_cho_load_trang_chu': 35.0,
+    'delay_giua_cac_lan_chay': 6.0,
+    'delay_thu_lai_khi_loi': 6.0,
+    'so_lan_thu_get_code': 2,
+    'mat_khau_fb': '',          # Để trống = Random mật khẩu bảo mật 12 ký tự
+    'use_phone_bait': False,    # True = Mồi SĐT +84 ảo rồi đổi sang Xác nhận Email
+    'lay_token_android': True   # True = Gọi Graph API lấy thêm Token EAAAAU sau khi reg
+}
+
+# Danh sách lưu toàn bộ Trình duyệt để hỏi đóng vào cuối cùng
+ALL_DRIVERS = []
+GLOBAL_USED_PHONES = set()
+GLOBAL_USED_NAMES = set()
+
+# --- CƠ CHẾ ĐÓNG BĂNG MÀN HÌNH CHỐNG TRÔI LỆNH TRONG ĐA LUỒNG ---
+built_in_print = print
+PAUSE_FOR_INPUT = threading.Event()
+PAUSE_FOR_INPUT.set() 
+
+def thread_safe_print(*args, **kwargs):
+    PAUSE_FOR_INPUT.wait() 
+    with PRINT_LOCK:
+        built_in_print(*args, **kwargs)
+
+print = thread_safe_print 
+
+# ========== BẢNG MÀU ==========
+class Colors:
+    PRIMARY = "\033[38;2;255;100;150m"
+    SUCCESS = "\033[38;2;0;255;127m"
+    ERROR = "\033[38;2;255;50;50m"
+    WARNING = "\033[38;2;255;200;50m"
+    INFO = "\033[38;2;100;255;200m"
+    KEY = "\033[38;2;200;160;255m"
+    VALUE = "\033[38;2;120;255;220m"
+    LINE = "\033[38;2;190;235;210m"
+    TITLE = "\033[38;2;255;215;0m"
+    NUMBER = "\033[38;2;255;165;0m"
+    EMAIL = "\033[38;2;100;200;255m"
+    USERNAME = "\033[38;2;0;255;255m"
+    PASSWORD = "\033[38;2;255;105;180m"
+    RESET = "\033[0m"
+    
+    @staticmethod
+    def color_text(text, color):
+        return f"{color}{text}{Colors.RESET}"
+
+# ========== HÀM CƠ BẢN & QUẢN LÝ CONFIG ==========
+def banner():
+    os.system('clear' if os.name == 'posix' else 'cls')
+    built_in_print(f"""{Colors.PRIMARY}
+ ██████╗ ██╗  ██╗██████╗  ██████╗ ███╗   ███╗███████╗
+██╔════╝ ██║  ██║██╔══██╗██╔═══██╗████╗ ████║██╔════╝
+██║  ███╗███████║██████╔╝██║   ██║██╔████╔██║█████╗  
+██║   ██║██╔══██║██╔══██╗██║   ██║██║╚██╔╝██║██╔══╝  
+╚██████╔╝██║  ██║██║  ██║╚██████╔╝██║ ╚═╝ ██║███████╗
+ ╚═════╝ ╚═╝  ╚═╝╚═╝  ╚═╝ ╚═════╝ ╚═╝     ╚═╝╚══════╝
+{Colors.RESET}""")
+    built_in_print(f"{Colors.INFO}Phiên Bản: v18.5 Ultimate (FB Reg Chrome + 6 Modes + 2FA 8 Số + Token EAAAAU){Colors.RESET}")
+    built_in_print(f"{Colors.LINE}{'─'*75}{Colors.RESET}\n")
+
+def load_config():
+    if os.path.exists(CONFIG_FILE):
+        try:
+            with open(CONFIG_FILE, 'r', encoding='utf-8') as f: return json.load(f)
+        except Exception: pass
+    return {}
+
+def save_config(data):
+    try:
+        with open(CONFIG_FILE, 'w', encoding='utf-8') as f: json.dump(data, f, indent=4, ensure_ascii=False)
+    except Exception: pass
+
+def doc_delay_config():
+    if os.path.exists(DELAY_CONFIG_FILE):
+        try:
+            with open(DELAY_CONFIG_FILE, 'r', encoding='utf-8') as f:
+                config = json.load(f)
+                for key, value in DEFAULT_DELAY_CONFIG.items():
+                    if key not in config:
+                        config[key] = value
+                return config
+        except Exception:
+            return DEFAULT_DELAY_CONFIG.copy()
+    else:
+        with open(DELAY_CONFIG_FILE, 'w', encoding='utf-8') as f:
+            json.dump(DEFAULT_DELAY_CONFIG, f, indent=4, ensure_ascii=False)
+        return DEFAULT_DELAY_CONFIG.copy()
+
+def luu_delay_config(config):
+    try:
+        with open(DELAY_CONFIG_FILE, 'w', encoding='utf-8') as f:
+            json.dump(config, f, indent=4, ensure_ascii=False)
+    except Exception:
+        pass
+
+def nhap_delay(tieu_de, gia_tri_mac_dinh):
+    try:
+        nhap = input(f'   {Colors.KEY}{tieu_de} ({gia_tri_mac_dinh} giây): {Colors.RESET}').strip()
+        if nhap:
+            return float(nhap)
+    except KeyboardInterrupt:
+        raise KeyboardInterrupt
+    except Exception:
+        pass
+    return gia_tri_mac_dinh
+
+def cau_hinh_delay():
+    built_in_print(f'\n{Colors.LINE}──────────────────────────────────────────────────────────────────────{Colors.RESET}')
+    built_in_print(f'{Colors.TITLE}⚙️  CẤU HÌNH DELAY & TÙY CHỌN NÂNG CAO{Colors.RESET}')
+    built_in_print(f'{Colors.LINE}──────────────────────────────────────────────────────────────────────{Colors.RESET}')
+    config = doc_delay_config()
+
+    built_in_print(f'\n{Colors.INFO}【MẬT KHẨU & CHẾ ĐỘ ĐĂNG KÝ】{Colors.RESET}')
+    mk_hien_tai = config['mat_khau_fb'] if config['mat_khau_fb'] else "Tự động Random 12 ký tự"
+    mat_khau_moi = input(f'   {Colors.KEY}Nhập mật khẩu cố định (Enter giữ [{mk_hien_tai}], gõ "rand" để random): {Colors.RESET}').strip()
+    if mat_khau_moi.lower() == 'rand':
+        config['mat_khau_fb'] = ''
+    elif mat_khau_moi:
+        config['mat_khau_fb'] = mat_khau_moi
+
+    chon_moi_sdt = input(f'   {Colors.KEY}Bật chế độ Mồi SĐT +84 ảo rồi đổi sang Xác nhận Email ở Mode 1-5? (y/n, hiện tại: {config["use_phone_bait"]}): {Colors.RESET}').strip().lower()
+    if chon_moi_sdt in ['y', 'n']:
+        config['use_phone_bait'] = (chon_moi_sdt == 'y')
+
+    chon_token = input(f'   {Colors.KEY}Tự động lấy thêm Access Token Android (EAAAAU...) sau khi reg xong? (y/n, hiện tại: {config["lay_token_android"]}): {Colors.RESET}').strip().lower()
+    if chon_token in ['y', 'n']:
+        config['lay_token_android'] = (chon_token == 'y')
+
+    built_in_print(f'\n{Colors.INFO}【THÔNG SỐ DELAY TRÌNH DUYỆT (Giây)】{Colors.RESET}')
+    config['delay_mo_facebook'] = nhap_delay('Delay mở trang đăng ký Facebook', config['delay_mo_facebook'])
+    config['delay_nhap_ho'] = nhap_delay('Delay sau nhập Họ', config['delay_nhap_ho'])
+    config['delay_nhap_ten'] = nhap_delay('Delay sau nhập Tên', config['delay_nhap_ten'])
+    config['delay_chon_ngay_sinh'] = nhap_delay('Delay sau chọn Ngày Sinh', config['delay_chon_ngay_sinh'])
+    config['delay_chon_gioi_tinh'] = nhap_delay('Delay sau chọn Giới Tính', config['delay_chon_gioi_tinh'])
+    config['delay_nhap_sdt_email'] = nhap_delay('Delay sau nhập Email/SĐT', config['delay_nhap_sdt_email'])
+    config['delay_nhap_mat_khau'] = nhap_delay('Delay sau nhập Mật khẩu', config['delay_nhap_mat_khau'])
+    config['delay_ngam_form_truoc_submit'] = nhap_delay('Delay ngâm form trước khi bấm nút Đăng ký', config['delay_ngam_form_truoc_submit'])
+    config['delay_validate_form'] = nhap_delay('Delay chờ form validate trước khi Submit', config['delay_validate_form'])
+    config['delay_sau_khi_submit'] = nhap_delay('Delay chờ sau khi bấm nút Đăng ký', config['delay_sau_khi_submit'])
+    config['delay_ngam_otp'] = nhap_delay('Delay ngâm mã OTP (Mode 3, 4, 5, 6)', config['delay_ngam_otp'])
+    config['delay_cho_load_trang_chu'] = nhap_delay('Delay chờ tải trang chủ sau khi gửi OTP', config['delay_cho_load_trang_chu'])
+    config['delay_giua_cac_lan_chay'] = nhap_delay('Delay nghỉ giữa các tài khoản', config['delay_giua_cac_lan_chay'])
+    config['so_lan_thu_get_code'] = int(nhap_delay('Số lần bấm Gửi lại mã tối đa khi chưa nhận được OTP', config['so_lan_thu_get_code']))
+
+    luu_delay_config(config)
+    built_in_print(f'\n{Colors.SUCCESS}✅ Đã lưu cấu hình thành công!{Colors.RESET}\n')
+    return config
+
+def save_account(thread_id, email_str, password, uid, full_name, mode="auto", cookie="", two_fa="", access_token=""):
+    # Lấy vị trí thư mục chính xác nơi đang chứa file code
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    
+    # Tạo đường dẫn cho file TỔNG nằm ngay sát cạnh file code
+    file_tong = os.path.join(current_dir, "danh_sach_acc_fb.txt")
+    
+    # Tạo đường dẫn cho thư mục chứa các file lẻ
+    folder_name = os.path.join(current_dir, "Facebook_reg_PC")
+    if not os.path.exists(folder_name): os.makedirs(folder_name)
+    
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    filename = os.path.join(folder_name, f"account_{thread_id}_{timestamp}.txt")
+    
+    # Định dạng lưu acc (UID|Pass|Email/SĐT|2FA|Cookie|Token)
+    dinh_dang_luu = f"{uid}|{password}|{email_str}|{two_fa}|{cookie}|{access_token}\n"
+    
+    try:
+        # GHI VÀO FILE TỔNG
+        with open(file_tong, 'a', encoding='utf-8') as f: 
+            f.write(dinh_dang_luu)
+            
+        # Ghi file lẻ
+        content = (
+            f"Luồng: {thread_id}\n"
+            f"UID: {uid}\n"
+            f"Họ Tên: {full_name}\n"
+            f"Email/SĐT: {email_str}\n"
+            f"Pass: {password}\n"
+            f"2FA: {two_fa}\n"
+            f"Access Token: {access_token}\n"
+            f"Cookie: {cookie}\n"
+        )
+        with open(filename, 'w', encoding='utf-8') as f: 
+            f.write(content)
+    except Exception as e: 
+        print(f"Lỗi khi lưu file: {e}")
+
+# ========== HÀM TẠO HỌ TÊN & SỐ ĐIỆN THOẠI (KẾT HỢP TỪ BẢN ADB & IG) ==========
+def tao_so_dien_thoai(used_phones=None):
+    target_set = used_phones if used_phones is not None else GLOBAL_USED_PHONES
+    dau_so = [
+        '333', '338', '339', '358', '359', '368', '369', '378', '379',
+        '388', '389', '396', '397', '398', '399', '777', '778', '779',
+        '787', '788', '789', '968', '969', '978', '979', '988', '989'
+    ]
+    with RESOURCE_LOCK:
+        while True:
+            so = random.choice(dau_so) + ''.join(random.choices(string.digits, k=6))
+            phone = f'+84{so}'
+            if phone not in target_set:
+                target_set.add(phone)
+                return phone
+
+def VietnameseNameGenerator(used_names=None):
+    target_set = used_names if used_names is not None else GLOBAL_USED_NAMES
+    ho_list = ['Nguyen', 'Tran', 'Le', 'Pham', 'Hoang', 'Huynh', 'Phan', 'Vu', 'Vo', 'Dang', 'Bui', 'Do', 'Ngo', 'Duong', 'Ly', 'Dinh', 'Mai', 'Chau', 'Ha', 'Phung']
+    middle_list = ["Van", "Thi", "Minh", "Hoang", "Anh", "Bao", "Gia", "Khanh", "Ngoc", "Phuong"]
+    ten_list = ['An', 'Binh', 'Cuong', 'Dung', 'Duc', 'Ha', 'Hieu', 'Hoa', 'Hung', 'Minh', 'Nam', 'Phuong', 'Quang', 'Son', 'Thanh', 'Thao', 'Thuy', 'Tien', 'Trung', 'Vinh']
+    
+    with RESOURCE_LOCK:
+        for _ in range(100):
+            first = random.choice(ho_list)
+            middle = random.choice(middle_list)
+            last = random.choice(ten_list)
+            last_name_fb = f"{first} {middle}"
+            first_name_fb = last
+            full_name = f"{last_name_fb} {first_name_fb}"
+            if full_name not in target_set:
+                target_set.add(full_name)
+                break
+                
+    cleaned = re.sub(r'[^a-zA-Z0-9]', '', full_name.lower())
+    extra_chars = "".join(random.choices("abcdefghijklmnopqrstuvwxyz", k=2))
+    username = f"{cleaned}{extra_chars}{random.randint(10000, 999999)}"
+    
+    return last_name_fb, first_name_fb, full_name, username
+
+
+# ========== CLASS FACEBOOK MÃ HÓA RSA/AES & LẤY TOKEN ANDROID (TỪ BẢN ADB) ==========
+class Facebook:
+    def MaHoaMatKhau(self, mat_khau):
+        try:
+            url = 'https://b-graph.facebook.com/pwd_key_fetch'
+            params = {
+                'version': '2',
+                'flow': 'CONTROLLER_INITIALIZATION',
+                'method': 'GET',
+                'fb_api_req_friendly_name': 'pwdKeyFetch',
+                'fb_api_caller_class': 'com.facebook.auth.login.AuthOperations',
+                'access_token': '438142079694454|fc0a7caa49b192f64f6f5a6d9643bb28'
+            }
+            response = requests.post(url, params=params, timeout=15, proxies=self.proxy).json()
+            public_key = response.get('public_key')
+            key_id = str(response.get('key_id', '25'))
+            rand_key = get_random_bytes(32)
+            iv = get_random_bytes(12)
+            pubkey = RSA.import_key(public_key)
+            cipher_rsa = PKCS1_v1_5.new(pubkey)
+            encrypted_rand_key = cipher_rsa.encrypt(rand_key)
+            cipher_aes = AES.new(rand_key, AES.MODE_GCM, nonce=iv)
+            current_time = int(time.time())
+            cipher_aes.update(str(current_time).encode('utf-8'))
+            encrypted_passwd, auth_tag = cipher_aes.encrypt_and_digest(mat_khau.encode('utf-8'))
+            buf = io.BytesIO()
+            buf.write(bytes([1, int(key_id)]))
+            buf.write(iv)
+            buf.write(struct.pack('<h', len(encrypted_rand_key)))
+            buf.write(encrypted_rand_key)
+            buf.write(auth_tag)
+            buf.write(encrypted_passwd)
+            encoded = base64.b64encode(buf.getvalue()).decode('utf-8')
+            return f"#PWD_FB4A:2:{current_time}:{encoded}"
+        except KeyboardInterrupt:
+            raise KeyboardInterrupt
+        except Exception:
+            return mat_khau
+
+    @staticmethod
+    def _tao_machine_id():
+        return ''.join(random.choices(string.ascii_letters + string.digits, k=24))
+
+    def __init__(self, email=None, mat_khau=None, auth=None, proxy=None):
+        self.proxy = proxy
+        self.email = email
+        self.mat_khau = self.MaHoaMatKhau(mat_khau) if mat_khau else None
+        self.auth = auth.replace(' ', '') if auth else None
+        self.URL = 'https://b-graph.facebook.com/auth/login'
+        self.API_KEY = '882a8490361da98702bf97a021ddc14d'
+        self.SIG = '214049b9f17c38bd767de53752b53946'
+        self.device_id = str(uuid.uuid4())
+        self.adid = str(uuid.uuid4())
+        self.secure_family_device_id = str(uuid.uuid4())
+        self.machine_id = self._tao_machine_id()
+        self.jazoest = ''.join(random.choices(string.digits, k=5))
+        self.HEADERS = {
+            'content-type': 'application/x-www-form-urlencoded',
+            'x-fb-net-hni': '45201',
+            'zero-rated': '0',
+            'x-fb-sim-hni': '45201',
+            'x-fb-connection-quality': 'EXCELLENT',
+            'x-fb-friendly-name': 'authenticate',
+            'x-fb-connection-bandwidth': '78032897',
+            'x-tigon-is-retry': 'False',
+            'authorization': 'OAuth null',
+            'x-fb-connection-type': 'WIFI',
+            'x-fb-device-group': '3342',
+            'priority': 'u=3,i',
+            'x-fb-http-engine': 'Liger',
+            'x-fb-client-ip': 'True',
+            'x-fb-server-cluster': 'True',
+            'x-fb-request-analytics-tags': '{"network_tags":{"product":"350685531728","retry_attempt":"0"},"application_tags":"unknown"}',
+            'user-agent': 'Dalvik/2.1.0 (Linux; U; Android 9; 23113RKC6C Build/PQ3A.190705.08211809) [FBAN/FB4A;FBAV/417.0.0.33.65;FBPN/com.facebook.katana;FBLC/vi_VN;FBBV/480086274;FBCR/MobiFone;FBMF/Redmi;FBBD/Redmi;FBDV/23113RKC6C;FBSV/9;FBCA/x86:armeabi-v7a;FBDM/{density=1.5,width=1280,height=720};FB_FW/1;FBRV/0;]'
+        }
+
+    def DangNhap(self, app_token=APP_TOKEN):
+        self.data = {
+            'email': self.email,
+            'password': self.mat_khau,
+            'generate_session_cookies': '1',
+            'locale': 'vi_VN',
+            'client_country_code': 'VN',
+            'access_token': app_token,
+            'api_key': self.API_KEY,
+            'adid': self.adid,
+            'account_switcher_uids': f'["{self.email}"]',
+            'source': 'login',
+            'machine_id': self.machine_id,
+            'jazoest': self.jazoest,
+            'meta_inf_fbmeta': 'V2_UNTAGGED',
+            'fb_api_req_friendly_name': 'authenticate',
+            'fb_api_caller_class': 'Fb4aAuthHandler',
+            'sig': self.SIG
+        }
+        try:
+            ket_qua = requests.post(self.URL, headers=self.HEADERS, data=self.data, timeout=15, proxies=self.proxy).json()
+            if 'error' in ket_qua:
+                error_msg = ket_qua.get('error', {}).get('message', 'Lỗi không xác định')
+                error_data = ket_qua.get('error', {}).get('error_data', {})
+                if 'login_first_factor' in error_data and 'uid' in error_data:
+                    if self.auth:
+                        ma_2fa = pyotp.TOTP(self.auth).now()
+                    else:
+                        return {'status': 401, 'msg': 'Yêu cầu 2FA nhưng chưa có Secret Key'}
+                    data_2fa = {
+                        'locale': 'vi_VN',
+                        'format': 'json',
+                        'email': self.email,
+                        'device_id': self.device_id,
+                        'access_token': app_token,
+                        'generate_session_cookies': 'true',
+                        'generate_machine_id': '1',
+                        'twofactor_code': ma_2fa,
+                        'credentials_type': 'two_factor',
+                        'error_detail_type': 'button_with_disabled',
+                        'first_factor': error_data['login_first_factor'],
+                        'password': self.mat_khau,
+                        'userid': error_data['uid'],
+                        'machine_id': error_data['login_first_factor']
+                    }
+                    ket_qua = requests.post(self.URL, headers=self.HEADERS, data=data_2fa, timeout=15, proxies=self.proxy).json()
+                else:
+                    return {'status': 401, 'msg': error_msg}
+            if 'access_token' in ket_qua:
+                access_token = ket_qua.get('access_token')
+                cookies_list = ket_qua.get('session_cookies', [])
+                cookies_string = '; '.join((f"{c['name']}={c['value']}" for c in cookies_list))
+                return {'status': 200, 'data': {'cookies': cookies_string, 'token': access_token}}
+            error_msg = ket_qua.get('error', {}).get('message', 'Đăng nhập thất bại')
+            return {'status': 401, 'msg': error_msg}
+        except KeyboardInterrupt:
+            raise KeyboardInterrupt
+        except Exception as e:
+            return {'status': 401, 'msg': str(e)}
+
+
+# >>> HỆ THỐNG XỬ LÝ PROXY ĐA NĂNG <<<
+def parse_proxy(proxy_str):
+    if not proxy_str: return None
+    p_str = str(proxy_str).strip()
+    if not p_str: return None
+    for proto in ["http://", "https://", "socks5://", "socks4://"]:
+        if p_str.lower().startswith(proto):
+            p_str = p_str[len(proto):]
+            break
+
+    if "@" in p_str:
+        try:
+            auth_part, host_part = p_str.split("@", 1)
+            u, pwd = auth_part.split(":", 1)
+            ip, port = host_part.split(":", 1)
+            return {"ip": ip.strip(), "port": port.strip(), "user": u.strip(), "pass": pwd.strip()}
+        except Exception: pass
+
+    parts = [x.strip() for x in p_str.split(":") if x.strip()]
+    if len(parts) == 2:
+        return {"ip": parts[0], "port": parts[1], "user": None, "pass": None}
+    elif len(parts) == 4:
+        if parts[1].isdigit() and not parts[2].isdigit():
+            return {"ip": parts[0], "port": parts[1], "user": parts[2], "pass": parts[3]}
+        elif parts[3].isdigit():
+            return {"ip": parts[2], "port": parts[3], "user": parts[0], "pass": parts[1]}
+        else:
+            return {"ip": parts[0], "port": parts[1], "user": parts[2], "pass": parts[3]}
+    return None
+
+def format_proxy(proxy_str):
+    parsed = parse_proxy(proxy_str)
+    if not parsed: return None
+    if parsed["user"] and parsed["pass"]:
+        formatted = f"http://{parsed['user']}:{parsed['pass']}@{parsed['ip']}:{parsed['port']}"
+    else:
+        formatted = f"http://{parsed['ip']}:{parsed['port']}"
+    return {"http": formatted, "https": formatted}
+
+class LocalProxyForwarder:
+    def __init__(self, remote_ip, remote_port, username=None, password=None):
+        self.remote_ip = remote_ip
+        self.remote_port = int(remote_port)
+        self.username = username
+        self.password = password
+        self.server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        self.server_socket.bind(('127.0.0.1', 0))
+        self.local_port = self.server_socket.getsockname()[1]
+        self.running = True
+        self.thread = threading.Thread(target=self._run, daemon=True)
+        self.thread.start()
+
+    def _run(self):
+        self.server_socket.listen(100)
+        while self.running:
+            try:
+                client_sock, _ = self.server_socket.accept()
+                threading.Thread(target=self._handle_client, args=(client_sock,), daemon=True).start()
+            except Exception: break
+
+    def _handle_client(self, client_sock):
+        try:
+            crlf2 = bytes([13, 10, 13, 10])
+            crlf = bytes([13, 10])
+            req = b""
+            while crlf2 not in req:
+                chunk = client_sock.recv(4096)
+                if not chunk:
+                    client_sock.close()
+                    return
+                req += chunk
+
+            header_part, rest = req.split(crlf2, 1)
+            lines = header_part.split(crlf)
+            first_line = lines[0].decode("utf-8", "ignore")
+            is_connect = first_line.startswith("CONNECT")
+
+            remote_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            remote_sock.settimeout(15)
+            remote_sock.connect((self.remote_ip, self.remote_port))
+
+            auth_header = b""
+            if self.username and self.password:
+                cred = f"{self.username}:{self.password}"
+                b64_cred = base64.b64encode(cred.encode()).decode()
+                auth_header = f"Proxy-Authorization: Basic {b64_cred}".encode() + crlf
+
+            if is_connect:
+                connect_req = lines[0] + crlf
+                for line in lines[1:]:
+                    if not line.lower().startswith(b"proxy-authorization"):
+                        connect_req += line + crlf
+                if auth_header:
+                    connect_req += auth_header
+                connect_req += crlf
+                remote_sock.sendall(connect_req)
+
+                resp = b""
+                while crlf2 not in resp:
+                    c = remote_sock.recv(4096)
+                    if not c: break
+                    resp += c
+
+                resp_first_line = resp.split(crlf)[0] if resp else b""
+                if b"200" in resp_first_line:
+                    client_sock.sendall(b"HTTP/1.1 200 Connection established" + crlf2)
+                else:
+                    client_sock.sendall(resp)
+                    client_sock.close()
+                    remote_sock.close()
+                    return
+            else:
+                new_req = lines[0] + crlf
+                for line in lines[1:]:
+                    if not line.lower().startswith(b"proxy-authorization"):
+                        new_req += line + crlf
+                if auth_header:
+                    new_req += auth_header
+                new_req += crlf + rest
+                remote_sock.sendall(new_req)
+
+            remote_sock.settimeout(None)
+            client_sock.settimeout(None)
+            sockets = [client_sock, remote_sock]
+            while self.running:
+                r, _, _ = select.select(sockets, [], sockets, 30)
+                if not r: break
+                for s in r:
+                    other = remote_sock if s is client_sock else client_sock
+                    data = s.recv(16384)
+                    if not data: return
+                    other.sendall(data)
+        except Exception: pass
+        finally:
+            try: client_sock.close()
+            except: pass
+            try: remote_sock.close()
+            except: pass
+
+    def close(self):
+        self.running = False
+        try: self.server_socket.close()
+        except: pass
+
+
+# ==================== CÁC CLASS XỬ LÝ EMAIL (GIỮ NGUYÊN LOGIC LỌC SỐ TRONG TÊN EMAIL & 8 SỐ 2FA) ====================
+class MailService:
+    def __init__(self, proxy=None):
+        self.base_url = "https://api.mail.tm"
+        self.token = None
+        self.domain = None
+        self.email_address = None
+        self.seen_msg_ids = set() 
+        self.proxy = proxy 
+        
+    def get_domain(self):
+        try:
+            r = requests.get(f"{self.base_url}/domains", timeout=10, proxies=self.proxy)
+            if r.status_code == 200: 
+                self.domain = r.json()['hydra:member'][0]['domain']
+                return self.domain
+        except Exception: return None
+            
+    def create_account(self, address=None):
+        if not self.domain and not self.get_domain(): return None
+        name = address if address else f"user_{uuid.uuid4().hex[:8]}"
+        time.sleep(random.uniform(0.5, 2.0))
+        try:
+            r = requests.post(f"{self.base_url}/accounts", json={"address": f"{name}@{self.domain}", "password": "TempPass123!"}, timeout=10, proxies=self.proxy)
+            if r.status_code == 201: 
+                self.email_address = r.json()['address']
+                return self.email_address
+        except Exception: return None
+            
+    def authenticate(self, email=None, password="TempPass123!"):
+        if email: self.email_address = email
+        time.sleep(random.uniform(0.5, 2.0)) 
+        try:
+            r = requests.post(f"{self.base_url}/token", json={"address": self.email_address, "password": password}, timeout=10, proxies=self.proxy)
+            if r.status_code == 200: 
+                self.token = r.json()['token']
+                return True
+        except Exception: return False
+            
+    def get_otp_code(self, timeout=120, force_8_digits=False):
+        if not self.token: return None
+        headers = {"Authorization": f"Bearer {self.token}", "Accept": "application/json"}
+        start_time = time.time()
+        time.sleep(random.uniform(1.0, 5.0))
+        
+        while time.time() - start_time < timeout:
+            if STOP_EVENT.is_set(): return None
+            try:
+                r = requests.get(f"{self.base_url}/messages", headers=headers, timeout=10, proxies=self.proxy)
+                if r.status_code == 200:
+                    for msg in r.json().get('hydra:member', []):
+                        msg_id = msg.get('id')
+                        if not msg_id or msg_id in self.seen_msg_ids:
+                            continue
+                            
+                        subject = str(msg.get('subject', '')).lower()
+                        frm = str(msg.get('from', {}).get('address', '')).lower()
+                        # NHẬN DIỆN THƯ CỦA FACEBOOK & META
+                        if any(k in subject or k in frm for k in ['facebook', 'facebookmail', 'fb', 'meta', 'instagram']):
+                            detail = requests.get(f"{self.base_url}/messages/{msg_id}", headers=headers, timeout=10, proxies=self.proxy).json()
+                            raw_text = detail.get('text', '') or re.sub('<[^<]+?>', ' ', str(detail.get('html', '')))
+                            
+                            code = None
+                            if force_8_digits:
+                                clean_txt = raw_text.replace(" ", "")
+                                match = re.search(r'(?<!\d)(\d{8})(?!\d)', clean_txt)
+                                if match: code = match.group(1)
+                            else:
+                                match_fb = re.search(r'fb[-\s]*(\d{5,6})\b', subject, re.IGNORECASE) or re.search(r'fb[-\s]*(\d{5,6})\b', raw_text, re.IGNORECASE)
+                                if match_fb:
+                                    code = match_fb.group(1)
+                                else:
+                                    match_sub = re.search(r'(?<!\d)(\d{5,6})(?!\d)', subject)
+                                    if match_sub:
+                                        code = match_sub.group(1)
+                                    else:
+                                        safe_text = raw_text.lower().replace(str(self.email_address).lower(), "")
+                                        match_body = re.search(r'(?<!\d)(\d{5,6})(?!\d)', safe_text.replace(" ", ""))
+                                        if match_body: code = match_body.group(1)
+
+                            if code:
+                                self.seen_msg_ids.add(msg_id)
+                                return code
+            except Exception: pass
+            time.sleep(random.uniform(6.0, 10.0))
+        return None
+
+
+class GmailIMAPService:
+    def __init__(self, base_email, app_password):
+        self.base_email = base_email
+        self.app_password = app_password.replace(" ", "")
+        self.mail = None
+        self.seen_uids = set()
+
+    def connect(self):
+        try:
+            self.mail = imaplib.IMAP4_SSL("imap.gmail.com", 993)
+            self.mail.login(self.base_email, self.app_password)
+            return True
+        except Exception as e:
+            print(f"{Colors.color_text(f'Lỗi đăng nhập IMAP cho {self.base_email}: {e}', Colors.ERROR)}")
+            return False
+
+    def get_latest_uid(self):
+        if not self.mail and not self.connect(): return 0
+        try:
+            self.mail.select("INBOX", readonly=True)
+            status, data = self.mail.uid("search", None, 'ALL')
+            if status == "OK" and data[0]:
+                uids = data[0].split()
+                if uids: return int(uids[-1]) 
+        except Exception: pass
+        return 0
+
+    def get_text(self, msg):
+        plain, html_list = [], []
+        if msg.is_multipart():
+            for part in msg.walk():
+                if part.get_content_disposition() == "attachment": continue
+                ctype = part.get_content_type()
+                payload = part.get_payload(decode=True)
+                if not payload: continue
+                charset = part.get_content_charset() or "utf-8"
+                text = payload.decode(charset, errors="replace")
+                if ctype == "text/plain": plain.append(text)
+                elif ctype == "text/html": html_list.append(text)
+        else:
+            payload = msg.get_payload(decode=True)
+            if payload:
+                charset = msg.get_content_charset() or "utf-8"
+                text = payload.decode(charset, errors="replace")
+                if msg.get_content_type() == "text/plain": plain.append(text)
+                else: html_list.append(text)
+        if plain: return "\n".join(plain).strip()
+        if html_list: return re.sub(r'<[^>]+>', ' ', "\n".join(html_list)).strip()
+        return ""
+
+    def decode_msg_header(self, raw_header):
+        if not raw_header: return ""
+        try:
+            decoded = decode_header(raw_header)
+            result = ""
+            for text, charset in decoded:
+                if isinstance(text, bytes):
+                    try: result += text.decode(charset or 'utf-8', errors='replace')
+                    except: result += text.decode('utf-8', errors='replace')
+                else:
+                    result += str(text)
+            return result
+        except: return str(raw_header)
+
+    def get_otp_code(self, target_email, since_uid=0, timeout=120, force_8_digits=False):
+        if not self.mail:
+            if not self.connect(): return None
+        start_time = time.time()
+        time.sleep(random.uniform(1.0, 5.0))
+        
+        while time.time() - start_time < timeout:
+            if STOP_EVENT.is_set(): return None
+            try:
+                self.mail.select("INBOX", readonly=True)
+                status, data = self.mail.uid("search", None, 'ALL')
+                if status == "OK" and data[0]:
+                    uids = data[0].split()
+                    for uid_bytes in reversed(uids[-10:]):
+                        try: uid_int = int(uid_bytes)
+                        except ValueError: continue
+                        
+                        if uid_int <= since_uid or uid_bytes in self.seen_uids: 
+                            continue
+                            
+                        status, fetch_data = self.mail.uid("fetch", uid_bytes, "(RFC822)")
+                        if status == "OK" and fetch_data:
+                            raw = None
+                            for item in fetch_data:
+                                if isinstance(item, tuple): raw = item[1]; break
+                            if raw:
+                                msg = email.message_from_bytes(raw)
+                                to_addr = self.decode_msg_header(msg.get("To", "")).lower()
+                                subject = self.decode_msg_header(msg.get("Subject", "")).lower()
+                                from_addr = self.decode_msg_header(msg.get("From", "")).lower()
+                                
+                                if target_email.lower() not in to_addr: continue
+                                
+                                # NHẬN DIỆN THƯ CỦA FACEBOOK & META
+                                is_fb_meta = any(k in subject or k in from_addr for k in ["facebook", "facebookmail", "fb", "meta", "instagram"])
+                                is_security_mail = any(kw in subject for kw in ["security", "bảo mật", "verify", "xác minh", "code", "mã", "authenticate", "profile", "confirm", "xác nhận", "fb-"])
+                                
+                                if is_fb_meta and is_security_mail:
+                                    body = self.get_text(msg)
+                                    code = None
+                                    
+                                    if force_8_digits:
+                                        match_8 = re.search(r'(?<!\d)(\d{8})(?!\d)', body.replace(" ", ""))
+                                        if match_8: code = match_8.group(1)
+                                    else:
+                                        match_fb = re.search(r'fb[-\s]*(\d{5,6})\b', subject, re.IGNORECASE) or re.search(r'fb[-\s]*(\d{5,6})\b', body, re.IGNORECASE)
+                                        if match_fb:
+                                            code = match_fb.group(1)
+                                        else:
+                                            match_sub = re.search(r'(?<!\d)(\d{5,6})(?!\d)', subject)
+                                            if match_sub:
+                                                code = match_sub.group(1)
+                                            else:
+                                                safe_text = body.lower().replace(target_email.lower(), "")
+                                                match_body = re.search(r'(?<!\d)(\d{5,6})(?!\d)', safe_text.replace(" ", ""))
+                                                if match_body: code = match_body.group(1)
+
+                                    if code:
+                                        self.seen_uids.add(uid_bytes) 
+                                        return code
+            except Exception: pass
+            time.sleep(random.uniform(6.0, 10.0)) 
+        return None
+
+
+# ==================== DỊCH VỤ HOTMAIL/OUTLOOK API (SMAIL1S.COM) ====================
+class HotmailAPIService:
+    def __init__(self, data_line, api_mode, proxy=None):
+        self.url = "https://smail1s.com/get_messages"
+        self.data_line = data_line.strip()
+        self.api_mode = api_mode.strip()
+        self.email = self.data_line.split('|')[0] if '|' in self.data_line else self.data_line
+        self.seen_msg_ids = set()
+        self.proxy = proxy
+        self._init_session()
+
+    def _init_session(self):
+        self.session = requests.Session()
+        retries = Retry(total=5, backoff_factor=1, status_forcelist=[500, 502, 503, 504])
+        self.session.mount('http://', HTTPAdapter(max_retries=retries))
+        self.session.mount('https://', HTTPAdapter(max_retries=retries))
+        
+        if self.proxy:
+            self.session.proxies.update(self.proxy)
+
+        self.session.headers.update({
+            'Content-Type': 'application/json',
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+        })
+
+    def init_baseline(self):
+        payload = {"mode": self.api_mode, "data": self.data_line}
+        time.sleep(random.uniform(1.0, 3.0)) 
+        
+        for _ in range(3):
+            try:
+                response = self.session.post(self.url, json=payload, timeout=20)
+                if response.status_code == 200:
+                    data_array = response.json().get("data", [])
+                    if data_array and len(data_array) > 0:
+                        messages = data_array[0].get("messages", [])
+                        for msg in messages:
+                            msg_id = str(msg.get("id", msg.get("uid", "")))
+                            if not msg_id: 
+                                msg_id = hashlib.md5(str(msg.get("message", "")).encode()).hexdigest()
+                            self.seen_msg_ids.add(msg_id)
+                    break 
+            except Exception:
+                time.sleep(3) 
+
+    def get_otp_code(self, timeout=180, force_8_digits=False): 
+        start_time = time.time()
+        loai_ma = "ÉP ĐỌC MÃ 8 SỐ 2FA" if force_8_digits else "ĐỌC MÃ ĐĂNG KÝ 5-6 SỐ"
+        print(f"{Colors.color_text(f'[API Smail1s] Đang check hộp thư {self.email} ({loai_ma})...', Colors.INFO)}")
+        
+        payload = {"mode": self.api_mode, "data": self.data_line}
+        time.sleep(random.uniform(1.0, 5.0))
+        last_logged = ""
+        
+        while time.time() - start_time < timeout:
+            if STOP_EVENT.is_set(): return None
+            try:
+                response = self.session.post(self.url, json=payload, timeout=20)
+                
+                if response.status_code == 200:
+                    res_json = response.json()
+                    data_array = res_json.get("data", [])
+                    
+                    if data_array and len(data_array) > 0:
+                        account_data = data_array[0]
+                        err = account_data.get("error")
+                        
+                        if err:
+                            msg_err = f"Lỗi hộp thư: {err}"
+                            if msg_err != last_logged:
+                                print(f"{Colors.color_text(f'[API Smail1s] {msg_err}', Colors.ERROR)}")
+                                last_logged = msg_err
+                        else:
+                            messages = account_data.get("messages", [])
+                            msg_info = f"Tìm thấy {len(messages)} thư."
+                            if msg_info != last_logged:
+                                print(f"{Colors.color_text(f'[API Smail1s] {msg_info} Đang check từng thư lấy mã...', Colors.INFO)}")
+                                last_logged = msg_info
+                                
+                            for msg in messages:
+                                msg_id = str(msg.get("id", msg.get("uid", "")))
+                                if not msg_id:
+                                    msg_id = hashlib.md5(str(msg.get("message", "")).encode()).hexdigest()
+                                
+                                if msg_id in self.seen_msg_ids:
+                                    continue
+                                
+                                subject = str(msg.get("subject", "")).lower()
+                                from_sender = str(msg.get("from", "")).lower()
+                                raw_msg = str(msg.get("message", ""))
+                                
+                                # NHẬN DIỆN THƯ CỦA FACEBOOK & META
+                                is_fb_meta = any(k in subject or k in from_sender for k in ["facebook", "facebookmail", "fb", "meta", "instagram"])
+                                is_security_mail = True 
+                                if force_8_digits:
+                                    is_security_mail = any(kw in subject for kw in ["security", "bảo mật", "verify", "xác minh", "code", "mã", "factor", "authenticate", "profile", "account"])
+                                
+                                if is_fb_meta and is_security_mail:
+                                    code = None
+                                    
+                                    if force_8_digits:
+                                        clean_text = re.sub(r'<[^>]+>', ' ', raw_msg).replace(" ", "")
+                                        match_8 = re.search(r'(?<!\d)(\d{8})(?!\d)', clean_text)
+                                        if match_8: code = match_8.group(1)
+                                    else:
+                                        match_fb = re.search(r'fb[-\s]*(\d{5,6})\b', subject, re.IGNORECASE) or re.search(r'fb[-\s]*(\d{5,6})\b', raw_msg, re.IGNORECASE)
+                                        if match_fb:
+                                            code = match_fb.group(1)
+                                        else:
+                                            match_sub = re.search(r'(?<!\d)(\d{5,6})(?!\d)', subject)
+                                            if match_sub:
+                                                code = match_sub.group(1)
+                                            else:
+                                                safe_msg = raw_msg.lower().replace(self.email.lower(), "")
+                                                clean_text = re.sub(r'<[^>]+>', ' ', safe_msg).replace(" ", "")
+                                                match_6 = re.search(r'(?<!\d)(\d{5,6})(?!\d)', clean_text)
+                                                if match_6: code = match_6.group(1)
+                                    
+                                    if code:
+                                        self.seen_msg_ids.add(msg_id)
+                                        print(f"{Colors.color_text(f'[API Smail1s] ĐÃ BẮT ĐƯỢC MÃ CHUẨN: {code}', Colors.SUCCESS)}")
+                                        return code
+                else:
+                    status_err = f"Lỗi HTTP {response.status_code}"
+                    if status_err != last_logged:
+                        print(f"{Colors.color_text(f'[API Smail1s] {status_err}', Colors.WARNING)}")
+                        last_logged = status_err
+                        
+            except requests.exceptions.RequestException as e:
+                err_str = "Lỗi kết nối Smail1s. Đang thử lại..."
+                if err_str != last_logged:
+                    print(f"{Colors.color_text(f'[API Smail1s] {err_str} (Chi tiết: {e})', Colors.WARNING)}")
+                    last_logged = err_str
+                try: self._init_session() 
+                except: pass
+                
+            except Exception as e:
+                err_str = f"Lỗi không xác định: {str(e)}"
+                if err_str != last_logged:
+                    print(f"{Colors.color_text(f'[API Smail1s] {err_str}', Colors.WARNING)}")
+                    last_logged = err_str
+            
+            time.sleep(random.uniform(5.0, 8.0))
+        return None
+
+
+# ==================== DỊCH VỤ THUÊ SIM AUTOSMS.SITE (MODE 6) ====================
+class AutoSMSService:
+    def __init__(self, api_key, country="vn", proxy=None):
+        self.api_key = api_key
+        self.country = country
+        self.service = "facebook"
+        self.base_url = "https://autosms.site/api"
+        self.order_id = None
+        self.phone = None
+        self.proxy = proxy
+
+    def buy_number(self):
+        url = f"{self.base_url}/buy-number/{self.country}/{self.service}?key={self.api_key}"
+        try:
+            r = requests.get(url, timeout=10, proxies=self.proxy)
+            js = r.json()
+            if js.get("success"):
+                self.phone = js["data"]["phone"]
+                self.order_id = js["data"]["order_id"]
+                return self.phone
+        except Exception: pass
+        return None
+
+    def get_otp_code(self, timeout=120):
+        if not self.order_id: return None
+        start_time = time.time()
+        url = f"{self.base_url}/orders/{self.order_id}?key={self.api_key}"
+        while time.time() - start_time < timeout:
+            if STOP_EVENT.is_set(): return None
+            try:
+                r = requests.get(url, timeout=10, proxies=self.proxy)
+                js = r.json()
+                if js.get("success") and js.get("data") and js["data"].get("code"):
+                    return js["data"]["code"]
+            except Exception: pass
+            time.sleep(4)
+        return None
+
+    def cancel_order(self):
+        if self.order_id:
+            try:
+                requests.get(f"{self.base_url}/cancel/{self.order_id}?key={self.api_key}", timeout=10, proxies=self.proxy)
+            except Exception: pass
+
+
+def generate_dot_variants(gmail):
+    local, sep, domain = gmail.rpartition("@")
+    if not sep or domain.lower() != "gmail.com": return [gmail]
+    if "." in local: local = local.replace(".", "")
+    variants = []
+    if local:
+        for mask in range(1 << max(0, len(local) - 1)):
+            value = local[0]
+            for i in range(1, len(local)):
+                if mask & (1 << (i - 1)): value += "."
+                value += local[i]
+            variants.append(value + "@" + domain)
+    random.shuffle(variants)
+    return variants
+
+
+# ==================== MAIN THREAD ====================
+class starts(threading.Thread):
+    def __init__(self, thread_id, mode, account_count, data_source, delay_config, manual_password=None, base_gmail=None, app_password=None, api_mode=None, avatar_folder="", proxies_list=None, autosms_api_key=None, autosms_country="vn"):
+        super().__init__()
+        self.thread_id = f"Tab-{thread_id}"
+        self.mode = mode
+        self.account_count = account_count
+        self.data_source = data_source
+        self.delay_config = delay_config
+        self.manual_password = manual_password 
+        self.base_gmail = base_gmail
+        self.app_password = app_password
+        self.api_mode = api_mode
+        self.avatar_folder = avatar_folder
+        self.proxies_list = proxies_list or [] 
+        self.autosms_api_key = autosms_api_key
+        self.autosms_country = autosms_country
+        self.used_phones = set()
+        self.used_names = set()
+    
+    def run(self):
+        global BASE_YEAR
+        
+        # --- LẤY PROXY LOCAL DÀNH CHO LUỒNG NÀY ---
+        raw_proxy = None
+        req_proxy = None
+        if self.proxies_list:
+            thread_idx_for_proxy = int(self.thread_id.split("-")[1]) - 1
+            raw_proxy = self.proxies_list[thread_idx_for_proxy % len(self.proxies_list)]
+            req_proxy = format_proxy(raw_proxy)
+            p_info = parse_proxy(raw_proxy)
+            
+            if p_info and p_info.get("user"):
+                p_ip = p_info["ip"]
+                p_port = p_info["port"]
+                p_user = p_info["user"]
+                print(Colors.color_text(f"[{self.thread_id}] Đã gán Proxy (Có User/Pass): {p_ip}:{p_port} (User: {p_user})", Colors.WARNING))
+            elif p_info:
+                p_ip = p_info["ip"]
+                p_port = p_info["port"]
+                print(Colors.color_text(f"[{self.thread_id}] Đã gán Proxy (IP:Port): {p_ip}:{p_port}", Colors.WARNING))
+            else:
+                print(Colors.color_text(f"[{self.thread_id}] Đã gán Proxy: {raw_proxy}", Colors.WARNING))
+        
+        def create_one_account(account_index):
+            global BASE_YEAR
+            if STOP_EVENT.is_set(): return False
+                
+            print(f"\n{Colors.color_text('─'*70, Colors.LINE)}")
+            print(f"{Colors.color_text(f'[{self.thread_id}] BẮT ĐẦU TẠO TÀI KHOẢN THỨ {account_index}', Colors.TITLE)}")
+            
+            used_email = ""
+            imap_service = None
+            mail_service = None
+            hotmail_service = None
+            autosms_service = None
+            last_name_fb, first_name_fb, full_name, username = VietnameseNameGenerator(self.used_names)
+            
+            if self.delay_config.get('mat_khau_fb'):
+                secure_pass = self.delay_config['mat_khau_fb']
+            else:
+                chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%"
+                secure_pass = "".join(random.choice(chars) for _ in range(12))
+
+            if self.mode == "1":
+                mail_service = MailService(proxy=req_proxy)
+                used_email = mail_service.create_account(username)
+                if not used_email: return False
+                mail_service.authenticate()
+                
+            elif self.mode == "2":
+                with DATA_LOCK:
+                    if len(self.data_source) == 0: return False
+                    used_email = self.data_source.pop(0)
+                if "mail.tm" in used_email.lower():
+                    mail_service = MailService(proxy=req_proxy)
+                    pass_to_use = self.manual_password if self.manual_password else "TempPass123!"
+                    mail_service.authenticate(used_email, pass_to_use)
+                
+            elif self.mode == "3":
+                with DATA_LOCK:
+                    if len(self.data_source) == 0: return False
+                    used_email, app_pass = self.data_source.pop(0)
+                imap_service = GmailIMAPService(used_email, app_pass)
+                
+            elif self.mode == "4":
+                with DATA_LOCK:
+                    if len(self.data_source) == 0: return False
+                    used_email = self.data_source.pop(0)
+                imap_service = GmailIMAPService(self.base_gmail, self.app_password)
+
+            elif self.mode == "5":
+                with DATA_LOCK:
+                    if len(self.data_source) == 0: return False
+                    data_line = self.data_source.pop(0)
+                used_email = data_line.split('|')[0]
+                hotmail_service = HotmailAPIService(data_line, self.api_mode, proxy=req_proxy)
+
+            elif self.mode == "6":
+                autosms_service = AutoSMSService(self.autosms_api_key, self.autosms_country, proxy=req_proxy)
+                used_email = autosms_service.buy_number()
+                if not used_email:
+                    print(f"{Colors.color_text(f'[{self.thread_id}] Lỗi: Không thể thuê số điện thoại từ API (Hết số hoặc Sai Key)!', Colors.ERROR)}")
+                    return False
+
+            use_phone_bait = self.delay_config.get('use_phone_bait', False) and (self.mode in ["1", "2", "3", "4", "5"])
+            contact_for_signup = tao_so_dien_thoai(self.used_phones) if use_phone_bait else used_email
+
+            if use_phone_bait:
+                print(f"{Colors.color_text(f'[{self.thread_id}] Chế độ Mồi SĐT: Nhập {contact_for_signup} -> Xác nhận qua Email: {used_email}', Colors.INFO)}")
+            else:
+                print(f"{Colors.color_text(f'[{self.thread_id}] Đang dùng Email/SĐT: {used_email}', Colors.INFO)}")
+
+            driver = None
+            try:
+                # ========================================================
+                # MỞ CỬA SỔ DẠNG HÌNH CHỮ NHẬT DỌC ĐỂ XẾP 8 Ô
+                # ========================================================
+                thread_idx = int(self.thread_id.split("-")[1]) - 1 
+                
+                win_width = 460   
+                win_height = 520  
+                
+                columns = 4       
+                col = thread_idx % columns
+                row = thread_idx // columns
+                
+                x_pos = col * win_width
+                y_pos = row * win_height
+                
+                options = uc.ChromeOptions()
+                options.add_argument('--mute-audio')
+                options.add_argument('--disable-notifications')
+                options.add_argument('--disable-save-password-bubble')
+                options.add_argument('--password-store=basic')
+                
+                # TẮT TRIỆT ĐỂ BẢNG HỎI LƯU MẬT KHẨU & AUTOFILL CỦA CHROME
+                prefs = {
+                    'credentials_enable_service': False,
+                    'profile.password_manager_enabled': False,
+                    'profile.password_manager_leak_detection': False,
+                    'autofill.profile_enabled': False,
+                    'profile.default_content_setting_values.notifications': 2
+                }
+                options.add_experimental_option('prefs', prefs)
+                
+                options.add_argument(f'--window-size={win_width},{win_height}')
+                options.add_argument(f'--window-position={x_pos},{y_pos}')
+                options.add_argument('--force-device-scale-factor=0.65')
+                options.add_argument('--disable-gpu')
+                options.add_argument('--disable-software-rasterizer')
+                options.add_argument('--disable-dev-shm-usage')
+                
+                # >>> XỬ LÝ PROXY ĐA NĂNG & AN TOÀN CHO CHROME (CHẠY 100% TAB ẨN DANH & ĐỔI IP THẬT) <<<
+                forwarder = None
+                options.add_argument('--incognito')
+                
+                if raw_proxy:
+                    parsed_p = parse_proxy(raw_proxy)
+                    if parsed_p:
+                        if parsed_p.get("user") and parsed_p.get("pass"):
+                            forwarder = LocalProxyForwarder(parsed_p["ip"], parsed_p["port"], parsed_p["user"], parsed_p["pass"])
+                            options.add_argument(f'--proxy-server=http://127.0.0.1:{forwarder.local_port}')
+                        else:
+                            options.add_argument(f'--proxy-server=http://{parsed_p["ip"]}:{parsed_p["port"]}')
+                
+                with BROWSER_LOCK:
+                    driver = uc.Chrome(options=options)
+                    with DRIVER_LOCK:
+                        ALL_DRIVERS.append((self.thread_id, driver))
+                    try:
+                        driver.set_window_size(win_width, win_height)
+                        driver.set_window_position(x_pos, y_pos)
+                    except:
+                        pass
+                    time.sleep(1) 
+                    
+                wait = WebDriverWait(driver, 15)
+                
+                print(f"{Colors.color_text(f'[{self.thread_id}] Đang truy cập Facebook Web qua Proxy...', Colors.INFO)}")
+                driver.get("https://www.facebook.com/r.php")
+                
+                delay_mo_fb = self.delay_config['delay_mo_facebook']
+                print(f"{Colors.color_text(f'[{self.thread_id}] Đang chờ trang tải hoàn tất ({delay_mo_fb}s)...', Colors.WARNING)}")
+                time.sleep(delay_mo_fb)
+                
+                try:
+                    cookie_btns = driver.find_elements(By.XPATH, "//button[contains(text(), 'Allow') or contains(text(), 'Accept') or contains(text(), 'Cho phép') or contains(text(), 'Đồng ý')] | //div[@role='button' and (contains(., 'Allow') or contains(., 'Cho phép'))]")
+                    if cookie_btns:
+                        driver.execute_script("arguments[0].click();", cookie_btns[0])
+                        time.sleep(2)
+                except: pass
+
+                current_year = str(BASE_YEAR + random.randint(-3, 3))
+                if int(current_year) > 2005: current_year = "2005"
+                current_day = str(random.randint(2, 28))
+                current_month = str(random.randint(1, 12))
+                
+                BASE_YEAR -= 1
+                if BASE_YEAR < 1990: BASE_YEAR = random.randint(1995, 2005)
+
+                def slow_scroll_to_element(element):
+                    try:
+                        driver.execute_script("arguments[0].scrollIntoView({behavior: 'smooth', block: 'center'});", element)
+                        time.sleep(0.5)
+                    except: pass
+
+                def human_type(element, text, is_username=False):
+                    with TYPE_LOCK:
+                        slow_scroll_to_element(element)
+                        
+                        try: element.click() 
+                        except: driver.execute_script("arguments[0].click();", element) 
+                        time.sleep(0.5)
+                        
+                        driver.execute_script("arguments[0].focus();", element)
+                        
+                        if is_username:
+                            time.sleep(1)
+                            element.send_keys(Keys.END)
+                            time.sleep(0.2)
+                            current_val = element.get_attribute("value")
+                            if current_val:
+                                for _ in range(len(current_val) + 5):
+                                    element.send_keys(Keys.BACKSPACE)
+                                    time.sleep(0.01)
+                            driver.execute_script("arguments[0].value = '';", element)
+                            driver.execute_script("arguments[0].dispatchEvent(new Event('input', { bubbles: true }));", element)
+                            time.sleep(0.5)
+                        else:
+                            element.send_keys(Keys.CONTROL + "a")
+                            time.sleep(0.2)
+                            element.send_keys(Keys.BACKSPACE)
+                            time.sleep(0.3)
+                        
+                        for char in text:
+                            driver.execute_script("arguments[0].focus();", element)
+                            element.send_keys(char)
+                            time.sleep(random.uniform(0.05, 0.15)) 
+                        time.sleep(random.uniform(0.5, 1.0))
+                        
+                        try: element.send_keys(Keys.TAB)
+                        except: pass
+
+                # ==================== ĐIỀN FORM ĐĂNG KÝ FACEBOOK ====================
+                try:
+                    wait.until(EC.presence_of_element_located((By.NAME, "firstname")))
+                    
+                    lastname_el = driver.find_element(By.NAME, "lastname")
+                    firstname_el = driver.find_element(By.NAME, "firstname")
+                    
+                    print(f"{Colors.color_text(f'[{self.thread_id}] Điền Họ ({last_name_fb})...', Colors.INFO)}")
+                    human_type(lastname_el, last_name_fb)
+                    time.sleep(self.delay_config['delay_nhap_ho'])
+                    
+                    print(f"{Colors.color_text(f'[{self.thread_id}] Điền Tên ({first_name_fb})...', Colors.INFO)}")
+                    human_type(firstname_el, first_name_fb)
+                    time.sleep(self.delay_config['delay_nhap_ten'])
+                    
+                    print(f"{Colors.color_text(f'[{self.thread_id}] Bắt đầu chọn Ngày Sinh bằng Script Console...', Colors.INFO)}")
+                    try:
+                        driver.set_script_timeout(15)
+                        js_script = '''
+                        const day = arguments[0];
+                        const month = arguments[1];
+                        const year = arguments[2];
+                        const callback = arguments[arguments.length - 1];
+
+                        (async function() {
+                            try {
+                                const selects = Array.from(document.querySelectorAll('select'));
+                                if (selects.length >= 3) {
+                                    function setSelectVal(el, val) {
+                                        let nativeSetter = Object.getOwnPropertyDescriptor(window.HTMLSelectElement.prototype, "value").set;
+                                        nativeSetter.call(el, val);
+                                        el.dispatchEvent(new Event('change', { bubbles: true }));
+                                    }
+                                    
+                                    for (let sel of selects) {
+                                        const t = (sel.title || sel.name || sel.id || "").toLowerCase();
+                                        if (t.includes("tháng") || t.includes("month")) {
+                                            setSelectVal(sel, month);
+                                        } else if (t.includes("ngày") || t.includes("day")) {
+                                            setSelectVal(sel, day);
+                                        } else if (t.includes("năm") || t.includes("year")) {
+                                            setSelectVal(sel, year);
+                                        }
+                                    }
+                                    await new Promise(r => setTimeout(r, 1000));
+                                    return callback("SUCCESS");
+                                }
+
+                                const comboboxes = Array.from(document.querySelectorAll('[role="combobox"]'));
+                                if (comboboxes.length < 3) return callback("ERROR: Không tìm thấy 3 ô combobox!");
+
+                                const monthNum = parseInt(month, 10);
+                                const enMonths = ["january", "february", "march", "april", "may", "june", "july", "august", "september", "october", "november", "december"];
+                                const viMonths = ["tháng 1", "tháng 2", "tháng 3", "tháng 4", "tháng 5", "tháng 6", "tháng 7", "tháng 8", "tháng 9", "tháng 10", "tháng 11", "tháng 12"];
+                                const possibleMonths = [String(monthNum), "0" + monthNum, enMonths[monthNum-1], viMonths[monthNum-1]];
+
+                                async function clickOption(box, possibleValues) {
+                                    box.scrollIntoView({ block: 'center' });
+                                    box.click();
+                                    await new Promise(r => setTimeout(r, 600));
+                                    
+                                    const options = Array.from(document.querySelectorAll('div, span, li, option'));
+                                    const matched = options.filter(el => {
+                                        if (el.offsetHeight === 0 && !el.getClientRects().length) return false;
+                                        const txt = el.innerText?.trim().toLowerCase() || "";
+                                        return possibleValues.includes(txt);
+                                    });
+
+                                    if (matched.length > 0) {
+                                        const target = matched[matched.length - 1];
+                                        target.scrollIntoView({ block: 'nearest' });
+                                        target.click();
+                                        await new Promise(r => setTimeout(r, 400));
+                                        return true;
+                                    }
+                                    
+                                    document.body.click(); 
+                                    await new Promise(r => setTimeout(r, 200));
+                                    return false;
+                                }
+
+                                const htmlLang = document.documentElement.lang.toLowerCase();
+                                if (htmlLang.includes('vi')) {
+                                    await clickOption(comboboxes[0], [String(day), "0" + day]);
+                                    await clickOption(comboboxes[1], possibleMonths);
+                                    await clickOption(comboboxes[2], [String(year)]);
+                                } else {
+                                    await clickOption(comboboxes[0], possibleMonths);
+                                    await clickOption(comboboxes[1], [String(day), "0" + day]);
+                                    await clickOption(comboboxes[2], [String(year)]);
+                                }
+
+                                callback("SUCCESS");
+                            } catch (err) {
+                                callback("ERROR: " + err.toString());
+                            }
+                        })();
+                        '''
+                        result = driver.execute_async_script(js_script, current_day, current_month, current_year)
+                        if result == "SUCCESS":
+                            print(f"{Colors.color_text(f'[{self.thread_id}] Đã chạy xong JS chọn: {current_day}/{current_month}/{current_year}', Colors.SUCCESS)}")
+                        else:
+                            print(f"{Colors.color_text(f'[{self.thread_id}] JS chạy lỗi: {result}', Colors.WARNING)}")
+                    except Exception as e:
+                        print(f"{Colors.color_text(f'[{self.thread_id}] Lỗi tải khối Ngày Sinh (JS): {e}', Colors.ERROR)}")
+                    time.sleep(self.delay_config['delay_chon_ngay_sinh'])
+
+                    # Chọn Giới tính (1 = Nữ, 2 = Nam)
+                    gender_val = random.choice(["1", "2"])
+                    print(f"{Colors.color_text(f'[{self.thread_id}] Chọn Giới tính...', Colors.INFO)}")
+                    driver.execute_script("""
+                        const val = arguments[0];
+                        let radio = document.querySelector(`input[name="sex"][value="${val}"]`);
+                        if (radio) {
+                            radio.click();
+                            radio.checked = true;
+                            radio.dispatchEvent(new Event('change', { bubbles: true }));
+                        }
+                    """, gender_val)
+                    time.sleep(self.delay_config['delay_chon_gioi_tinh'])
+
+                    # Điền Email / SĐT
+                    print(f"{Colors.color_text(f'[{self.thread_id}] Điền Email/SĐT ({contact_for_signup})...', Colors.INFO)}")
+                    reg_email_el = driver.find_element(By.NAME, "reg_email__")
+                    human_type(reg_email_el, contact_for_signup)
+                    time.sleep(self.delay_config['delay_nhap_sdt_email'])
+
+                    # Nếu Facebook hiện ô nhập lại Email (reg_email_confirmation__)
+                    try:
+                        confirm_els = driver.find_elements(By.NAME, "reg_email_confirmation__")
+                        for cel in confirm_els:
+                            if cel.is_displayed():
+                                print(f"{Colors.color_text(f'[{self.thread_id}] Điền xác nhận lại Email...', Colors.INFO)}")
+                                human_type(cel, contact_for_signup)
+                                break
+                    except: pass
+
+                    # Điền Mật khẩu
+                    print(f"{Colors.color_text(f'[{self.thread_id}] Điền Mật khẩu...', Colors.INFO)}")
+                    reg_pass_el = driver.find_element(By.NAME, "reg_passwd__")
+                    human_type(reg_pass_el, secure_pass)
+                    time.sleep(self.delay_config['delay_nhap_mat_khau'])
+                    
+                    ngam_form = self.delay_config['delay_ngam_form_truoc_submit']
+                    print(f"{Colors.color_text(f'[{self.thread_id}] Đã điền xong. Ngâm form {ngam_form}s trước khi bấm nút Đăng Ký...', Colors.WARNING)}")
+                    time.sleep(ngam_form)
+
+                    uid_moc = 0
+                    if self.mode in ["3", "4"] and imap_service:
+                        uid_moc = imap_service.get_latest_uid()
+                    elif self.mode == "5" and hotmail_service:
+                        print(f"{Colors.color_text(f'[{self.thread_id}] Khởi tạo mốc hộp thư để tránh đọc thư cũ...', Colors.INFO)}")
+                        hotmail_service.init_baseline()
+
+                    print(f"{Colors.color_text(f'[{self.thread_id}] Cuộn trang xuống cuối để tìm nút Gửi...', Colors.INFO)}")
+                    driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+                    time.sleep(1)
+
+                    print(f"{Colors.color_text(f'[{self.thread_id}] Click ra ngoài form để kích hoạt Validate...', Colors.INFO)}")
+                    driver.execute_script("document.body.click();")
+                    
+                    val_wait = self.delay_config['delay_validate_form']
+                    print(f"{Colors.color_text(f'[{self.thread_id}] Chờ form validate... ({val_wait}s)', Colors.WARNING)}")
+                    time.sleep(val_wait)
+                    
+                    with SUBMIT_LOCK:
+                        print(f"{Colors.color_text(f'[{self.thread_id}] Đang tìm và nhấn nút Gửi/Đăng Ký (Sign up)...', Colors.INFO)}")
+                        try:
+                            click_result = driver.execute_script("""
+                                let submitBtn = document.querySelector('button[name="websubmit"], button[type="submit"]');
+
+                                if (!submitBtn) {
+                                    const allClickables = Array.from(document.querySelectorAll('button, div[role="button"]'));
+                                    submitBtn = allClickables.find(b => {
+                                        const text = (b.innerText || b.textContent || "").trim().toLowerCase();
+                                        return text === "submit" || text === "sign up" || text === "đăng ký" || text === "gửi" || text === "next" 
+                                            || text.includes("submit") || text.includes("sign up") || text.includes("đăng ký");
+                                    });
+                                }
+
+                                if (!submitBtn) {
+                                    const spans = Array.from(document.querySelectorAll('span')).filter(s => {
+                                        const t = s.innerText?.trim().toLowerCase() || "";
+                                        return t === "submit" || t === "sign up" || t === "đăng ký" || t === "gửi" || t === "next";
+                                    });
+                                    if (spans.length > 0) {
+                                        let p = spans[0].closest('button, div[role="button"]');
+                                        if (p) submitBtn = p;
+                                    }
+                                }
+
+                                if (submitBtn) {
+                                    submitBtn.disabled = false;
+                                    submitBtn.removeAttribute('disabled');
+                                    submitBtn.style.pointerEvents = 'auto';
+                                    submitBtn.scrollIntoView({ block: 'center' });
+                                    
+                                    submitBtn.focus();
+                                    submitBtn.click(); 
+
+                                    ['mousedown', 'mouseup', 'click'].forEach(eventType => {
+                                        var evt = new MouseEvent(eventType, {
+                                            view: window,
+                                            bubbles: true,
+                                            cancelable: true,
+                                            clientX: submitBtn.getBoundingClientRect().x + 20,
+                                            clientY: submitBtn.getBoundingClientRect().y + 10
+                                        });
+                                        submitBtn.dispatchEvent(evt);
+                                    });
+                                    
+                                    return "CLICKED";
+                                }
+                                
+                                const form = document.querySelector('form');
+                                if (form) {
+                                    form.submit();
+                                    return "FORM_SUBMITTED";
+                                }
+
+                                return "NOT_FOUND";
+                            """)
+                            
+                            if click_result in ["CLICKED", "FORM_SUBMITTED"]:
+                                print(f"{Colors.color_text(f'[{self.thread_id}] ĐÃ BẤM NÚT SUBMIT/GỬI THÀNH CÔNG (Bằng Script)!', Colors.SUCCESS)}")
+                            else:
+                                print(f"{Colors.color_text(f'[{self.thread_id}] JS không tìm thấy, thử click qua Selenium button[type=submit]...', Colors.WARNING)}")
+                                try:
+                                    btn_selenium = driver.find_element(By.CSS_SELECTOR, "button[name='websubmit'], button[type='submit']")
+                                    driver.execute_script("arguments[0].click();", btn_selenium)
+                                    print(f"{Colors.color_text(f'[{self.thread_id}] Đã click nút Submit qua Selenium thành công!', Colors.SUCCESS)}")
+                                except:
+                                    print(f"{Colors.color_text(f'[{self.thread_id}] Không tìm thấy nút qua Selenium, fallback phím ENTER...', Colors.WARNING)}")
+                                    try:
+                                        reg_pass_el.send_keys(Keys.ENTER)
+                                        print(f"{Colors.color_text(f'[{self.thread_id}] Đã bấm ENTER thành công!', Colors.SUCCESS)}")
+                                    except: pass
+
+                        except Exception as ex:
+                            print(f"{Colors.color_text(f'[{self.thread_id}] Lỗi khi chạy Script click nút: {ex}', Colors.WARNING)}")
+                        
+                        sau_sub = self.delay_config['delay_sau_khi_submit']
+                        print(f"{Colors.color_text(f'[{self.thread_id}] Đã bấm gửi form, chờ load OTP ({sau_sub}s)...', Colors.SUCCESS)}")
+                        time.sleep(sau_sub) 
+                    
+                except Exception as e:
+                    print(f"{Colors.color_text(f'[{self.thread_id}] Lỗi quá trình điền form: {e}', Colors.ERROR)}")
+                    time.sleep(5)
+                    return False
+
+                # ==================== NẾU DÙNG MỒI SĐT +84: ĐỔI SANG XÁC NHẬN EMAIL ====================
+                if use_phone_bait:
+                    print(f"{Colors.color_text(f'[{self.thread_id}] Đang thực hiện đổi từ SĐT mồi ({contact_for_signup}) sang Email ({used_email})...', Colors.INFO)}")
+                    try:
+                        driver.execute_script("""
+                            let links = Array.from(document.querySelectorAll('a, button, div[role="button"], span'));
+                            for (let el of links) {
+                                let txt = (el.innerText || el.textContent || "").trim().toLowerCase();
+                                if (txt.includes('cập nhật thông tin liên hệ') || txt.includes('update contact info') || txt.includes('xác nhận bằng email') || txt.includes('confirm by email') || txt.includes('thay đổi thông tin')) {
+                                    let btn = el.closest('a, button, [role="button"]') || el;
+                                    btn.click();
+                                    break;
+                                }
+                            }
+                        """)
+                        time.sleep(4)
+                        new_mail_inputs = driver.find_elements(By.XPATH, "//input[@name='new' or @name='contactpoint' or @type='email' or @type='text']")
+                        for nmi in new_mail_inputs:
+                            if nmi.is_displayed():
+                                human_type(nmi, used_email)
+                                break
+                        time.sleep(1.5)
+                        driver.execute_script("""
+                            let btns = Array.from(document.querySelectorAll('button, input[type="submit"], div[role="button"]'));
+                            for (let b of btns) {
+                                let txt = (b.innerText || b.value || b.textContent || "").trim().toLowerCase();
+                                if (['thêm', 'add', 'cập nhật', 'update', 'tiếp tục', 'continue'].includes(txt) || b.name === 'change') {
+                                    b.click();
+                                    break;
+                                }
+                            }
+                        """)
+                        time.sleep(6)
+                    except Exception as e:
+                        print(f"{Colors.color_text(f'[{self.thread_id}] Cảnh báo khi đổi SĐT sang Email: {e}', Colors.WARNING)}")
+
+                # ==================== NHẬN DIỆN Ô NHẬP OTP ĐA LỚP ====================
+                print(f"{Colors.color_text(f'[{self.thread_id}] Chờ giao diện nhập OTP...', Colors.INFO)}")
+                otp_input = None
+                locators = [
+                    (By.NAME, "code"),
+                    (By.ID, "code_in_cliff"),
+                    (By.NAME, "email_confirmation_code"),
+                    (By.NAME, "confirmationCode"),
+                    (By.XPATH, "//input[contains(@name, 'code')]"),
+                    (By.XPATH, "//input[contains(@aria-label, 'FB-')]"),
+                    (By.XPATH, "//input[contains(@aria-label, 'Mã')]"),
+                    (By.XPATH, "//input[contains(@aria-label, 'Code')]"),
+                    (By.XPATH, "//input[@type='text' or @type='number' or @type='tel']")
+                ]
+                time.sleep(3)
+                
+                for loc in locators:
+                    try:
+                        els = driver.find_elements(*loc)
+                        for el in els:
+                            if el.is_displayed():
+                                otp_input = el
+                                break
+                        if otp_input: break
+                    except: pass
+                
+                if not otp_input:
+                    try:
+                        driver.execute_script("window.scrollTo(0, document.body.scrollHeight/2);")
+                        time.sleep(1)
+                        otp_input = driver.execute_script("return document.querySelector('input[type=\"text\"], input[name*=\"code\"], input');")
+                    except: pass
+
+                if not otp_input:
+                    print(f"{Colors.color_text(f'[{self.thread_id}] Lỗi: Không thể tìm thấy ô nhập OTP trên giao diện.', Colors.ERROR)}")
+                    time.sleep(5)
+                    return False
+                
+                print(f"{Colors.color_text(f'[{self.thread_id}] Đã nhận diện được ô nhập OTP thành công!', Colors.SUCCESS)}")
+                
+                # ==================== CƠ CHẾ LẤY & NGÂM OTP ĐĂNG KÝ VỚI VÒNG LẶP RETRY ====================
+                otp_code = None
+                max_resend_attempts = int(self.delay_config.get('so_lan_thu_get_code', 2))
+                
+                for attempt in range(max_resend_attempts + 1):
+                    if STOP_EVENT.is_set(): return False
+                    
+                    start_otp_wait = time.time()
+                    
+                    if self.mode == "2" and not (mail_service and mail_service.token):
+                        with OTP_LOCK:
+                            PAUSE_FOR_INPUT.clear()
+                            built_in_print(f"\n{Colors.color_text(f'[{self.thread_id}] Lần {attempt+1}: MỜI SẾP NHẬP OTP CHO [{used_email}] TỪ BÀN PHÍM: ', Colors.SUCCESS)}", end="")
+                            otp_code = input().strip()
+                            PAUSE_FOR_INPUT.set()
+                    else:
+                        target_wait = self.delay_config['delay_ngam_otp'] if self.mode in ["3", "4", "5", "6"] else 0
+                        if target_wait > 0:
+                            print(f"{Colors.color_text(f'[{self.thread_id}] Lần {attempt+1}: Bắt đầu quét OTP và ngâm form {target_wait}s...', Colors.INFO)}")
+                        else:
+                            print(f"{Colors.color_text(f'[{self.thread_id}] Lần {attempt+1}: Đang chờ lấy mã OTP...', Colors.INFO)}")
+
+                        timeout_per_attempt = 100 
+                        if self.mode == "1" or (self.mode == "2" and mail_service and mail_service.token):
+                            otp_code = mail_service.get_otp_code(timeout=timeout_per_attempt, force_8_digits=False)
+                        elif self.mode in ["3", "4"]:
+                            otp_code = imap_service.get_otp_code(target_email=used_email, since_uid=uid_moc, timeout=timeout_per_attempt, force_8_digits=False)
+                        elif self.mode == "5":
+                            otp_code = hotmail_service.get_otp_code(timeout=100, force_8_digits=False) 
+                        elif self.mode == "6" and autosms_service:
+                            otp_code = autosms_service.get_otp_code(timeout=120)
+                    
+                    if otp_code:
+                        if self.mode in ["3", "4", "5", "6"]:
+                            elapsed = time.time() - start
