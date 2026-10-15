@@ -158,7 +158,7 @@ def banner():
 ╚██████╔╝██║  ██║██║  ██║╚██████╔╝██║ ╚═╝ ██║███████╗
  ╚═════╝ ╚═╝  ╚═╝╚═╝  ╚═╝ ╚═════╝ ╚═╝     ╚═╝╚══════╝
 {Colors.RESET}""")
-    built_in_print(f"{Colors.INFO}Phiên Bản: v20.8 (Fixed Phone Bait Popup, Avatar Upload & 2FA Password) {Colors.RESET}")
+    built_in_print(f"{Colors.INFO}Phiên Bản: v20.9 (Direct Avatar Upload & Anti-Post Misclick) {Colors.RESET}")
     built_in_print(f"{Colors.LINE}{'─'*75}{Colors.RESET}\n")
 
 def load_config():
@@ -1057,32 +1057,40 @@ class starts(threading.Thread):
                         time.sleep(0.5)
                     except: pass
 
-                def super_click(element):
+                def super_click(element, offset_y=0):
                     if not element: return False
                     try:
                         driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", element)
                         time.sleep(0.2)
                     except: pass
                     try:
-                        ActionChains(driver).move_to_element(element).pause(0.1).click().perform()
+                        if offset_y != 0:
+                            ActionChains(driver).move_to_element_with_offset(element, 0, offset_y).pause(0.1).click().perform()
+                        else:
+                            ActionChains(driver).move_to_element(element).pause(0.1).click().perform()
                     except:
                         try: element.click()
                         except: pass
                     try:
                         driver.execute_script("""
                             let el = arguments[0];
+                            let offY = arguments[1] || 0;
                             if (!el) return;
                             const r = el.getBoundingClientRect();
                             const cx = r.left + r.width / 2;
-                            const cy = r.top + r.height / 2;
-                            let targets = [el, el.parentElement, el.closest('div[role="button"], div[role="menuitem"], a, button, [tabindex]')].filter(Boolean);
+                            const cy = r.top + (r.height / 2) + offY;
+                            let pointEl = document.elementFromPoint(cx, cy);
+                            let targets = [pointEl, el, el.parentElement, el.closest('div[role="button"], div[role="menuitem"], a, button, [tabindex]')].filter(Boolean);
+                            let seen = new Set();
                             for (let t of targets) {
+                                if (seen.has(t)) continue;
+                                seen.add(t);
                                 ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click'].forEach(evt => {
                                     t.dispatchEvent(new MouseEvent(evt, {view: window, bubbles: true, cancelable: true, clientX: cx, clientY: cy}));
                                 });
                                 try { t.click(); } catch(e) {}
                             }
-                        """, element)
+                        """, element, offset_y)
                     except: pass
                     return True
 
@@ -1438,11 +1446,10 @@ class starts(threading.Thread):
                 time.sleep(5)
                 return False
 
-            # ==================== XỬ LÝ MỒI SĐT ĐỔI SANG EMAIL (FIX CHUẨN CLICK POPUP MỚI) ====================
+            # ==================== XỬ LÝ MỒI SĐT ĐỔI SANG EMAIL ====================
             if use_phone_bait:
                 print(f"{Colors.color_text(f'[{self.thread_id}] Bắt đầu luồng Mồi SĐT: Đổi từ ({contact_for_signup}) sang Email ({used_email})...', Colors.INFO)}")
                 try:
-                    # Đánh dấu ô nhập OTP của SĐT cũ để tránh nhập nhầm
                     driver.execute_script("""
                         document.querySelectorAll('input').forEach(inp => {
                             if (inp.offsetWidth > 0 && inp.offsetHeight > 0) {
@@ -1451,7 +1458,6 @@ class starts(threading.Thread):
                         });
                     """)
 
-                    # Bước 1: Tìm và click nút "Tôi không nhận được mã"
                     didnt_receive_btn = None
                     for _ in range(6):
                         didnt_receive_btn = driver.execute_script("""
@@ -1485,8 +1491,6 @@ class starts(threading.Thread):
 
                     time.sleep(3)
 
-                    # Bước 2: Tìm chính xác dòng "Thay đổi số di động hoặc email" trong Popup và click
-                    clicked_change_row = False
                     for attempt_chg in range(6):
                         change_el = driver.execute_script("""
                             let candidates = [];
@@ -1517,16 +1521,13 @@ class starts(threading.Thread):
                                     candidates.push({el: el, area: r.width * r.height});
                                 }
                             }
-                            // Ưu tiên phần tử con nhỏ nhất chứa đúng dòng chữ để không bấm nhầm khung bao ngoài
                             candidates.sort((a, b) => a.area - b.area);
                             return candidates.length > 0 ? candidates[0].el : null;
                         """)
                         if change_el:
                             super_click(change_el)
                             print(f"{Colors.color_text(f'[{self.thread_id}] Đã bấm \"Thay đổi số di động hoặc email\"!', Colors.SUCCESS)}")
-                            clicked_change_row = True
                             time.sleep(3)
-                            # Kiểm tra xem bảng "Bạn không nhận được mã?" đã chuyển sang ô nhập mới chưa
                             still_on_menu = driver.execute_script("""
                                 let txt = (document.body.innerText || "").toLowerCase();
                                 return txt.includes('gửi lại mã xác nhận') && txt.includes('thay đổi số di động hoặc email');
@@ -1537,7 +1538,6 @@ class starts(threading.Thread):
 
                     time.sleep(2.5)
 
-                    # Bước 3: Tìm ô nhập Email mới trên giao diện/hộp thoại thay đổi liên hệ
                     new_email_inp = None
                     for _ in range(8):
                         new_email_inp = driver.execute_script("""
@@ -1547,18 +1547,15 @@ class starts(threading.Thread):
                                 const s = window.getComputedStyle(el);
                                 return r.width > 20 && r.height > 15 && s.display !== 'none' && s.visibility !== 'hidden';
                             }
-                            // 1. Ưu tiên input trong Dialog đang mở
                             let dialogs = Array.from(document.querySelectorAll('div[role="dialog"]')).filter(isVis);
                             if (dialogs.length > 0) {
                                 let dInps = Array.from(dialogs[dialogs.length - 1].querySelectorAll('input:not([type="hidden"]):not([type="checkbox"]):not([type="radio"])')).filter(isVis);
                                 if (dInps.length > 0) return dInps[dInps.length - 1];
                             }
-                            // 2. Tìm input mới (không phải ô mã xác nhận cũ)
                             let allInps = Array.from(document.querySelectorAll('input:not([type="hidden"]):not([type="checkbox"]):not([type="radio"])')).filter(isVis);
                             let freshInps = allInps.filter(i => i.getAttribute('data-old-otp-input') !== 'true');
                             if (freshInps.length > 0) return freshInps[freshInps.length - 1];
 
-                            // 3. Nếu Facebook tái sử dụng lại thẻ input trên màn hình đổi số/email
                             let bodyTxt = (document.body.innerText || "").toLowerCase();
                             if (allInps.length === 1 && (bodyTxt.includes('di động hoặc email') || bodyTxt.includes('mobile number or email') || bodyTxt.includes('email mới') || bodyTxt.includes('thông tin liên hệ'))) {
                                 return allInps[0];
@@ -1576,7 +1573,6 @@ class starts(threading.Thread):
                         except Exception:
                             pass
 
-                        # Đảm bảo giá trị trong ô input chính xác tuyệt đối là used_email
                         driver.execute_script("""
                             let inp = arguments[0];
                             let val = arguments[1];
@@ -1589,13 +1585,11 @@ class starts(threading.Thread):
                         """, new_email_inp, used_email)
                         time.sleep(1.5)
 
-                        # Cập nhật lại mốc hộp thư trước khi bấm nút Xác nhận/Tiếp tục
                         if self.mode in ["3", "4"] and imap_service:
                             uid_moc = imap_service.get_latest_uid()
                         elif self.mode == "5" and hotmail_service:
                             hotmail_service.init_baseline()
 
-                        # Bước 4: Bấm nút Tiếp tục / Thêm / Xác nhận / Cập nhật để gửi OTP về Email
                         confirm_email_btn = driver.execute_script("""
                             function isVis(el) {
                                 if (!el) return false;
@@ -1895,184 +1889,348 @@ class starts(threading.Thread):
 
             print(f"{Colors.color_text(f'[{self.thread_id}] TÀI KHOẢN SỐNG (UID: {fb_uid})! Chuẩn bị up Avatar...', Colors.SUCCESS)}")
 
-            # ==================== UP AVATAR CHUẨN THEO LUỒNG 3 BƯỚC CỦA TRANG CÁ NHÂN ====================
+            # ==================== UP AVATAR KÉP: TRANG CÁ NHÂN + ĐƯỜNG DẪN THẲNG ACCOUNTS CENTER ====================
             if self.avatar_folder and os.path.exists(self.avatar_folder):
                 images = [f for f in os.listdir(self.avatar_folder) if f.lower().endswith(('.png', '.jpg', '.jpeg', '.webp'))]
                 if images:
-                    print(f"{Colors.color_text(f'[{self.thread_id}] Bắt đầu quy trình up Avatar từ URL trang cá nhân...', Colors.INFO)}")
+                    image_path = os.path.abspath(os.path.join(self.avatar_folder, random.choice(images)))
+                    avatar_uploaded_ok = False
+
+                    # --- PHƯƠNG ÁN 1: ĐƯỜNG DẪN THẲNG TỚI HỒ SƠ & ẢNH ĐẠI DIỆN TRONG META ACCOUNTS CENTER ---
+                    # (Không có khung Đăng bài, không có Ảnh bìa -> Tỷ lệ bấm nhầm vào Đăng bài là 0%)
+                    print(f"{Colors.color_text(f'[{self.thread_id}] [Cách 1] Truy cập đường dẫn thẳng Up Avatar tại Trung tâm tài khoản Meta...', Colors.INFO)}")
                     try:
-                        image_path = os.path.abspath(os.path.join(self.avatar_folder, random.choice(images)))
-                        driver.get("https://www.facebook.com/profile.php")
-                        time.sleep(8)
-                        
-                        if "checkpoint" in driver.current_url.lower() or "suspended" in driver.current_url.lower():
-                            print(f"{Colors.color_text(f'[{self.thread_id}] Acc vừa die (Checkpoint) khi truy cập profile! Bỏ qua up avatar.', Colors.ERROR)}")
-                        else:
-                            # Khóa toàn bộ input[type="file"] của khung Đăng bài viết (Timeline) để không bao giờ gửi nhầm
+                        driver.get("https://accountscenter.facebook.com/profiles/")
+                        time.sleep(6)
+
+                        if "checkpoint" not in driver.current_url.lower() and "suspended" not in driver.current_url.lower():
+                            # Chặn cửa sổ File Explorer của Windows khi click vào nút tải ảnh
                             driver.execute_script("""
-                                document.querySelectorAll('input[type="file"]').forEach(inp => {
-                                    inp.setAttribute('data-not-avatar', 'true');
-                                });
-                                window.__avatarFileInput = null;
-                                if (!window.__hookedAvatarFileClick) {
-                                    window.__origFileClick = window.HTMLInputElement.prototype.click;
+                                window.__capturedAvatarInput = null;
+                                if (!window.__blockNativeFileDialog) {
+                                    window.addEventListener('click', function(e) {
+                                        if (e.target && e.target.tagName === 'INPUT' && e.target.type === 'file') {
+                                            window.__capturedAvatarInput = e.target;
+                                            e.preventDefault();
+                                        }
+                                    }, true);
+                                    window.__origInputClick = window.HTMLInputElement.prototype.click;
                                     window.HTMLInputElement.prototype.click = function() {
                                         if (this.type === 'file') {
-                                            this.removeAttribute('data-not-avatar');
-                                            this.setAttribute('data-is-avatar-input', 'true');
-                                            window.__avatarFileInput = this;
-                                            return; // Chặn mở cửa sổ File Explorer của Windows
+                                            window.__capturedAvatarInput = this;
+                                            return;
                                         }
-                                        return window.__origFileClick.apply(this, arguments);
+                                        return window.__origInputClick.apply(this, arguments);
                                     };
-                                    window.__hookedAvatarFileClick = true;
+                                    window.__blockNativeFileDialog = true;
                                 }
                             """)
 
-                            # Bước 1: Tìm và click vào vòng tròn Avatar trên trang cá nhân
-                            avatar_circle_el = driver.execute_script("""
-                                // 1. Tìm theo aria-label ảnh đại diện
-                                let byAria = Array.from(document.querySelectorAll('[aria-label*="ảnh đại diện" i], [aria-label*="profile picture" i], [aria-label*="thêm ảnh" i]'));
-                                for (let el of byAria) {
-                                    let r = el.getBoundingClientRect();
-                                    if (r.width >= 32 && r.height >= 32 && r.top > 40 && r.top < 550) {
-                                        return el.closest('div[role="button"], a, button') || el;
-                                    }
-                                }
-                                // 2. Tìm vòng tròn SVG Avatar (kích thước khoảng 120px - 210px ở đầu trang cá nhân)
-                                let svgs = Array.from(document.querySelectorAll('svg, div[role="button"], a[role="link"]'));
-                                let bestSvg = null;
-                                for (let s of svgs) {
-                                    let r = s.getBoundingClientRect();
-                                    if (r.top > 70 && r.top < 520 && r.width >= 100 && r.width <= 220 && Math.abs(r.width - r.height) <= 25) {
-                                        bestSvg = s.closest('div[role="button"], a') || s;
-                                        break;
-                                    }
-                                }
-                                return bestSvg;
-                            """)
-
-                            if avatar_circle_el:
-                                super_click(avatar_circle_el)
-                                print(f"{Colors.color_text(f'[{self.thread_id}] Đã click vào vòng tròn Avatar! Chờ menu \"Chọn ảnh đại diện\"...', Colors.INFO)}")
-                                time.sleep(2.5)
-
-                            # Bước 2: Bấm vào mục "Chọn ảnh đại diện" (Choose profile picture) trong menu nhỏ vừa xổ ra
-                            choose_avatar_menu_el = None
-                            for _ in range(5):
-                                choose_avatar_menu_el = driver.execute_script("""
-                                    let candidates = [];
-                                    let els = Array.from(document.querySelectorAll('div[role="menuitem"], div[role="button"], a, span, div'));
+                            # Bước 1: Bấm vào hồ sơ người dùng trong danh sách Profiles
+                            for _ in range(4):
+                                prof_btn = driver.execute_script("""
+                                    let targetUser = arguments[0].toLowerCase();
+                                    let els = Array.from(document.querySelectorAll('div[role="button"], a[role="link"], button'));
                                     for (let el of els) {
                                         let r = el.getBoundingClientRect();
-                                        if (r.width < 40 || r.height < 14 || r.height > 75) continue;
-                                        let s = window.getComputedStyle(el);
-                                        if (s.display === 'none' || s.visibility === 'hidden' || s.opacity === '0') continue;
-                                        let txt = (el.innerText || el.textContent || "").replace(/\\s+/g, " ").trim().toLowerCase();
-                                        if (
-                                            txt === 'chọn ảnh đại diện' ||
-                                            txt === 'cập nhật ảnh đại diện' ||
-                                            txt === 'thêm ảnh đại diện' ||
-                                            txt === 'choose profile picture' ||
-                                            txt === 'update profile picture'
-                                        ) {
-                                            candidates.push({el: el.closest('div[role="menuitem"], div[role="button"], a') || el, area: r.width * r.height});
+                                        if (r.width < 80 || r.height < 30 || r.height > 140) continue;
+                                        let txt = (el.innerText || el.textContent || '').replace(/\\s+/g, ' ').trim().toLowerCase();
+                                        if ((txt.includes(targetUser) || txt.includes('facebook')) && txt.length < 90) {
+                                            return el;
+                                        }
+                                    }
+                                    return null;
+                                """, first_name_fb)
+                                if prof_btn:
+                                    super_click(prof_btn)
+                                    time.sleep(3.5)
+                                    break
+                                time.sleep(1.5)
+
+                            # Bước 2: Bấm vào mục "Ảnh đại diện" (Profile picture)
+                            for _ in range(4):
+                                pic_row_btn = driver.execute_script("""
+                                    let candidates = [];
+                                    let els = Array.from(document.querySelectorAll('div[role="button"], a[role="link"], button, span, div'));
+                                    for (let el of els) {
+                                        let r = el.getBoundingClientRect();
+                                        if (r.width < 40 || r.height < 16 || r.height > 90) continue;
+                                        let txt = (el.innerText || el.textContent || '').replace(/\\s+/g, ' ').trim().toLowerCase();
+                                        if (txt === 'ảnh đại diện' || txt === 'profile picture') {
+                                            candidates.push({el: el.closest('div[role="button"], a[role="link"], button') || el, area: r.width * r.height});
                                         }
                                     }
                                     candidates.sort((a, b) => a.area - b.area);
                                     return candidates.length > 0 ? candidates[0].el : null;
                                 """)
-                                if choose_avatar_menu_el:
-                                    super_click(choose_avatar_menu_el)
-                                    print(f"{Colors.color_text(f'[{self.thread_id}] Đã bấm \"Chọn ảnh đại diện\"! Chờ bảng \"+ Tải ảnh lên\"...', Colors.SUCCESS)}")
+                                if pic_row_btn:
+                                    super_click(pic_row_btn)
+                                    print(f"{Colors.color_text(f'[{self.thread_id}] Đã mở mục \"Ảnh đại diện\" trực tiếp!', Colors.SUCCESS)}")
+                                    time.sleep(3.5)
                                     break
-                                time.sleep(1.2)
+                                time.sleep(1.5)
 
-                            time.sleep(3)
-
-                            # Bước 3: Bấm vào "+ Tải ảnh lên" (Upload photo) trong hộp thoại Chọn ảnh đại diện
-                            upload_photo_btn = driver.execute_script("""
-                                let dialogs = Array.from(document.querySelectorAll('div[role="dialog"]'));
-                                let scope = dialogs.length > 0 ? dialogs[dialogs.length - 1] : document.body;
-                                let els = Array.from(scope.querySelectorAll('div[role="button"], button, label, a, span'));
-                                for (let el of els) {
-                                    let r = el.getBoundingClientRect();
-                                    if (r.width < 30 || r.height < 15 || r.height > 85) continue;
-                                    let txt = (el.innerText || el.textContent || "").replace(/\\s+/g, " ").trim().toLowerCase();
-                                    let aria = (el.getAttribute('aria-label') || "").trim().toLowerCase();
-                                    if (
-                                        txt === 'tải ảnh lên' ||
-                                        txt === '+ tải ảnh lên' ||
-                                        txt.includes('tải ảnh lên') ||
-                                        txt.includes('upload photo') ||
-                                        aria.includes('tải ảnh lên') ||
-                                        aria.includes('upload photo')
-                                    ) {
-                                        return el.closest('div[role="button"], button, label, a') || el;
+                            # Bước 3: Bấm "+ Tải ảnh mới lên" (Upload new photo) nếu chưa thấy input[type="file"]
+                            ac_file_input = driver.execute_script("return window.__capturedAvatarInput || document.querySelector('input[type=\"file\"]');")
+                            if not ac_file_input:
+                                upload_new_btn = driver.execute_script("""
+                                    let els = Array.from(document.querySelectorAll('div[role="button"], button, label, span'));
+                                    for (let el of els) {
+                                        let r = el.getBoundingClientRect();
+                                        if (r.width < 40 || r.height < 16 || r.height > 90) continue;
+                                        let txt = (el.innerText || el.textContent || '').replace(/\\s+/g, ' ').trim().toLowerCase();
+                                        if (txt.includes('tải ảnh mới lên') || txt.includes('tải ảnh lên') || txt.includes('upload new photo') || txt.includes('upload photo')) {
+                                            return el.closest('div[role="button"], button, label') || el;
+                                        }
                                     }
-                                }
-                                return null;
-                            """)
+                                    return null;
+                                """)
+                                if upload_new_btn:
+                                    super_click(upload_new_btn)
+                                    time.sleep(2)
+                                ac_file_input = driver.execute_script("return window.__capturedAvatarInput || document.querySelector('input[type=\"file\"]');")
 
-                            if upload_photo_btn:
-                                super_click(upload_photo_btn)
-                                print(f"{Colors.color_text(f'[{self.thread_id}] Đã bấm \"+ Tải ảnh lên\"!', Colors.INFO)}")
-                                time.sleep(2)
+                            if ac_file_input:
+                                ac_file_input.send_keys(image_path)
+                                print(f"{Colors.color_text(f'[{self.thread_id}] Đã đẩy file ảnh vào trình Up Avatar trực tiếp! Chờ 5s để bấm Lưu...', Colors.SUCCESS)}")
+                                time.sleep(5)
 
-                            # Bước 4: Lấy đúng thẻ <input type="file"> của Avatar (tuyệt đối không lấy input của Đăng bài viết)
-                            avatar_file_input = driver.execute_script("""
-                                if (window.__avatarFileInput) return window.__avatarFileInput;
-                                let hooked = document.querySelector('input[type="file"][data-is-avatar-input="true"]');
-                                if (hooked) return hooked;
-                                let dialogs = Array.from(document.querySelectorAll('div[role="dialog"]'));
-                                for (let d of dialogs) {
-                                    let f = d.querySelector('input[type="file"]');
-                                    if (f) return f;
-                                }
-                                let freshFiles = Array.from(document.querySelectorAll('input[type="file"]:not([data-not-avatar="true"])'));
-                                if (freshFiles.length > 0) return freshFiles[freshFiles.length - 1];
-                                return null;
-                            """)
+                                for _ in range(8):
+                                    save_ac_btn = driver.execute_script("""
+                                        let btns = Array.from(document.querySelectorAll('div[role="button"], button'));
+                                        btns.reverse();
+                                        for (let b of btns) {
+                                            let r = b.getBoundingClientRect();
+                                            if (r.width < 30 || r.height < 15) continue;
+                                            let txt = (b.innerText || b.textContent || '').replace(/\\s+/g, ' ').trim().toLowerCase();
+                                            let aria = (b.getAttribute('aria-label') || '').trim().toLowerCase();
+                                            if (txt === 'lưu' || txt === 'save' || aria === 'lưu' || aria === 'save') {
+                                                if (!b.disabled && b.getAttribute('aria-disabled') !== 'true') return b;
+                                            }
+                                        }
+                                        return null;
+                                    """)
+                                    if save_ac_btn:
+                                        super_click(save_ac_btn)
+                                        print(f"{Colors.color_text(f'[{self.thread_id}] ĐÃ BẤM LƯU AVATAR THÀNH CÔNG QUA ĐƯỜNG DẪN THẲNG!', Colors.SUCCESS)}")
+                                        avatar_uploaded_ok = True
+                                        time.sleep(8)
+                                        break
+                                    time.sleep(1.5)
+                    except Exception as e_ac:
+                        print(f"{Colors.color_text(f'[{self.thread_id}] Cảnh báo ở Cách 1 (Accounts Center): {e_ac}', Colors.WARNING)}")
 
-                            if avatar_file_input:
-                                avatar_file_input.send_keys(image_path)
-                                print(f"{Colors.color_text(f'[{self.thread_id}] Đã truyền ảnh vào đúng khung Avatar! Chờ 6s để bấm Lưu...', Colors.SUCCESS)}")
-                                time.sleep(6)
+                    # --- PHƯƠNG ÁN 2 (DỰ PHÒNG TRÊN TRANG CÁ NHÂN PROFILE.PHP CHUẨN 3 BƯỚC, ĐÃ KHÓA CHẶN ĐĂNG BÀI) ---
+                    if not avatar_uploaded_ok:
+                        print(f"{Colors.color_text(f'[{self.thread_id}] [Cách 2] Mở trang cá nhân profile.php để Up Avatar theo 3 bước...', Colors.INFO)}")
+                        try:
+                            driver.get("https://www.facebook.com/profile.php")
+                            time.sleep(8)
 
-                                # Bước 5: Tìm và bấm nút "Lưu" (Save) trên hộp thoại cắt/xem trước ảnh đại diện
-                                save_avatar_btn = None
-                                for _ in range(6):
-                                    save_avatar_btn = driver.execute_script("""
+                            if "checkpoint" not in driver.current_url.lower() and "suspended" not in driver.current_url.lower():
+                                # Khóa tất cả input[type="file"] có sẵn của khung Đăng bài và chặn mở cửa sổ File Explorer
+                                driver.execute_script("""
+                                    document.querySelectorAll('input[type="file"]').forEach(inp => {
+                                        inp.setAttribute('data-not-avatar', 'true');
+                                    });
+                                    window.__capturedAvatarInput = null;
+                                    window.addEventListener('click', function(e) {
+                                        if (e.target && e.target.tagName === 'INPUT' && e.target.type === 'file') {
+                                            e.target.removeAttribute('data-not-avatar');
+                                            window.__capturedAvatarInput = e.target;
+                                            e.preventDefault();
+                                        }
+                                    }, true);
+                                    window.__origInputClick = window.HTMLInputElement.prototype.click;
+                                    window.HTMLInputElement.prototype.click = function() {
+                                        if (this.type === 'file') {
+                                            this.removeAttribute('data-not-avatar');
+                                            window.__capturedAvatarInput = this;
+                                            return;
+                                        }
+                                        return window.__origInputClick.apply(this, arguments);
+                                    };
+                                """)
+
+                                # Bước 1: Định vị đúng vòng tròn Avatar nằm bên trái thẻ <h1> Tên tài khoản (Tuyệt đối KHÔNG dùng từ khóa "thêm ảnh")
+                                avatar_circle_el = driver.execute_script("""
+                                    // 1. Tìm chính xác theo aria-label của riêng vòng tròn Avatar
+                                    let exactAria = document.querySelector(
+                                        '[aria-label="Hành động với ảnh đại diện"], [aria-label="Profile picture actions"], [aria-label="Cập nhật ảnh đại diện"], [aria-label="Update profile picture"]'
+                                    );
+                                    if (exactAria) {
+                                        let r = exactAria.getBoundingClientRect();
+                                        if (r.width >= 32 && r.height >= 32) return exactAria;
+                                    }
+
+                                    // 2. Định vị vòng tròn SVG Avatar dựa trên vị trí bên trái thẻ <h1> (Tên người dùng)
+                                    let h1s = Array.from(document.querySelectorAll('h1'));
+                                    let nameH1 = h1s.find(h => {
+                                        let r = h.getBoundingClientRect();
+                                        return r.top > 60 && r.top < 550 && (h.innerText || '').trim().length > 2;
+                                    });
+                                    let maxTop = nameH1 ? (nameH1.getBoundingClientRect().bottom + 60) : 480;
+
+                                    let svgs = Array.from(document.querySelectorAll('svg'));
+                                    for (let s of svgs) {
+                                        let r = s.getBoundingClientRect();
+                                        if (r.top > 70 && r.top < maxTop && r.width >= 90 && r.width <= 210 && Math.abs(r.width - r.height) <= 15) {
+                                            if (s.querySelector('image, mask, g')) {
+                                                return s.closest('div[role="button"], a') || s;
+                                            }
+                                        }
+                                    }
+                                    return null;
+                                """)
+
+                                if avatar_circle_el:
+                                    # Click dịch xuống +18px từ tâm vòng tròn để tránh bong bóng "Chia sẻ suy nghĩ..." ở mép trên
+                                    super_click(avatar_circle_el, offset_y=18)
+                                    print(f"{Colors.color_text(f'[{self.thread_id}] Đã click vào vòng tròn Avatar! Chờ menu \"Chọn ảnh đại diện\"...', Colors.INFO)}")
+                                    time.sleep(2.5)
+
+                                # Bước 2: Bấm vào mục "Chọn ảnh đại diện" trong menu nhỏ vừa xổ ra
+                                clicked_choose_menu = False
+                                for _ in range(5):
+                                    choose_item = driver.execute_script("""
+                                        let candidates = [];
+                                        let els = Array.from(document.querySelectorAll('div[role="menuitem"], div[role="button"], a, span'));
+                                        for (let el of els) {
+                                            let r = el.getBoundingClientRect();
+                                            if (r.width < 40 || r.height < 14 || r.height > 70) continue;
+                                            let s = window.getComputedStyle(el);
+                                            if (s.display === 'none' || s.visibility === 'hidden' || s.opacity === '0') continue;
+                                            let txt = (el.innerText || el.textContent || '').replace(/\\s+/g, ' ').trim().toLowerCase();
+                                            if (
+                                                txt === 'chọn ảnh đại diện' ||
+                                                txt === 'cập nhật ảnh đại diện' ||
+                                                txt === 'choose profile picture' ||
+                                                txt === 'update profile picture'
+                                            ) {
+                                                candidates.push({el: el.closest('div[role="menuitem"], div[role="button"], a') || el, area: r.width * r.height});
+                                            }
+                                        }
+                                        candidates.sort((a, b) => a.area - b.area);
+                                        return candidates.length > 0 ? candidates[0].el : null;
+                                    """)
+                                    if choose_item:
+                                        super_click(choose_item)
+                                        clicked_choose_menu = True
+                                        print(f"{Colors.color_text(f'[{self.thread_id}] Đã bấm \"Chọn ảnh đại diện\"!', Colors.SUCCESS)}")
+                                        break
+                                    time.sleep(1)
+
+                                # Dự phòng: Nếu menu nhỏ không hiện, bấm nút "Chỉnh sửa trang cá nhân" -> bấm "Thêm" ở mục Ảnh đại diện
+                                if not clicked_choose_menu:
+                                    edit_prof_btn = driver.execute_script("""
+                                        let btns = Array.from(document.querySelectorAll('div[role="button"], a, button, span'));
+                                        for (let b of btns) {
+                                            let r = b.getBoundingClientRect();
+                                            if (r.width < 50 || r.height < 20 || r.height > 65) continue;
+                                            let txt = (b.innerText || b.textContent || '').replace(/\\s+/g, ' ').trim().toLowerCase();
+                                            if (txt === 'chỉnh sửa trang cá nhân' || txt === 'edit profile') {
+                                                return b.closest('div[role="button"], a, button') || b;
+                                            }
+                                        }
+                                        return null;
+                                    """)
+                                    if edit_prof_btn:
+                                        super_click(edit_prof_btn)
+                                        print(f"{Colors.color_text(f'[{self.thread_id}] Đã bấm \"Chỉnh sửa trang cá nhân\" để mở mục Ảnh đại diện...', Colors.INFO)}")
+                                        time.sleep(3)
+                                        add_pic_btn = driver.execute_script("""
+                                            let dialogs = Array.from(document.querySelectorAll('div[role="dialog"]'));
+                                            if (dialogs.length === 0) return null;
+                                            let dlg = dialogs[dialogs.length - 1];
+                                            let btns = Array.from(dlg.querySelectorAll('div[role="button"], button, span'));
+                                            for (let b of btns) {
+                                                let txt = (b.innerText || b.textContent || '').replace(/\\s+/g, ' ').trim().toLowerCase();
+                                                let aria = (b.getAttribute('aria-label') || '').trim().toLowerCase();
+                                                if (txt === 'thêm' || txt === 'chỉnh sửa' || txt === 'add' || txt === 'edit' || aria.includes('ảnh đại diện')) {
+                                                    return b.closest('div[role="button"], button') || b;
+                                                }
+                                            }
+                                            return null;
+                                        """)
+                                        if add_pic_btn:
+                                            super_click(add_pic_btn)
+                                            time.sleep(2.5)
+
+                                time.sleep(3)
+
+                                # Bước 3: Kiểm tra hộp thoại "Chọn ảnh đại diện" (chứa nút "+ Tải ảnh lên" | "Thêm khung") và lấy input[type="file"]
+                                avatar_dialog_file_input = driver.execute_script("""
+                                    let dialogs = Array.from(document.querySelectorAll('div[role="dialog"]'));
+                                    for (let d of dialogs) {
+                                        let dTxt = (d.innerText || '').toLowerCase();
+                                        // Chỉ chấp nhận dialog của Chọn ảnh đại diện (tuyệt đối không lấy dialog Tạo bài viết)
+                                        if ((dTxt.includes('chọn ảnh đại diện') || dTxt.includes('choose profile picture') || dTxt.includes('tải ảnh lên') || dTxt.includes('upload photo')) && !dTxt.includes('tạo bài viết') && !dTxt.includes('create post')) {
+                                            let f = d.querySelector('input[type="file"]');
+                                            if (f) return f;
+                                        }
+                                    }
+                                    return null;
+                                """)
+
+                                if not avatar_dialog_file_input:
+                                    upload_btn = driver.execute_script("""
                                         let dialogs = Array.from(document.querySelectorAll('div[role="dialog"]'));
-                                        let scopes = dialogs.length > 0 ? [dialogs[dialogs.length - 1], document.body] : [document.body];
-                                        for (let scope of scopes) {
-                                            let btns = Array.from(scope.querySelectorAll('div[aria-label="Lưu"], div[aria-label="Save"], div[role="button"], button, span'));
-                                            btns.reverse();
-                                            for (let el of btns) {
-                                                let r = el.getBoundingClientRect();
-                                                if (r.width < 30 || r.height < 15) continue;
-                                                let txt = (el.innerText || el.textContent || "").replace(/\\s+/g, " ").trim().toLowerCase();
-                                                let aria = (el.getAttribute("aria-label") || "").trim().toLowerCase();
-                                                if (txt === "lưu" || txt === "save" || aria === "lưu" || aria === "save") {
-                                                    let btn = el.closest('div[role="button"], button') || el;
-                                                    if (!btn.disabled && btn.getAttribute('aria-disabled') !== 'true') {
-                                                        return btn;
+                                        for (let d of dialogs) {
+                                            let dTxt = (d.innerText || '').toLowerCase();
+                                            if ((dTxt.includes('chọn ảnh đại diện') || dTxt.includes('tải ảnh lên') || dTxt.includes('upload photo')) && !dTxt.includes('tạo bài viết')) {
+                                                let els = Array.from(d.querySelectorAll('div[role="button"], button, label, span'));
+                                                for (let el of els) {
+                                                    let t = (el.innerText || el.textContent || '').replace(/\\s+/g, ' ').trim().toLowerCase();
+                                                    let aria = (el.getAttribute('aria-label') || '').trim().toLowerCase();
+                                                    if (t === 'tải ảnh lên' || t === '+ tải ảnh lên' || t.includes('tải ảnh lên') || t.includes('upload photo') || aria.includes('tải ảnh lên')) {
+                                                        return el.closest('div[role="button"], button, label') || el;
                                                     }
                                                 }
                                             }
                                         }
                                         return null;
                                     """)
-                                    if save_avatar_btn:
-                                        super_click(save_avatar_btn)
-                                        print(f"{Colors.color_text(f'[{self.thread_id}] ĐÃ BẤM LƯU AVATAR THÀNH CÔNG!', Colors.SUCCESS)}")
-                                        break
-                                    time.sleep(1.5)
-                                time.sleep(10)
-                            else:
-                                print(f"{Colors.color_text(f'[{self.thread_id}] Không tìm thấy ô upload file của riêng Avatar (Đã chặn gửi nhầm vào Đăng bài).', Colors.WARNING)}")
-                    except Exception as e:
-                        print(f"{Colors.color_text(f'[{self.thread_id}] Lỗi trong quá trình up avatar: {e}', Colors.WARNING)}")
+                                    if upload_btn:
+                                        super_click(upload_btn)
+                                        print(f"{Colors.color_text(f'[{self.thread_id}] Đã bấm \"+ Tải ảnh lên\"!', Colors.INFO)}")
+                                        time.sleep(2)
+                                    avatar_dialog_file_input = driver.execute_script("""
+                                        if (window.__capturedAvatarInput) return window.__capturedAvatarInput;
+                                        let fresh = Array.from(document.querySelectorAll('input[type="file"]:not([data-not-avatar="true"])'));
+                                        return fresh.length > 0 ? fresh[fresh.length - 1] : null;
+                                    """)
+
+                                if avatar_dialog_file_input:
+                                    avatar_dialog_file_input.send_keys(image_path)
+                                    print(f"{Colors.color_text(f'[{self.thread_id}] Đã chèn ảnh vào hộp thoại Chọn ảnh đại diện! Chờ 6s để bấm Lưu...', Colors.SUCCESS)}")
+                                    time.sleep(6)
+
+                                    for _ in range(8):
+                                        save_btn = driver.execute_script("""
+                                            let btns = Array.from(document.querySelectorAll('div[aria-label="Lưu"], div[aria-label="Save"], div[role="button"], button'));
+                                            btns.reverse();
+                                            for (let b of btns) {
+                                                let r = b.getBoundingClientRect();
+                                                if (r.width < 30 || r.height < 15) continue;
+                                                let txt = (b.innerText || b.textContent || '').replace(/\\s+/g, ' ').trim().toLowerCase();
+                                                let aria = (b.getAttribute('aria-label') || '').trim().toLowerCase();
+                                                if (txt === 'lưu' || txt === 'save' || aria === 'lưu' || aria === 'save') {
+                                                    if (!b.disabled && b.getAttribute('aria-disabled') !== 'true') return b;
+                                                }
+                                            }
+                                            return null;
+                                        """)
+                                        if save_btn:
+                                            super_click(save_btn)
+                                            print(f"{Colors.color_text(f'[{self.thread_id}] ĐÃ BẤM LƯU AVATAR THÀNH CÔNG!', Colors.SUCCESS)}")
+                                            avatar_uploaded_ok = True
+                                            time.sleep(8)
+                                            break
+                                        time.sleep(1.5)
+                                else:
+                                    print(f"{Colors.color_text(f'[{self.thread_id}] Không tìm thấy hộp thoại Chọn ảnh đại diện trên profile.php.', Colors.WARNING)}")
+                        except Exception as e_prof:
+                            print(f"{Colors.color_text(f'[{self.thread_id}] Lỗi trong quá trình up avatar ở profile.php: {e_prof}', Colors.WARNING)}")
                 else: print(f"{Colors.color_text(f'[{self.thread_id}] Thư mục avatar trống, không có ảnh nào để up.', Colors.WARNING)}")
             else: print(f"{Colors.color_text(f'[{self.thread_id}] Không cấu hình Up Avatar, bỏ qua bước này.', Colors.INFO)}")
 
@@ -2083,7 +2241,6 @@ class starts(threading.Thread):
                 driver.get("https://accountscenter.facebook.com/password_and_security/two_factor/")
                 time.sleep(7)
 
-                # Hook sẵn Clipboard để bắt khóa 2FA ngay khi xuất hiện
                 driver.execute_script("""
                     window.hooked2FAKey = "";
                     if (navigator.clipboard && !window.clipboardHooked) {
@@ -2099,7 +2256,6 @@ class starts(threading.Thread):
                     }
                 """)
 
-                # Vòng lặp Trạng thái thông minh: Tự động xử lý Mật khẩu bảo mật, Mã 8 số, Chọn tài khoản, Bắt đầu và Chọn Ứng dụng xác thực
                 for step_idx in range(14):
                     if STOP_EVENT.is_set(): return False
                     time.sleep(2.5)
@@ -2115,7 +2271,7 @@ class starts(threading.Thread):
                         print(f"{Colors.color_text(f'[{self.thread_id}] Đã vào tới màn hình lấy khóa 2FA!', Colors.SUCCESS)}")
                         break
 
-                    # 2. Kiểm tra xem có bảng yêu cầu NHẬP LẠI MẬT KHẨU bảo mật không ("Vì lý do bảo mật, vui lòng nhập lại mật khẩu...")
+                    # 2. Kiểm tra xem có bảng yêu cầu NHẬP LẠI MẬT KHẨU bảo mật không
                     pwd_modal_input = driver.execute_script("""
                         function isVis(el) {
                             if (!el) return false;
