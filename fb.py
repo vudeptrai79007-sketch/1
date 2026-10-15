@@ -139,7 +139,6 @@ DEFAULT_DELAY_CONFIG = {
     'lay_token_android': True   # True = Gọi Graph API lấy thêm Token EAAAAU sau khi reg
 }
 
-# Danh sách lưu toàn bộ Trình duyệt để hỏi đóng vào cuối cùng
 ALL_DRIVERS = []
 GLOBAL_USED_PHONES = set()
 GLOBAL_USED_NAMES = set()
@@ -188,7 +187,7 @@ def banner():
  ╚██████╔╝██║  ██║██║  ██║╚██████╔╝██║ ╚═╝ ██║███████╗
   ╚═════╝ ╚═╝  ╚═╝╚═╝  ╚═╝ ╚═════╝ ╚═╝     ╚═╝╚══════╝
 {Colors.RESET}""")
-    built_in_print(f"{Colors.INFO}Phiên Bản: v18.5 Ultimate (FB Reg Chrome + 6 Modes + 2FA 8 Số + Token EAAAAU){Colors.RESET}")
+    built_in_print(f"{Colors.INFO}Phiên Bản: FB Reg Meta Form - 100% Nam - Dropdown JS Fix{Colors.RESET}")
     built_in_print(f"{Colors.LINE}{'─'*75}{Colors.RESET}\n")
 
 def load_config():
@@ -280,44 +279,25 @@ def cau_hinh_delay():
     return config
 
 def save_account(thread_id, email_str, password, uid, full_name, mode="auto", cookie="", two_fa="", access_token=""):
-    # Lấy vị trí thư mục chính xác nơi đang chứa file code
     current_dir = os.path.dirname(os.path.abspath(__file__))
-    
-    # Tạo đường dẫn cho file TỔNG nằm ngay sát cạnh file code
     file_tong = os.path.join(current_dir, "danh_sach_acc_fb.txt")
-    
-    # Tạo đường dẫn cho thư mục chứa các file lẻ
     folder_name = os.path.join(current_dir, "Facebook_reg_PC")
     if not os.path.exists(folder_name): os.makedirs(folder_name)
     
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     filename = os.path.join(folder_name, f"account_{thread_id}_{timestamp}.txt")
     
-    # Định dạng lưu acc (UID|Pass|Email/SĐT|2FA|Cookie|Token)
     dinh_dang_luu = f"{uid}|{password}|{email_str}|{two_fa}|{cookie}|{access_token}\n"
-    
     try:
-        # GHI VÀO FILE TỔNG
         with open(file_tong, 'a', encoding='utf-8') as f: 
             f.write(dinh_dang_luu)
-            
-        # Ghi file lẻ
-        content = (
-            f"Luồng: {thread_id}\n"
-            f"UID: {uid}\n"
-            f"Họ Tên: {full_name}\n"
-            f"Email/SĐT: {email_str}\n"
-            f"Pass: {password}\n"
-            f"2FA: {two_fa}\n"
-            f"Access Token: {access_token}\n"
-            f"Cookie: {cookie}\n"
-        )
+        content = (f"Luồng: {thread_id}\nUID: {uid}\nHọ Tên: {full_name}\nEmail/SĐT: {email_str}\nPass: {password}\n2FA: {two_fa}\nAccess Token: {access_token}\nCookie: {cookie}\n")
         with open(filename, 'w', encoding='utf-8') as f: 
             f.write(content)
     except Exception as e: 
         print(f"Lỗi khi lưu file: {e}")
 
-# ========== HÀM TẠO HỌ TÊN & SỐ ĐIỆN THOẠI (KẾT HỢP TỪ BẢN ADB & IG) ==========
+# ========== HÀM TẠO HỌ TÊN (100% NAM) & SỐ ĐIỆN THOẠI ==========
 def tao_so_dien_thoai(used_phones=None):
     target_set = used_phones if used_phones is not None else GLOBAL_USED_PHONES
     dau_so = [
@@ -333,11 +313,11 @@ def tao_so_dien_thoai(used_phones=None):
                 target_set.add(phone)
                 return phone
 
-def VietnameseNameGenerator(used_names=None):
+def VietnameseMaleNameGenerator(used_names=None):
     target_set = used_names if used_names is not None else GLOBAL_USED_NAMES
-    ho_list = ['Nguyen', 'Tran', 'Le', 'Pham', 'Hoang', 'Huynh', 'Phan', 'Vu', 'Vo', 'Dang', 'Bui', 'Do', 'Ngo', 'Duong', 'Ly', 'Dinh', 'Mai', 'Chau', 'Ha', 'Phung']
-    middle_list = ["Van", "Thi", "Minh", "Hoang", "Anh", "Bao", "Gia", "Khanh", "Ngoc", "Phuong"]
-    ten_list = ['An', 'Binh', 'Cuong', 'Dung', 'Duc', 'Ha', 'Hieu', 'Hoa', 'Hung', 'Minh', 'Nam', 'Phuong', 'Quang', 'Son', 'Thanh', 'Thao', 'Thuy', 'Tien', 'Trung', 'Vinh']
+    ho_list = ["Nguyen", "Tran", "Le", "Pham", "Hoang", "Huynh", "Vu", "Dang", "Bui", "Do"]
+    middle_list = ["Van", "Minh", "Hoang", "Duc", "Dinh", "Gia", "Bao", "Quang", "Tuan", "Xuan"]
+    ten_list = ["An", "Binh", "Cuong", "Dung", "Hung", "Hai", "Son", "Tien", "Trung", "Vinh", "Nam", "Phuc", "Thanh", "Khoa"]
     
     with RESOURCE_LOCK:
         for _ in range(100):
@@ -357,16 +337,13 @@ def VietnameseNameGenerator(used_names=None):
     
     return last_name_fb, first_name_fb, full_name, username
 
-
-# ========== CLASS FACEBOOK MÃ HÓA RSA/AES & LẤY TOKEN ANDROID (TỪ BẢN ADB) ==========
+# ========== CLASS FACEBOOK MÃ HÓA RSA/AES ==========
 class Facebook:
     def MaHoaMatKhau(self, mat_khau):
         try:
             url = 'https://b-graph.facebook.com/pwd_key_fetch'
             params = {
-                'version': '2',
-                'flow': 'CONTROLLER_INITIALIZATION',
-                'method': 'GET',
+                'version': '2', 'flow': 'CONTROLLER_INITIALIZATION', 'method': 'GET',
                 'fb_api_req_friendly_name': 'pwdKeyFetch',
                 'fb_api_caller_class': 'com.facebook.auth.login.AuthOperations',
                 'access_token': '438142079694454|fc0a7caa49b192f64f6f5a6d9643bb28'
@@ -416,42 +393,24 @@ class Facebook:
         self.jazoest = ''.join(random.choices(string.digits, k=5))
         self.HEADERS = {
             'content-type': 'application/x-www-form-urlencoded',
-            'x-fb-net-hni': '45201',
-            'zero-rated': '0',
-            'x-fb-sim-hni': '45201',
-            'x-fb-connection-quality': 'EXCELLENT',
-            'x-fb-friendly-name': 'authenticate',
-            'x-fb-connection-bandwidth': '78032897',
-            'x-tigon-is-retry': 'False',
-            'authorization': 'OAuth null',
-            'x-fb-connection-type': 'WIFI',
-            'x-fb-device-group': '3342',
-            'priority': 'u=3,i',
-            'x-fb-http-engine': 'Liger',
-            'x-fb-client-ip': 'True',
-            'x-fb-server-cluster': 'True',
+            'x-fb-net-hni': '45201', 'zero-rated': '0', 'x-fb-sim-hni': '45201',
+            'x-fb-connection-quality': 'EXCELLENT', 'x-fb-friendly-name': 'authenticate',
+            'x-fb-connection-bandwidth': '78032897', 'x-tigon-is-retry': 'False',
+            'authorization': 'OAuth null', 'x-fb-connection-type': 'WIFI',
+            'x-fb-device-group': '3342', 'priority': 'u=3,i', 'x-fb-http-engine': 'Liger',
+            'x-fb-client-ip': 'True', 'x-fb-server-cluster': 'True',
             'x-fb-request-analytics-tags': '{"network_tags":{"product":"350685531728","retry_attempt":"0"},"application_tags":"unknown"}',
             'user-agent': 'Dalvik/2.1.0 (Linux; U; Android 9; 23113RKC6C Build/PQ3A.190705.08211809) [FBAN/FB4A;FBAV/417.0.0.33.65;FBPN/com.facebook.katana;FBLC/vi_VN;FBBV/480086274;FBCR/MobiFone;FBMF/Redmi;FBBD/Redmi;FBDV/23113RKC6C;FBSV/9;FBCA/x86:armeabi-v7a;FBDM/{density=1.5,width=1280,height=720};FB_FW/1;FBRV/0;]'
         }
 
     def DangNhap(self, app_token=APP_TOKEN):
         self.data = {
-            'email': self.email,
-            'password': self.mat_khau,
-            'generate_session_cookies': '1',
-            'locale': 'vi_VN',
-            'client_country_code': 'VN',
-            'access_token': app_token,
-            'api_key': self.API_KEY,
-            'adid': self.adid,
-            'account_switcher_uids': f'["{self.email}"]',
-            'source': 'login',
-            'machine_id': self.machine_id,
-            'jazoest': self.jazoest,
-            'meta_inf_fbmeta': 'V2_UNTAGGED',
-            'fb_api_req_friendly_name': 'authenticate',
-            'fb_api_caller_class': 'Fb4aAuthHandler',
-            'sig': self.SIG
+            'email': self.email, 'password': self.mat_khau, 'generate_session_cookies': '1',
+            'locale': 'vi_VN', 'client_country_code': 'VN', 'access_token': app_token,
+            'api_key': self.API_KEY, 'adid': self.adid, 'account_switcher_uids': f'["{self.email}"]',
+            'source': 'login', 'machine_id': self.machine_id, 'jazoest': self.jazoest,
+            'meta_inf_fbmeta': 'V2_UNTAGGED', 'fb_api_req_friendly_name': 'authenticate',
+            'fb_api_caller_class': 'Fb4aAuthHandler', 'sig': self.SIG
         }
         try:
             ket_qua = requests.post(self.URL, headers=self.HEADERS, data=self.data, timeout=15, proxies=self.proxy).json()
@@ -459,43 +418,27 @@ class Facebook:
                 error_msg = ket_qua.get('error', {}).get('message', 'Lỗi không xác định')
                 error_data = ket_qua.get('error', {}).get('error_data', {})
                 if 'login_first_factor' in error_data and 'uid' in error_data:
-                    if self.auth:
-                        ma_2fa = pyotp.TOTP(self.auth).now()
-                    else:
-                        return {'status': 401, 'msg': 'Yêu cầu 2FA nhưng chưa có Secret Key'}
+                    if self.auth: ma_2fa = pyotp.TOTP(self.auth).now()
+                    else: return {'status': 401, 'msg': 'Yêu cầu 2FA nhưng chưa có Secret Key'}
                     data_2fa = {
-                        'locale': 'vi_VN',
-                        'format': 'json',
-                        'email': self.email,
-                        'device_id': self.device_id,
-                        'access_token': app_token,
-                        'generate_session_cookies': 'true',
-                        'generate_machine_id': '1',
-                        'twofactor_code': ma_2fa,
-                        'credentials_type': 'two_factor',
-                        'error_detail_type': 'button_with_disabled',
-                        'first_factor': error_data['login_first_factor'],
-                        'password': self.mat_khau,
-                        'userid': error_data['uid'],
-                        'machine_id': error_data['login_first_factor']
+                        'locale': 'vi_VN', 'format': 'json', 'email': self.email, 'device_id': self.device_id,
+                        'access_token': app_token, 'generate_session_cookies': 'true', 'generate_machine_id': '1',
+                        'twofactor_code': ma_2fa, 'credentials_type': 'two_factor', 'error_detail_type': 'button_with_disabled',
+                        'first_factor': error_data['login_first_factor'], 'password': self.mat_khau,
+                        'userid': error_data['uid'], 'machine_id': error_data['login_first_factor']
                     }
                     ket_qua = requests.post(self.URL, headers=self.HEADERS, data=data_2fa, timeout=15, proxies=self.proxy).json()
-                else:
-                    return {'status': 401, 'msg': error_msg}
+                else: return {'status': 401, 'msg': error_msg}
             if 'access_token' in ket_qua:
                 access_token = ket_qua.get('access_token')
                 cookies_list = ket_qua.get('session_cookies', [])
                 cookies_string = '; '.join((f"{c['name']}={c['value']}" for c in cookies_list))
                 return {'status': 200, 'data': {'cookies': cookies_string, 'token': access_token}}
-            error_msg = ket_qua.get('error', {}).get('message', 'Đăng nhập thất bại')
-            return {'status': 401, 'msg': error_msg}
-        except KeyboardInterrupt:
-            raise KeyboardInterrupt
-        except Exception as e:
-            return {'status': 401, 'msg': str(e)}
+            return {'status': 401, 'msg': ket_qua.get('error', {}).get('message', 'Đăng nhập thất bại')}
+        except KeyboardInterrupt: raise KeyboardInterrupt
+        except Exception as e: return {'status': 401, 'msg': str(e)}
 
-
-# >>> HỆ THỐNG XỬ LÝ PROXY ĐA NĂNG <<<
+# >>> HỆ THỐNG XỬ LÝ PROXY <<<
 def parse_proxy(proxy_str):
     if not proxy_str: return None
     p_str = str(proxy_str).strip()
@@ -504,7 +447,6 @@ def parse_proxy(proxy_str):
         if p_str.lower().startswith(proto):
             p_str = p_str[len(proto):]
             break
-
     if "@" in p_str:
         try:
             auth_part, host_part = p_str.split("@", 1)
@@ -512,17 +454,12 @@ def parse_proxy(proxy_str):
             ip, port = host_part.split(":", 1)
             return {"ip": ip.strip(), "port": port.strip(), "user": u.strip(), "pass": pwd.strip()}
         except Exception: pass
-
     parts = [x.strip() for x in p_str.split(":") if x.strip()]
-    if len(parts) == 2:
-        return {"ip": parts[0], "port": parts[1], "user": None, "pass": None}
+    if len(parts) == 2: return {"ip": parts[0], "port": parts[1], "user": None, "pass": None}
     elif len(parts) == 4:
-        if parts[1].isdigit() and not parts[2].isdigit():
-            return {"ip": parts[0], "port": parts[1], "user": parts[2], "pass": parts[3]}
-        elif parts[3].isdigit():
-            return {"ip": parts[2], "port": parts[3], "user": parts[0], "pass": parts[1]}
-        else:
-            return {"ip": parts[0], "port": parts[1], "user": parts[2], "pass": parts[3]}
+        if parts[1].isdigit() and not parts[2].isdigit(): return {"ip": parts[0], "port": parts[1], "user": parts[2], "pass": parts[3]}
+        elif parts[3].isdigit(): return {"ip": parts[2], "port": parts[3], "user": parts[0], "pass": parts[1]}
+        else: return {"ip": parts[0], "port": parts[1], "user": parts[2], "pass": parts[3]}
     return None
 
 def format_proxy(proxy_str):
@@ -530,8 +467,7 @@ def format_proxy(proxy_str):
     if not parsed: return None
     if parsed["user"] and parsed["pass"]:
         formatted = f"http://{parsed['user']}:{parsed['pass']}@{parsed['ip']}:{parsed['port']}"
-    else:
-        formatted = f"http://{parsed['ip']}:{parsed['port']}"
+    else: formatted = f"http://{parsed['ip']}:{parsed['port']}"
     return {"http": formatted, "https": formatted}
 
 class LocalProxyForwarder:
@@ -588,17 +524,14 @@ class LocalProxyForwarder:
                 for line in lines[1:]:
                     if not line.lower().startswith(b"proxy-authorization"):
                         connect_req += line + crlf
-                if auth_header:
-                    connect_req += auth_header
+                if auth_header: connect_req += auth_header
                 connect_req += crlf
                 remote_sock.sendall(connect_req)
-
                 resp = b""
                 while crlf2 not in resp:
                     c = remote_sock.recv(4096)
                     if not c: break
                     resp += c
-
                 resp_first_line = resp.split(crlf)[0] if resp else b""
                 if b"200" in resp_first_line:
                     client_sock.sendall(b"HTTP/1.1 200 Connection established" + crlf2)
@@ -612,8 +545,7 @@ class LocalProxyForwarder:
                 for line in lines[1:]:
                     if not line.lower().startswith(b"proxy-authorization"):
                         new_req += line + crlf
-                if auth_header:
-                    new_req += auth_header
+                if auth_header: new_req += auth_header
                 new_req += crlf + rest
                 remote_sock.sendall(new_req)
 
@@ -640,8 +572,7 @@ class LocalProxyForwarder:
         try: self.server_socket.close()
         except: pass
 
-
-# ==================== CÁC CLASS XỬ LÝ EMAIL (GIỮ NGUYÊN LOGIC LỌC SỐ TRONG TÊN EMAIL & 8 SỐ 2FA) ====================
+# ==================== CLASS XỬ LÝ EMAIL ====================
 class MailService:
     def __init__(self, proxy=None):
         self.base_url = "https://api.mail.tm"
@@ -693,12 +624,10 @@ class MailService:
                 if r.status_code == 200:
                     for msg in r.json().get('hydra:member', []):
                         msg_id = msg.get('id')
-                        if not msg_id or msg_id in self.seen_msg_ids:
-                            continue
+                        if not msg_id or msg_id in self.seen_msg_ids: continue
                             
                         subject = str(msg.get('subject', '')).lower()
                         frm = str(msg.get('from', {}).get('address', '')).lower()
-                        # NHẬN DIỆN THƯ CỦA FACEBOOK & META
                         if any(k in subject or k in frm for k in ['facebook', 'facebookmail', 'fb', 'meta', 'instagram']):
                             detail = requests.get(f"{self.base_url}/messages/{msg_id}", headers=headers, timeout=10, proxies=self.proxy).json()
                             raw_text = detail.get('text', '') or re.sub('<[^<]+?>', ' ', str(detail.get('html', '')))
@@ -710,12 +639,10 @@ class MailService:
                                 if match: code = match.group(1)
                             else:
                                 match_fb = re.search(r'fb[-\s]*(\d{5,6})\b', subject, re.IGNORECASE) or re.search(r'fb[-\s]*(\d{5,6})\b', raw_text, re.IGNORECASE)
-                                if match_fb:
-                                    code = match_fb.group(1)
+                                if match_fb: code = match_fb.group(1)
                                 else:
                                     match_sub = re.search(r'(?<!\d)(\d{5,6})(?!\d)', subject)
-                                    if match_sub:
-                                        code = match_sub.group(1)
+                                    if match_sub: code = match_sub.group(1)
                                     else:
                                         safe_text = raw_text.lower().replace(str(self.email_address).lower(), "")
                                         match_body = re.search(r'(?<!\d)(\d{5,6})(?!\d)', safe_text.replace(" ", ""))
@@ -727,7 +654,6 @@ class MailService:
             except Exception: pass
             time.sleep(random.uniform(6.0, 10.0))
         return None
-
 
 class GmailIMAPService:
     def __init__(self, base_email, app_password):
@@ -788,8 +714,7 @@ class GmailIMAPService:
                 if isinstance(text, bytes):
                     try: result += text.decode(charset or 'utf-8', errors='replace')
                     except: result += text.decode('utf-8', errors='replace')
-                else:
-                    result += str(text)
+                else: result += str(text)
             return result
         except: return str(raw_header)
 
@@ -810,8 +735,7 @@ class GmailIMAPService:
                         try: uid_int = int(uid_bytes)
                         except ValueError: continue
                         
-                        if uid_int <= since_uid or uid_bytes in self.seen_uids: 
-                            continue
+                        if uid_int <= since_uid or uid_bytes in self.seen_uids: continue
                             
                         status, fetch_data = self.mail.uid("fetch", uid_bytes, "(RFC822)")
                         if status == "OK" and fetch_data:
@@ -826,25 +750,21 @@ class GmailIMAPService:
                                 
                                 if target_email.lower() not in to_addr: continue
                                 
-                                # NHẬN DIỆN THƯ CỦA FACEBOOK & META
                                 is_fb_meta = any(k in subject or k in from_addr for k in ["facebook", "facebookmail", "fb", "meta", "instagram"])
                                 is_security_mail = any(kw in subject for kw in ["security", "bảo mật", "verify", "xác minh", "code", "mã", "authenticate", "profile", "confirm", "xác nhận", "fb-"])
                                 
                                 if is_fb_meta and is_security_mail:
                                     body = self.get_text(msg)
                                     code = None
-                                    
                                     if force_8_digits:
                                         match_8 = re.search(r'(?<!\d)(\d{8})(?!\d)', body.replace(" ", ""))
                                         if match_8: code = match_8.group(1)
                                     else:
                                         match_fb = re.search(r'fb[-\s]*(\d{5,6})\b', subject, re.IGNORECASE) or re.search(r'fb[-\s]*(\d{5,6})\b', body, re.IGNORECASE)
-                                        if match_fb:
-                                            code = match_fb.group(1)
+                                        if match_fb: code = match_fb.group(1)
                                         else:
                                             match_sub = re.search(r'(?<!\d)(\d{5,6})(?!\d)', subject)
-                                            if match_sub:
-                                                code = match_sub.group(1)
+                                            if match_sub: code = match_sub.group(1)
                                             else:
                                                 safe_text = body.lower().replace(target_email.lower(), "")
                                                 match_body = re.search(r'(?<!\d)(\d{5,6})(?!\d)', safe_text.replace(" ", ""))
@@ -857,8 +777,6 @@ class GmailIMAPService:
             time.sleep(random.uniform(6.0, 10.0)) 
         return None
 
-
-# ==================== DỊCH VỤ HOTMAIL/OUTLOOK API (SMAIL1S.COM) ====================
 class HotmailAPIService:
     def __init__(self, data_line, api_mode, proxy=None):
         self.url = "https://smail1s.com/get_messages"
@@ -874,10 +792,7 @@ class HotmailAPIService:
         retries = Retry(total=5, backoff_factor=1, status_forcelist=[500, 502, 503, 504])
         self.session.mount('http://', HTTPAdapter(max_retries=retries))
         self.session.mount('https://', HTTPAdapter(max_retries=retries))
-        
-        if self.proxy:
-            self.session.proxies.update(self.proxy)
-
+        if self.proxy: self.session.proxies.update(self.proxy)
         self.session.headers.update({
             'Content-Type': 'application/json',
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
@@ -886,7 +801,6 @@ class HotmailAPIService:
     def init_baseline(self):
         payload = {"mode": self.api_mode, "data": self.data_line}
         time.sleep(random.uniform(1.0, 3.0)) 
-        
         for _ in range(3):
             try:
                 response = self.session.post(self.url, json=payload, timeout=20)
@@ -896,35 +810,28 @@ class HotmailAPIService:
                         messages = data_array[0].get("messages", [])
                         for msg in messages:
                             msg_id = str(msg.get("id", msg.get("uid", "")))
-                            if not msg_id: 
-                                msg_id = hashlib.md5(str(msg.get("message", "")).encode()).hexdigest()
+                            if not msg_id: msg_id = hashlib.md5(str(msg.get("message", "")).encode()).hexdigest()
                             self.seen_msg_ids.add(msg_id)
                     break 
-            except Exception:
-                time.sleep(3) 
+            except Exception: time.sleep(3) 
 
     def get_otp_code(self, timeout=180, force_8_digits=False): 
         start_time = time.time()
         loai_ma = "ÉP ĐỌC MÃ 8 SỐ 2FA" if force_8_digits else "ĐỌC MÃ ĐĂNG KÝ 5-6 SỐ"
         print(f"{Colors.color_text(f'[API Smail1s] Đang check hộp thư {self.email} ({loai_ma})...', Colors.INFO)}")
-        
         payload = {"mode": self.api_mode, "data": self.data_line}
         time.sleep(random.uniform(1.0, 5.0))
         last_logged = ""
-        
         while time.time() - start_time < timeout:
             if STOP_EVENT.is_set(): return None
             try:
                 response = self.session.post(self.url, json=payload, timeout=20)
-                
                 if response.status_code == 200:
                     res_json = response.json()
                     data_array = res_json.get("data", [])
-                    
                     if data_array and len(data_array) > 0:
                         account_data = data_array[0]
                         err = account_data.get("error")
-                        
                         if err:
                             msg_err = f"Lỗi hộp thư: {err}"
                             if msg_err != last_logged:
@@ -936,20 +843,15 @@ class HotmailAPIService:
                             if msg_info != last_logged:
                                 print(f"{Colors.color_text(f'[API Smail1s] {msg_info} Đang check từng thư lấy mã...', Colors.INFO)}")
                                 last_logged = msg_info
-                                
                             for msg in messages:
                                 msg_id = str(msg.get("id", msg.get("uid", "")))
-                                if not msg_id:
-                                    msg_id = hashlib.md5(str(msg.get("message", "")).encode()).hexdigest()
-                                
-                                if msg_id in self.seen_msg_ids:
-                                    continue
+                                if not msg_id: msg_id = hashlib.md5(str(msg.get("message", "")).encode()).hexdigest()
+                                if msg_id in self.seen_msg_ids: continue
                                 
                                 subject = str(msg.get("subject", "")).lower()
                                 from_sender = str(msg.get("from", "")).lower()
                                 raw_msg = str(msg.get("message", ""))
                                 
-                                # NHẬN DIỆN THƯ CỦA FACEBOOK & META
                                 is_fb_meta = any(k in subject or k in from_sender for k in ["facebook", "facebookmail", "fb", "meta", "instagram"])
                                 is_security_mail = True 
                                 if force_8_digits:
@@ -957,25 +859,21 @@ class HotmailAPIService:
                                 
                                 if is_fb_meta and is_security_mail:
                                     code = None
-                                    
                                     if force_8_digits:
                                         clean_text = re.sub(r'<[^>]+>', ' ', raw_msg).replace(" ", "")
                                         match_8 = re.search(r'(?<!\d)(\d{8})(?!\d)', clean_text)
                                         if match_8: code = match_8.group(1)
                                     else:
                                         match_fb = re.search(r'fb[-\s]*(\d{5,6})\b', subject, re.IGNORECASE) or re.search(r'fb[-\s]*(\d{5,6})\b', raw_msg, re.IGNORECASE)
-                                        if match_fb:
-                                            code = match_fb.group(1)
+                                        if match_fb: code = match_fb.group(1)
                                         else:
                                             match_sub = re.search(r'(?<!\d)(\d{5,6})(?!\d)', subject)
-                                            if match_sub:
-                                                code = match_sub.group(1)
+                                            if match_sub: code = match_sub.group(1)
                                             else:
                                                 safe_msg = raw_msg.lower().replace(self.email.lower(), "")
                                                 clean_text = re.sub(r'<[^>]+>', ' ', safe_msg).replace(" ", "")
                                                 match_6 = re.search(r'(?<!\d)(\d{5,6})(?!\d)', clean_text)
                                                 if match_6: code = match_6.group(1)
-                                    
                                     if code:
                                         self.seen_msg_ids.add(msg_id)
                                         print(f"{Colors.color_text(f'[API Smail1s] ĐÃ BẮT ĐƯỢC MÃ CHUẨN: {code}', Colors.SUCCESS)}")
@@ -985,7 +883,6 @@ class HotmailAPIService:
                     if status_err != last_logged:
                         print(f"{Colors.color_text(f'[API Smail1s] {status_err}', Colors.WARNING)}")
                         last_logged = status_err
-                        
             except requests.exceptions.RequestException as e:
                 err_str = "Lỗi kết nối Smail1s. Đang thử lại..."
                 if err_str != last_logged:
@@ -993,18 +890,10 @@ class HotmailAPIService:
                     last_logged = err_str
                 try: self._init_session() 
                 except: pass
-                
-            except Exception as e:
-                err_str = f"Lỗi không xác định: {str(e)}"
-                if err_str != last_logged:
-                    print(f"{Colors.color_text(f'[API Smail1s] {err_str}', Colors.WARNING)}")
-                    last_logged = err_str
-            
+            except Exception as e: pass
             time.sleep(random.uniform(5.0, 8.0))
         return None
 
-
-# ==================== DỊCH VỤ THUÊ SIM AUTOSMS.SITE (MODE 6) ====================
 class AutoSMSService:
     def __init__(self, api_key, country="vn", proxy=None):
         self.api_key = api_key
@@ -1044,10 +933,8 @@ class AutoSMSService:
 
     def cancel_order(self):
         if self.order_id:
-            try:
-                requests.get(f"{self.base_url}/cancel/{self.order_id}?key={self.api_key}", timeout=10, proxies=self.proxy)
+            try: requests.get(f"{self.base_url}/cancel/{self.order_id}?key={self.api_key}", timeout=10, proxies=self.proxy)
             except Exception: pass
-
 
 def generate_dot_variants(gmail):
     local, sep, domain = gmail.rpartition("@")
@@ -1063,9 +950,7 @@ def generate_dot_variants(gmail):
             variants.append(value + "@" + domain)
     random.shuffle(variants)
     return variants
-
-
-# ==================== MAIN THREAD ====================
+    # ==================== MAIN THREAD ====================
 class starts(threading.Thread):
     def __init__(self, thread_id, mode, account_count, data_source, delay_config, manual_password=None, base_gmail=None, app_password=None, api_mode=None, avatar_folder="", proxies_list=None, autosms_api_key=None, autosms_country="vn"):
         super().__init__()
@@ -1088,7 +973,6 @@ class starts(threading.Thread):
     def run(self):
         global BASE_YEAR
         
-        # --- LẤY PROXY LOCAL DÀNH CHO LUỒNG NÀY ---
         raw_proxy = None
         req_proxy = None
         if self.proxies_list:
@@ -1098,16 +982,9 @@ class starts(threading.Thread):
             p_info = parse_proxy(raw_proxy)
             
             if p_info and p_info.get("user"):
-                p_ip = p_info["ip"]
-                p_port = p_info["port"]
-                p_user = p_info["user"]
-                print(Colors.color_text(f"[{self.thread_id}] Đã gán Proxy (Có User/Pass): {p_ip}:{p_port} (User: {p_user})", Colors.WARNING))
+                print(Colors.color_text(f"[{self.thread_id}] Đã gán Proxy (Có User/Pass): {p_info['ip']}:{p_info['port']}", Colors.WARNING))
             elif p_info:
-                p_ip = p_info["ip"]
-                p_port = p_info["port"]
-                print(Colors.color_text(f"[{self.thread_id}] Đã gán Proxy (IP:Port): {p_ip}:{p_port}", Colors.WARNING))
-            else:
-                print(Colors.color_text(f"[{self.thread_id}] Đã gán Proxy: {raw_proxy}", Colors.WARNING))
+                print(Colors.color_text(f"[{self.thread_id}] Đã gán Proxy (IP:Port): {p_info['ip']}:{p_info['port']}", Colors.WARNING))
         
         def create_one_account(account_index):
             global BASE_YEAR
@@ -1121,7 +998,9 @@ class starts(threading.Thread):
             mail_service = None
             hotmail_service = None
             autosms_service = None
-            last_name_fb, first_name_fb, full_name, username = VietnameseNameGenerator(self.used_names)
+            
+            # GỌI HÀM TẠO TÊN 100% NAM ĐÃ CHUẨN HOÁ
+            last_name_fb, first_name_fb, full_name, username = VietnameseMaleNameGenerator(self.used_names)
             
             if self.delay_config.get('mat_khau_fb'):
                 secure_pass = self.delay_config['mat_khau_fb']
@@ -1134,7 +1013,6 @@ class starts(threading.Thread):
                 used_email = mail_service.create_account(username)
                 if not used_email: return False
                 mail_service.authenticate()
-                
             elif self.mode == "2":
                 with DATA_LOCK:
                     if len(self.data_source) == 0: return False
@@ -1143,31 +1021,27 @@ class starts(threading.Thread):
                     mail_service = MailService(proxy=req_proxy)
                     pass_to_use = self.manual_password if self.manual_password else "TempPass123!"
                     mail_service.authenticate(used_email, pass_to_use)
-                
             elif self.mode == "3":
                 with DATA_LOCK:
                     if len(self.data_source) == 0: return False
                     used_email, app_pass = self.data_source.pop(0)
                 imap_service = GmailIMAPService(used_email, app_pass)
-                
             elif self.mode == "4":
                 with DATA_LOCK:
                     if len(self.data_source) == 0: return False
                     used_email = self.data_source.pop(0)
                 imap_service = GmailIMAPService(self.base_gmail, self.app_password)
-
             elif self.mode == "5":
                 with DATA_LOCK:
                     if len(self.data_source) == 0: return False
                     data_line = self.data_source.pop(0)
                 used_email = data_line.split('|')[0]
                 hotmail_service = HotmailAPIService(data_line, self.api_mode, proxy=req_proxy)
-
             elif self.mode == "6":
                 autosms_service = AutoSMSService(self.autosms_api_key, self.autosms_country, proxy=req_proxy)
                 used_email = autosms_service.buy_number()
                 if not used_email:
-                    print(f"{Colors.color_text(f'[{self.thread_id}] Lỗi: Không thể thuê số điện thoại từ API (Hết số hoặc Sai Key)!', Colors.ERROR)}")
+                    print(f"{Colors.color_text(f'[{self.thread_id}] Lỗi: Không thể thuê số điện thoại từ API!', Colors.ERROR)}")
                     return False
 
             use_phone_bait = self.delay_config.get('use_phone_bait', False) and (self.mode in ["1", "2", "3", "4", "5"])
@@ -1180,18 +1054,11 @@ class starts(threading.Thread):
 
             driver = None
             try:
-                # ========================================================
-                # MỞ CỬA SỔ DẠNG HÌNH CHỮ NHẬT DỌC ĐỂ XẾP 8 Ô
-                # ========================================================
                 thread_idx = int(self.thread_id.split("-")[1]) - 1 
-                
-                win_width = 460   
-                win_height = 520  
-                
+                win_width, win_height = 460, 520  
                 columns = 4       
                 col = thread_idx % columns
                 row = thread_idx // columns
-                
                 x_pos = col * win_width
                 y_pos = row * win_height
                 
@@ -1200,8 +1067,6 @@ class starts(threading.Thread):
                 options.add_argument('--disable-notifications')
                 options.add_argument('--disable-save-password-bubble')
                 options.add_argument('--password-store=basic')
-                
-                # TẮT TRIỆT ĐỂ BẢNG HỎI LƯU MẬT KHẨU & AUTOFILL CỦA CHROME
                 prefs = {
                     'credentials_enable_service': False,
                     'profile.password_manager_enabled': False,
@@ -1210,18 +1075,15 @@ class starts(threading.Thread):
                     'profile.default_content_setting_values.notifications': 2
                 }
                 options.add_experimental_option('prefs', prefs)
-                
                 options.add_argument(f'--window-size={win_width},{win_height}')
                 options.add_argument(f'--window-position={x_pos},{y_pos}')
                 options.add_argument('--force-device-scale-factor=0.65')
                 options.add_argument('--disable-gpu')
                 options.add_argument('--disable-software-rasterizer')
                 options.add_argument('--disable-dev-shm-usage')
-                
-                # >>> XỬ LÝ PROXY ĐA NĂNG & AN TOÀN CHO CHROME (CHẠY 100% TAB ẨN DANH & ĐỔI IP THẬT) <<<
-                forwarder = None
                 options.add_argument('--incognito')
                 
+                forwarder = None
                 if raw_proxy:
                     parsed_p = parse_proxy(raw_proxy)
                     if parsed_p:
@@ -1233,13 +1095,11 @@ class starts(threading.Thread):
                 
                 with BROWSER_LOCK:
                     driver = uc.Chrome(options=options)
-                    with DRIVER_LOCK:
-                        ALL_DRIVERS.append((self.thread_id, driver))
+                    with DRIVER_LOCK: ALL_DRIVERS.append((self.thread_id, driver))
                     try:
                         driver.set_window_size(win_width, win_height)
                         driver.set_window_position(x_pos, y_pos)
-                    except:
-                        pass
+                    except: pass
                     time.sleep(1) 
                     
                 wait = WebDriverWait(driver, 15)
@@ -1262,7 +1122,6 @@ class starts(threading.Thread):
                 if int(current_year) > 2005: current_year = "2005"
                 current_day = str(random.randint(2, 28))
                 current_month = str(random.randint(1, 12))
-                
                 BASE_YEAR -= 1
                 if BASE_YEAR < 1990: BASE_YEAR = random.randint(1995, 2005)
 
@@ -1272,33 +1131,18 @@ class starts(threading.Thread):
                         time.sleep(0.5)
                     except: pass
 
-                def human_type(element, text, is_username=False):
+                def human_type(element, text):
                     with TYPE_LOCK:
                         slow_scroll_to_element(element)
-                        
                         try: element.click() 
                         except: driver.execute_script("arguments[0].click();", element) 
                         time.sleep(0.5)
                         
                         driver.execute_script("arguments[0].focus();", element)
-                        
-                        if is_username:
-                            time.sleep(1)
-                            element.send_keys(Keys.END)
-                            time.sleep(0.2)
-                            current_val = element.get_attribute("value")
-                            if current_val:
-                                for _ in range(len(current_val) + 5):
-                                    element.send_keys(Keys.BACKSPACE)
-                                    time.sleep(0.01)
-                            driver.execute_script("arguments[0].value = '';", element)
-                            driver.execute_script("arguments[0].dispatchEvent(new Event('input', { bubbles: true }));", element)
-                            time.sleep(0.5)
-                        else:
-                            element.send_keys(Keys.CONTROL + "a")
-                            time.sleep(0.2)
-                            element.send_keys(Keys.BACKSPACE)
-                            time.sleep(0.3)
+                        element.send_keys(Keys.CONTROL + "a")
+                        time.sleep(0.2)
+                        element.send_keys(Keys.BACKSPACE)
+                        time.sleep(0.3)
                         
                         for char in text:
                             driver.execute_script("arguments[0].focus();", element)
@@ -1309,16 +1153,13 @@ class starts(threading.Thread):
                         try: element.send_keys(Keys.TAB)
                         except: pass
 
-                # ==================== ĐIỀN FORM ĐĂNG KÝ FACEBOOK (UPDATE GIAO DIỆN META MỚI) ====================
+                # ==================== ĐIỀN FORM ĐĂNG KÝ FACEBOOK (GIAO DIỆN META MỚI) ====================
                 try:
-                    print(f"{Colors.color_text(f'[{self.thread_id}] Đang quét giao diện Form mới...', Colors.INFO)}")
-                    
-                    # 1. Bỏ qua việc tìm đích danh 'firstname', chỉ cần đợi bất kỳ thẻ input nào xuất hiện
-                    wait.until(EC.presence_of_element_located((By.TAG_NAME, "input")))
-                    time.sleep(3) # Đợi thêm 1 chút cho animation của form Meta load xong
-                    
-                    # Hàm tự động quét tìm phần tử theo nhiều kiểu nhận diện
-                    def get_meta_element(xpaths, desc):
+                    # Chờ form load xong
+                    wait.until(EC.presence_of_element_located((By.TAG_NAME, 'input')))
+                    time.sleep(3)
+
+                    def get_meta_element(xpaths):
                         for xp in xpaths:
                             try:
                                 els = driver.find_elements(By.XPATH, xp)
@@ -1327,100 +1168,113 @@ class starts(threading.Thread):
                             except: continue
                         return None
 
-                    # 2. Tìm ô Họ và Tên qua aria-label hoặc placeholder thay vì name
-                    lastname_el = get_meta_element([
-                        "//input[@name='lastname']", "//input[@aria-label='Họ']", 
-                        "//input[contains(@placeholder, 'Họ')]", "(//input[@type='text'])[1]"
-                    ], "Họ")
-                    
-                    firstname_el = get_meta_element([
-                        "//input[@name='firstname']", "//input[@aria-label='Tên']", 
-                        "//input[contains(@placeholder, 'Tên')]", "(//input[@type='text'])[2]"
-                    ], "Tên")
+                    # 1. ĐIỀN EMAIL / SỐ ĐIỆN THOẠI
+                    print(f"{Colors.color_text(f'[{self.thread_id}] Điền Email/SĐT ({contact_for_signup})...', Colors.INFO)}")
+                    email_el = get_meta_element([
+                        "//input[contains(@aria-label, 'Số di động') or contains(@aria-label, 'email') or contains(@placeholder, 'Số di động') or contains(@placeholder, 'email') or @name='reg_email__']"
+                    ])
+                    if email_el: human_type(email_el, contact_for_signup)
+                    time.sleep(1)
 
-                    print(f"{Colors.color_text(f'[{self.thread_id}] Điền Họ ({last_name_fb})...', Colors.INFO)}")
+                    # 2. Xử lý ô Xác nhận email
+                    confirm_el = get_meta_element(["//input[@name='reg_email_confirmation__']"])
+                    if confirm_el:
+                        human_type(confirm_el, contact_for_signup)
+                        time.sleep(1)
+
+                    # 3. Điền Họ và Tên
+                    print(f"{Colors.color_text(f'[{self.thread_id}] Điền Họ ({last_name_fb}) và Tên ({first_name_fb})...', Colors.INFO)}")
+                    lastname_el = get_meta_element([
+                        "//input[@name='lastname']", "//input[@aria-label='Họ']", "//input[contains(@placeholder, 'Họ')]"
+                    ])
+                    firstname_el = get_meta_element([
+                        "//input[@name='firstname']", "//input[@aria-label='Tên']", "//input[contains(@placeholder, 'Tên')]"
+                    ])
+
                     if lastname_el: human_type(lastname_el, last_name_fb)
-                    time.sleep(self.delay_config['delay_nhap_ho'])
-                    
-                    print(f"{Colors.color_text(f'[{self.thread_id}] Điền Tên ({first_name_fb})...', Colors.INFO)}")
+                    time.sleep(0.3)
                     if firstname_el: human_type(firstname_el, first_name_fb)
-                    time.sleep(self.delay_config['delay_nhap_ten'])
-                    
-                    print(f"{Colors.color_text(f'[{self.thread_id}] Chọn Ngày Sinh...', Colors.INFO)}")
-                    # 3. Chọn Ngày Sinh (Dùng JS để tương thích cả Select và Combobox)
+                    time.sleep(1)
+
+                    # 4. CHỌN NGÀY THÁNG NĂM VÀ GIỚI TÍNH BẰNG SCRIPT ÉP TƯƠNG TÁC (CLICK MENU THẢ XUỐNG)
+                    gender_text = "Nam"
+                    print(f"{Colors.color_text(f'[{self.thread_id}] Chọn Ngày Sinh ({current_day}/{current_month}/{current_year}) và Giới tính ({gender_text})...', Colors.INFO)}")
+
                     try:
-                        driver.set_script_timeout(15)
-                        js_date_script = '''
-                        const day = arguments[0], month = arguments[1], year = arguments[2], callback = arguments[arguments.length - 1];
+                        driver.set_script_timeout(20)
+                        js_dropdowns = """
+                        const day = arguments[0], month = arguments[1], year = arguments[2], genderText = arguments[3], callback = arguments[4];
+
+                        async function clickDropdownAndSelect(boxLabelPartial, targetValueStr) {
+                            let combos = Array.from(document.querySelectorAll('[role="combobox"], select'));
+                            let box = combos.find(c => {
+                                let txt = (c.innerText || c.getAttribute('aria-label') || c.title || "").toLowerCase();
+                                return txt.includes(boxLabelPartial.toLowerCase());
+                            });
+
+                            if(!box) return false;
+
+                            if(box.tagName.toLowerCase() === 'select') {
+                                let nativeSetter = Object.getOwnPropertyDescriptor(window.HTMLSelectElement.prototype, "value").set;
+                                nativeSetter.call(box, targetValueStr);
+                                box.dispatchEvent(new Event('change', { bubbles: true }));
+                                return true;
+                            }
+
+                            box.scrollIntoView({block: 'center'});
+                            box.click();
+                            await new Promise(r => setTimeout(r, 600));
+
+                            let options = Array.from(document.querySelectorAll('[role="option"], li'));
+                            let opt = options.find(o => {
+                                let txt = (o.innerText || "").trim().toLowerCase();
+                                return txt === String(targetValueStr).toLowerCase() || txt.includes(String(targetValueStr).toLowerCase());
+                            });
+
+                            if(opt) {
+                                opt.scrollIntoView({block: 'nearest'});
+                                opt.click();
+                                await new Promise(r => setTimeout(r, 500));
+                                return true;
+                            } else {
+                                document.body.click();
+                                await new Promise(r => setTimeout(r, 300));
+                                return false;
+                            }
+                        }
+
                         (async function() {
                             try {
-                                const selects = Array.from(document.querySelectorAll('select'));
-                                if (selects.length >= 3) {
-                                    for (let sel of selects) {
-                                        const t = (sel.title || sel.name || sel.id || sel.getAttribute('aria-label') || "").toLowerCase();
-                                        let nativeSetter = Object.getOwnPropertyDescriptor(window.HTMLSelectElement.prototype, "value").set;
-                                        if (t.includes("tháng") || t.includes("month")) { nativeSetter.call(sel, month); }
-                                        else if (t.includes("ngày") || t.includes("day") || t === "ngày") { nativeSetter.call(sel, day); }
-                                        else if (t.includes("năm") || t.includes("year")) { nativeSetter.call(sel, year); }
-                                        sel.dispatchEvent(new Event('change', { bubbles: true }));
-                                    }
-                                    return callback("SUCCESS");
-                                }
-                                callback("ERROR: Không tìm thấy 3 ô chọn ngày tháng năm");
-                            } catch (err) { callback("ERROR: " + err.toString()); }
+                                await clickDropdownAndSelect("ngày", day);
+                                await clickDropdownAndSelect("tháng", month);
+                                await clickDropdownAndSelect("năm", year);
+                                await clickDropdownAndSelect("giới tính", genderText);
+                                callback("SUCCESS");
+                            } catch (e) {
+                                callback("ERROR: " + e.toString());
+                            }
                         })();
-                        '''
-                        driver.execute_async_script(js_date_script, current_day, current_month, current_year)
+                        """
+                        res = driver.execute_async_script(js_dropdowns, current_day, current_month, current_year, gender_text)
+                        if "ERROR" in res:
+                            print(f"{Colors.color_text(f'[{self.thread_id}] Cảnh báo JS Dropdown: {res}', Colors.WARNING)}")
                     except Exception as e:
-                        print(f"{Colors.color_text(f'[{self.thread_id}] Lỗi Ngày Sinh: {e}', Colors.WARNING)}")
-                    time.sleep(self.delay_config['delay_chon_ngay_sinh'])
+                        print(f"{Colors.color_text(f'[{self.thread_id}] Lỗi chạy script Combobox: {e}', Colors.ERROR)}")
 
-                    # 4. Chọn Giới tính (Tích hợp thêm logic cho Dropdown mới)
-                    gender_val = random.choice(["1", "2"])
-                    print(f"{Colors.color_text(f'[{self.thread_id}] Chọn Giới tính...', Colors.INFO)}")
-                    driver.execute_script("""
-                        const val = arguments[0];
-                        // Giao diện cũ (Radio button)
-                        let radio = document.querySelector(`input[name="sex"][value="${val}"]`);
-                        if (radio) { radio.click(); radio.checked = true; radio.dispatchEvent(new Event('change', { bubbles: true })); return; }
-                        
-                        // Giao diện Meta mới (Dropdown Select)
-                        let selects = Array.from(document.querySelectorAll('select'));
-                        let genderSelect = selects.find(s => {
-                            let title = (s.title || s.name || s.id || s.getAttribute('aria-label') || "").toLowerCase();
-                            return title.includes("giới") || title.includes("sex") || title.includes("gender");
-                        });
-                        if (!genderSelect && selects.length >= 4) genderSelect = selects[3];
-                        
-                        if (genderSelect) {
-                            let nativeSetter = Object.getOwnPropertyDescriptor(window.HTMLSelectElement.prototype, "value").set;
-                            nativeSetter.call(genderSelect, val);
-                            genderSelect.dispatchEvent(new Event('change', { bubbles: true }));
-                        }
-                    """, gender_val)
-                    time.sleep(self.delay_config['delay_chon_gioi_tinh'])
+                    time.sleep(1)
 
-                    # 5. Điền Email / SĐT
-                    print(f"{Colors.color_text(f'[{self.thread_id}] Điền Email/SĐT ({contact_for_signup})...', Colors.INFO)}")
-                    reg_email_el = get_meta_element([
-                        "//input[@name='reg_email__']", "//input[@type='email']", 
-                        "//input[@aria-label='Số di động hoặc email']", 
-                        "//input[contains(@placeholder, 'email') or contains(@placeholder, 'Số di động')]"
-                    ], "Email/SĐT")
-                    if reg_email_el: human_type(reg_email_el, contact_for_signup)
-                    time.sleep(self.delay_config['delay_nhap_sdt_email'])
-
-                    # 6. Điền Mật khẩu
+                    # 5. ĐIỀN MẬT KHẨU
                     print(f"{Colors.color_text(f'[{self.thread_id}] Điền Mật khẩu...', Colors.INFO)}")
-                    reg_pass_el = get_meta_element([
-                        "//input[@name='reg_passwd__']", "//input[@type='password']", 
-                        "//input[@aria-label='Mật khẩu mới' or @aria-label='Mật khẩu']"
-                    ], "Mật khẩu")
-                    if reg_pass_el: human_type(reg_pass_el, secure_pass)
-                    time.sleep(self.delay_config['delay_nhap_mat_khau'])
-                    
+                    try:
+                        pass_xpath = "//input[@type='password' or @name='reg_passwd__' or contains(@aria-label, 'Mật khẩu') or contains(@placeholder, 'Mật khẩu')]"
+                        reg_pass_el = driver.find_element(By.XPATH, pass_xpath)
+                        human_type(reg_pass_el, secure_pass)
+                    except Exception as e:
+                        print(f"{Colors.color_text(f'[{self.thread_id}] Không tìm thấy ô Mật khẩu: {e}', Colors.WARNING)}")
+                    time.sleep(1)
+
                     ngam_form = self.delay_config['delay_ngam_form_truoc_submit']
-                    print(f"{Colors.color_text(f'[{self.thread_id}] Đã điền xong. Ngâm form {ngam_form}s trước khi submit...', Colors.WARNING)}")
+                    print(f"{Colors.color_text(f'[{self.thread_id}] Đã điền xong. Ngâm form {ngam_form}s trước khi bấm nút Đăng Ký...', Colors.WARNING)}")
                     time.sleep(ngam_form)
 
                     uid_moc = 0
@@ -1534,7 +1388,7 @@ class starts(threading.Thread):
                             let links = Array.from(document.querySelectorAll('a, button, div[role="button"], span'));
                             for (let el of links) {
                                 let txt = (el.innerText || el.textContent || "").trim().toLowerCase();
-                                if (txt.includes('cập nhật thông tin liên hệ') || txt.includes('update contact info') || txt.includes('xác nhận bằng email') || txt.includes('confirm by email') || txt.includes('thay đổi thông tin')) {
+                                if (txt.includes('cập nhật thông liên hệ') || txt.includes('update contact info') || txt.includes('xác nhận bằng email') || txt.includes('confirm by email') || txt.includes('thay đổi thông tin')) {
                                     let btn = el.closest('a, button, [role="button"]') || el;
                                     btn.click();
                                     break;
@@ -1680,7 +1534,6 @@ class starts(threading.Thread):
                             if clicked_resend:
                                 print(f"{Colors.color_text(f'[{self.thread_id}] Đã yêu cầu GỬI LẠI MÃ thành công. Chờ thư/sim mới...', Colors.INFO)}")
                                 time.sleep(5)
-                                # LƯU Ý: KHÔNG RESET BASELINE ĐỂ TRÁNH BỎ QUA MÃ MỚI
                             else:
                                 print(f"{Colors.color_text(f'[{self.thread_id}] Đã kích hoạt gửi lại mã trực tiếp. Chờ thư/sim mới...', Colors.INFO)}")
                                 time.sleep(5)
@@ -2244,7 +2097,6 @@ class starts(threading.Thread):
         
         print(f"\n{Colors.color_text(f'[{self.thread_id}] TỔNG KẾT TAB: {success_count}/{self.account_count} THÀNH CÔNG', Colors.TITLE)}")
 
-
 # ==================== MENU CHÍNH ====================
 def select_mode():
     while True:
@@ -2262,7 +2114,6 @@ def select_mode():
         elif choice == "7":
             cau_hinh_delay()
             banner()
-
 
 def process_file_input(config_key, default_prompt):
     config_data = load_config()
