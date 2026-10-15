@@ -1718,7 +1718,7 @@ class starts(threading.Thread):
                                 print(f"{Colors.color_text(f'[{self.thread_id}] Đã kích hoạt gửi lại mã trực tiếp. Chờ thư/sim mới...', Colors.INFO)}")
                                 time.sleep(5)
                         else:
-                            print(f"{Colors.color_text(f'[{self.thread_id}] Lỗi: Không tìm thấy nút \"Tôi không nhận được mã\" / \"Gửi lại email\"!', Colors.ERROR)}")
+                            print(f"{Colors.color_text(f'[{self.thread_id}] Lỗi: Không tìm thấy nút Tôi không nhận được mã / Gửi lại email!', Colors.ERROR)}")
 
                 if not otp_code:
                     print(f"{Colors.color_text(f'[{self.thread_id}] Lỗi: Đã thử Gửi lại {max_resend_attempts} lần nhưng vẫn KHÔNG CÓ MÃ. Báo Mail/Sim Die và bỏ qua acc!', Colors.ERROR)}")
@@ -1965,7 +1965,7 @@ class starts(threading.Thread):
                         except Exception: pass
 
                     # 2. BẮT ĐẦU: Nhận diện nút "Bắt đầu" (Get started) theo đúng giao diện Thiết lập bảo vệ tăng cường
-                    print(f"{Colors.color_text(f'[{self.thread_id}] Chờ và bấm nút \"Bắt đầu\" (Get started)...', Colors.INFO)}")
+                    print(f"{Colors.color_text(f'[{self.thread_id}] Chờ và bấm nút Bắt đầu (Get started)...', Colors.INFO)}")
                     for _ in range(6):
                         clicked_start = driver.execute_script("""
                             let allElements = Array.from(document.querySelectorAll('button, div[role="button"], span'));
@@ -1980,7 +1980,7 @@ class starts(threading.Thread):
                             return false;
                         """)
                         if clicked_start:
-                            print(f"{Colors.color_text(f'[{self.thread_id}] ĐÃ BẤM NÚT \"Bắt đầu\" THÀNH CÔNG!', Colors.SUCCESS)}")
+                            print(f"{Colors.color_text(f'[{self.thread_id}] ĐÃ BẤM NÚT Bắt đầu THÀNH CÔNG!', Colors.SUCCESS)}")
                             time.sleep(4)
                             break
                         time.sleep(1.5)
@@ -1998,7 +1998,7 @@ class starts(threading.Thread):
                         time.sleep(1.5)
 
                     if is_email_check_screen:
-                        print(f"{Colors.color_text(f'[{self.thread_id}] ĐÃ HIỆN MÀN HÌNH \"Kiểm tra email của bạn\". Bắt đầu quét MÃ 8 SỐ trong nội dung thư...', Colors.WARNING)}")
+                        print(f"{Colors.color_text(f'[{self.thread_id}] ĐÃ HIỆN MÀN HÌNH Kiểm tra email của bạn. Bắt đầu quét MÃ 8 SỐ trong nội dung thư...', Colors.WARNING)}")
                         
                         verify_code = None
                         if self.mode == "1" or (self.mode == "2" and mail_service and mail_service.token):
@@ -2235,7 +2235,8 @@ class starts(threading.Thread):
                             access_token = ket_qua_token['data'].get('token', '')
                             print(f"{Colors.color_text(f'[{self.thread_id}] Đã lấy Access Token Android thành công!', Colors.SUCCESS)}")
                         else:
-                            print(f"{Colors.color_text(f'[{self.thread_id}] Không lấy được Token Android: {ket_qua_token.get(\"msg\")}', Colors.WARNING)}")
+                            msg_err = ket_qua_token.get('msg')
+                            print(f"{Colors.color_text(f'[{self.thread_id}] Không lấy được Token Android: {msg_err}', Colors.WARNING)}")
                     except Exception as ex_tk:
                         print(f"{Colors.color_text(f'[{self.thread_id}] Lỗi lấy Token Android: {ex_tk}', Colors.WARNING)}")
                 
