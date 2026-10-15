@@ -1,63 +1,14 @@
-# --- SHIM CHO PYTHON 3.12+ (Khắc phục hoàn toàn lỗi thiếu distutils và .version) ---
+# --- SHIM CHO PYTHON 3.12+ ---
 import sys
 import socket
 import select
 import base64
 import io
-
-# Tự động cấu hình mã hóa UTF-8 cho Windows Console tránh lỗi UnicodeEncodeError
-if sys.platform.startswith('win'):
-    try:
-        sys.stdout.reconfigure(encoding='utf-8', errors='replace')
-        sys.stderr.reconfigure(encoding='utf-8', errors='replace')
-    except Exception:
-        pass
-import types
-import re
-if 'distutils' not in sys.modules:
-    distutils_mod = types.ModuleType('distutils')
-    distutils_version_mod = types.ModuleType('distutils.version')
-    class LooseVersion:
-        def __init__(self, vstring=None):
-            if vstring:
-                self.parse(vstring)
-        def parse(self, vstring):
-            self.vstring = vstring
-            component_re = re.compile(r'(\d+)')
-            components = [int(x) if x.isdigit() else x for x in component_re.split(vstring) if x and x != '.']
-            self.version = components
-        def __lt__(self, other):
-            other_v = other.version if isinstance(other, LooseVersion) else LooseVersion(other).version
-            return self.version < other_v
-        def __le__(self, other):
-            other_v = other.version if isinstance(other, LooseVersion) else LooseVersion(other).version
-            return self.version <= other_v
-        def __eq__(self, other):
-            other_v = other.version if isinstance(other, LooseVersion) else LooseVersion(other).version
-            return self.version == other_v
-        def __ne__(self, other):
-            other_v = other.version if isinstance(other, LooseVersion) else LooseVersion(other).version
-            return self.version != other_v
-        def __gt__(self, other):
-            other_v = other.version if isinstance(other, LooseVersion) else LooseVersion(other).version
-            return self.version > other_v
-        def __ge__(self, other):
-            other_v = other.version if isinstance(other, LooseVersion) else LooseVersion(other).version
-            return self.version >= other_v
-        def __str__(self):
-            return self.vstring
-        def __repr__(self):
-            return f"LooseVersion ('{self.vstring}')"
-    distutils_version_mod.LooseVersion = LooseVersion
-    distutils_mod.version = distutils_version_mod
-    sys.modules['distutils'] = distutils_mod
-    sys.modules['distutils.version'] = distutils_version_mod
-# -----------------------------------------------------------------------------------
-
 import os
 import time
 import threading
 import random
+import re
 from datetime import datetime
 import uuid
 import imaplib
@@ -68,14 +19,50 @@ import traceback
 import string
 import hashlib
 import struct
+import types
 
-# ===== THƯ VIỆN CHROME CHO PC, PYOTP & MÃ HÓA RSA/AES =====
+# Khắc phục lỗi font trên Windows
+if sys.platform.startswith('win'):
+    try:
+        sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+        sys.stderr.reconfigure(encoding='utf-8', errors='replace')
+    except Exception:
+        pass
+
+# Fix lỗi distutils trên Python 3.12+
+if 'distutils' not in sys.modules:
+    distutils_mod = types.ModuleType('distutils')
+    distutils_version_mod = types.ModuleType('distutils.version')
+    class LooseVersion:
+        def __init__(self, vstring=None):
+            if vstring:
+                self.parse(vstring)
+        def parse(self, vstring):
+            self.vstring = vstring
+            self.version = [int(x) if x.isdigit() else x for x in re.compile(r'(\d+)').split(vstring) if x and x != '.']
+        def __lt__(self, other):
+            return self.version < (other.version if isinstance(other, LooseVersion) else LooseVersion(other).version)
+        def __le__(self, other):
+            return self.version <= (other.version if isinstance(other, LooseVersion) else LooseVersion(other).version)
+        def __eq__(self, other):
+            return self.version == (other.version if isinstance(other, LooseVersion) else LooseVersion(other).version)
+        def __ne__(self, other):
+            return self.version != (other.version if isinstance(other, LooseVersion) else LooseVersion(other).version)
+        def __gt__(self, other):
+            return self.version > (other.version if isinstance(other, LooseVersion) else LooseVersion(other).version)
+        def __ge__(self, other):
+            return self.version >= (other.version if isinstance(other, LooseVersion) else LooseVersion(other).version)
+    distutils_version_mod.LooseVersion = LooseVersion
+    distutils_mod.version = distutils_version_mod
+    sys.modules['distutils'] = distutils_mod
+    sys.modules['distutils.version'] = distutils_version_mod
+
+# Thư viện Chrome và Mã hóa
 try:
     import undetected_chromedriver as uc
     from selenium.webdriver.common.by import By
     from selenium.webdriver.support.ui import WebDriverWait
     from selenium.webdriver.support import expected_conditions as EC
-    from selenium.webdriver.support.ui import Select
     from selenium.webdriver.common.keys import Keys
     import requests
     from requests.adapters import HTTPAdapter
@@ -85,13 +72,12 @@ try:
     from Crypto.PublicKey import RSA
     from Crypto.Random import get_random_bytes
 except ImportError:
-    print("Đang cài đặt thư viện thiếu (undetected-chromedriver, selenium, requests, pyotp, pycryptodome)...")
+    print("Đang cài đặt thư viện thiếu...")
     os.system("pip install undetected-chromedriver selenium requests pyotp pycryptodome")
     import undetected_chromedriver as uc
     from selenium.webdriver.common.by import By
     from selenium.webdriver.support.ui import WebDriverWait
     from selenium.webdriver.support import expected_conditions as EC
-    from selenium.webdriver.support.ui import Select
     from selenium.webdriver.common.keys import Keys
     import requests
     from requests.adapters import HTTPAdapter
@@ -101,7 +87,7 @@ except ImportError:
     from Crypto.PublicKey import RSA
     from Crypto.Random import get_random_bytes
 
-# BIẾN TOÀN CỤC & CÁC KHÓA (LOCK)
+# Biến toàn cục
 STOP_EVENT = threading.Event()
 OTP_LOCK = threading.Lock() 
 DATA_LOCK = threading.Lock()
@@ -119,40 +105,26 @@ BASE_YEAR = random.randint(1995, 2005)
 APP_TOKEN = '350685531728|62f8ce9f74b12f84c123cc23437a4a32'
 
 DEFAULT_DELAY_CONFIG = {
-    'delay_mo_facebook': 10.0,
-    'delay_nhap_ho': 0.3,
-    'delay_nhap_ten': 0.3,
-    'delay_chon_ngay_sinh': 1.0,
-    'delay_chon_gioi_tinh': 0.5,
-    'delay_nhap_sdt_email': 1.0,
-    'delay_nhap_mat_khau': 1.0,
-    'delay_ngam_form_truoc_submit': 10.0,
-    'delay_validate_form': 5.0,
-    'delay_sau_khi_submit': 15.0,
-    'delay_ngam_otp': 60.0,
-    'delay_cho_load_trang_chu': 35.0,
-    'delay_giua_cac_lan_chay': 6.0,
-    'delay_thu_lai_khi_loi': 6.0,
-    'so_lan_thu_get_code': 2,
-    'mat_khau_fb': '',          
-    'use_phone_bait': False,    
-    'lay_token_android': True   
+    'delay_mo_facebook': 10.0, 'delay_nhap_ho': 0.3, 'delay_nhap_ten': 0.3, 
+    'delay_chon_ngay_sinh': 1.0, 'delay_chon_gioi_tinh': 0.5, 'delay_nhap_sdt_email': 1.0, 
+    'delay_nhap_mat_khau': 1.0, 'delay_ngam_form_truoc_submit': 10.0, 'delay_validate_form': 5.0, 
+    'delay_sau_khi_submit': 15.0, 'delay_ngam_otp': 60.0, 'delay_cho_load_trang_chu': 35.0, 
+    'delay_giua_cac_lan_chay': 6.0, 'delay_thu_lai_khi_loi': 6.0, 'so_lan_thu_get_code': 2, 
+    'mat_khau_fb': '', 'use_phone_bait': False, 'lay_token_android': True   
 }
 
 ALL_DRIVERS = []
 GLOBAL_USED_PHONES = set()
 GLOBAL_USED_NAMES = set()
 
-# --- CƠ CHẾ ĐÓNG BĂNG MÀN HÌNH CHỐNG TRÔI LỆNH TRONG ĐA LUỒNG ---
+# Print đồng bộ
 built_in_print = print
 PAUSE_FOR_INPUT = threading.Event()
 PAUSE_FOR_INPUT.set() 
-
 def thread_safe_print(*args, **kwargs):
     PAUSE_FOR_INPUT.wait() 
     with PRINT_LOCK:
         built_in_print(*args, **kwargs)
-
 print = thread_safe_print 
 
 class Colors:
@@ -170,7 +142,6 @@ class Colors:
     USERNAME = "\033[38;2;0;255;255m"
     PASSWORD = "\033[38;2;255;105;180m"
     RESET = "\033[0m"
-    
     @staticmethod
     def color_text(text, color):
         return f"{color}{text}{Colors.RESET}"
@@ -185,7 +156,7 @@ def banner():
  ╚██████╔╝██║  ██║██║  ██║╚██████╔╝██║ ╚═╝ ██║███████╗
   ╚═════╝ ╚═╝  ╚═╝╚═╝  ╚═╝ ╚═════╝ ╚═╝     ╚═╝╚══════╝
 {Colors.RESET}""")
-    built_in_print(f"{Colors.INFO}Phiên Bản: v20.2 ỔN ĐỊNH (FB Reg Index Form - 100% Nam){Colors.RESET}")
+    built_in_print(f"{Colors.INFO}Phiên Bản: v20.5 (Fix Lỗi Cấu Trúc File - Chạy Mượt 100%){Colors.RESET}")
     built_in_print(f"{Colors.LINE}{'─'*75}{Colors.RESET}\n")
 
 def load_config():
@@ -220,8 +191,7 @@ def luu_delay_config(config):
     try:
         with open(DELAY_CONFIG_FILE, 'w', encoding='utf-8') as f:
             json.dump(config, f, indent=4, ensure_ascii=False)
-    except Exception:
-        pass
+    except Exception: pass
 
 def nhap_delay(tieu_de, gia_tri_mac_dinh):
     try:
@@ -250,21 +220,10 @@ def cau_hinh_delay():
     if chon_token in ['y', 'n']: config['lay_token_android'] = (chon_token == 'y')
 
     built_in_print(f'\n{Colors.INFO}【THÔNG SỐ DELAY TRÌNH DUYỆT (Giây)】{Colors.RESET}')
-    config['delay_mo_facebook'] = nhap_delay('Delay mở trang đăng ký Facebook', config['delay_mo_facebook'])
-    config['delay_nhap_ho'] = nhap_delay('Delay sau nhập Họ', config['delay_nhap_ho'])
-    config['delay_nhap_ten'] = nhap_delay('Delay sau nhập Tên', config['delay_nhap_ten'])
-    config['delay_chon_ngay_sinh'] = nhap_delay('Delay sau chọn Ngày Sinh', config['delay_chon_ngay_sinh'])
-    config['delay_chon_gioi_tinh'] = nhap_delay('Delay sau chọn Giới Tính', config['delay_chon_gioi_tinh'])
-    config['delay_nhap_sdt_email'] = nhap_delay('Delay sau nhập Email/SĐT', config['delay_nhap_sdt_email'])
-    config['delay_nhap_mat_khau'] = nhap_delay('Delay sau nhập Mật khẩu', config['delay_nhap_mat_khau'])
-    config['delay_ngam_form_truoc_submit'] = nhap_delay('Delay ngâm form trước khi bấm nút Đăng ký', config['delay_ngam_form_truoc_submit'])
-    config['delay_validate_form'] = nhap_delay('Delay chờ form validate trước khi Submit', config['delay_validate_form'])
-    config['delay_sau_khi_submit'] = nhap_delay('Delay chờ sau khi bấm nút Đăng ký', config['delay_sau_khi_submit'])
-    config['delay_ngam_otp'] = nhap_delay('Delay ngâm mã OTP (Mode 3, 4, 5, 6)', config['delay_ngam_otp'])
-    config['delay_cho_load_trang_chu'] = nhap_delay('Delay chờ tải trang chủ sau khi gửi OTP', config['delay_cho_load_trang_chu'])
-    config['delay_giua_cac_lan_chay'] = nhap_delay('Delay nghỉ giữa các tài khoản', config['delay_giua_cac_lan_chay'])
-    config['so_lan_thu_get_code'] = int(nhap_delay('Số lần bấm Gửi lại mã tối đa khi chưa nhận được OTP', config['so_lan_thu_get_code']))
-
+    for k in ['delay_mo_facebook', 'delay_nhap_ho', 'delay_nhap_ten', 'delay_chon_ngay_sinh', 'delay_chon_gioi_tinh', 'delay_nhap_sdt_email', 'delay_nhap_mat_khau', 'delay_ngam_form_truoc_submit', 'delay_validate_form', 'delay_sau_khi_submit', 'delay_ngam_otp', 'delay_cho_load_trang_chu', 'delay_giua_cac_lan_chay']:
+        config[k] = nhap_delay(f'Delay {k}', config[k])
+    config['so_lan_thu_get_code'] = int(nhap_delay('Số lần bấm Gửi lại mã tối đa', config['so_lan_thu_get_code']))
+    
     luu_delay_config(config)
     built_in_print(f'\n{Colors.SUCCESS}✅ Đã lưu cấu hình thành công!{Colors.RESET}\n')
     return config
@@ -277,39 +236,21 @@ def save_account(thread_id, email_str, password, uid, full_name, mode="auto", co
     
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     filename = os.path.join(folder_name, f"account_{thread_id}_{timestamp}.txt")
-    
     dinh_dang_luu = f"{uid}|{password}|{email_str}|{two_fa}|{cookie}|{access_token}\n"
     try:
-        with open(file_tong, 'a', encoding='utf-8') as f: 
-            f.write(dinh_dang_luu)
-            
-        content = (
-            f"Luồng: {thread_id}\n"
-            f"UID: {uid}\n"
-            f"Họ Tên: {full_name}\n"
-            f"Email/SĐT: {email_str}\n"
-            f"Pass: {password}\n"
-            f"2FA: {two_fa}\n"
-            f"Access Token: {access_token}\n"
-            f"Cookie: {cookie}\n"
-        )
-        with open(filename, 'w', encoding='utf-8') as f: 
-            f.write(content)
-    except Exception as e: 
-        print(f"Lỗi khi lưu file: {e}")
+        with open(file_tong, 'a', encoding='utf-8') as f: f.write(dinh_dang_luu)
+        content = f"Luồng: {thread_id}\nUID: {uid}\nHọ Tên: {full_name}\nEmail/SĐT: {email_str}\nPass: {password}\n2FA: {two_fa}\nAccess Token: {access_token}\nCookie: {cookie}\n"
+        with open(filename, 'w', encoding='utf-8') as f: f.write(content)
+    except Exception as e: print(f"Lỗi khi lưu file: {e}")
 
-# ========== HÀM TẠO HỌ TÊN (100% NAM) & SỐ ĐIỆN THOẠI ==========
 def tao_so_dien_thoai(used_phones=None):
     target_set = used_phones if used_phones is not None else GLOBAL_USED_PHONES
-    dau_so = [
-        '333', '338', '339', '358', '359', '368', '369', '378', '379',
-        '388', '389', '396', '397', '398', '399', '777', '778', '779',
-        '787', '788', '789', '968', '969', '978', '979', '988', '989'
-    ]
+    dau_so = ['333', '338', '339', '358', '359', '368', '369', '378', '379',
+              '388', '389', '396', '397', '398', '399', '777', '778', '779',
+              '787', '788', '789', '968', '969', '978', '979', '988', '989']
     with RESOURCE_LOCK:
         while True:
-            so = random.choice(dau_so) + ''.join(random.choices(string.digits, k=6))
-            phone = f'+84{so}'
+            phone = f"+84{random.choice(dau_so)}{''.join(random.choices(string.digits, k=6))}"
             if phone not in target_set:
                 target_set.add(phone)
                 return phone
@@ -322,11 +263,8 @@ def VietnameseMaleNameGenerator(used_names=None):
     
     with RESOURCE_LOCK:
         for _ in range(100):
-            first = random.choice(ho_list)
-            middle = random.choice(middle_list)
-            last = random.choice(ten_list)
-            last_name_fb = f"{first} {middle}"
-            first_name_fb = last
+            last_name_fb = f"{random.choice(ho_list)} {random.choice(middle_list)}"
+            first_name_fb = random.choice(ten_list)
             full_name = f"{last_name_fb} {first_name_fb}"
             if full_name not in target_set:
                 target_set.add(full_name)
@@ -335,11 +273,8 @@ def VietnameseMaleNameGenerator(used_names=None):
     cleaned = re.sub(r'[^a-zA-Z0-9]', '', full_name.lower())
     extra_chars = "".join(random.choices("abcdefghijklmnopqrstuvwxyz", k=2))
     username = f"{cleaned}{extra_chars}{random.randint(10000, 999999)}"
-    
     return last_name_fb, first_name_fb, full_name, username
 
-
-# ========== CLASS FACEBOOK MÃ HÓA RSA/AES & LẤY TOKEN ANDROID ==========
 class Facebook:
     def MaHoaMatKhau(self, mat_khau):
         try:
@@ -371,10 +306,8 @@ class Facebook:
             buf.write(encrypted_passwd)
             encoded = base64.b64encode(buf.getvalue()).decode('utf-8')
             return f"#PWD_FB4A:2:{current_time}:{encoded}"
-        except KeyboardInterrupt:
-            raise KeyboardInterrupt
-        except Exception:
-            return mat_khau
+        except KeyboardInterrupt: raise KeyboardInterrupt
+        except Exception: return mat_khau
 
     @staticmethod
     def _tao_machine_id():
@@ -436,7 +369,6 @@ class Facebook:
         except KeyboardInterrupt: raise KeyboardInterrupt
         except Exception as e: return {'status': 401, 'msg': str(e)}
 
-# >>> HỆ THỐNG XỬ LÝ PROXY ĐA NĂNG <<<
 def parse_proxy(proxy_str):
     if not proxy_str: return None
     p_str = str(proxy_str).strip()
@@ -501,7 +433,6 @@ class LocalProxyForwarder:
                     client_sock.close()
                     return
                 req += chunk
-
             header_part, rest = req.split(crlf2, 1)
             lines = header_part.split(crlf)
             first_line = lines[0].decode("utf-8", "ignore")
@@ -570,7 +501,6 @@ class LocalProxyForwarder:
         try: self.server_socket.close()
         except: pass
 
-# ==================== CÁC CLASS XỬ LÝ EMAIL ====================
 class MailService:
     def __init__(self, proxy=None):
         self.base_url = "https://api.mail.tm"
@@ -614,7 +544,6 @@ class MailService:
         headers = {"Authorization": f"Bearer {self.token}", "Accept": "application/json"}
         start_time = time.time()
         time.sleep(random.uniform(1.0, 5.0))
-        
         while time.time() - start_time < timeout:
             if STOP_EVENT.is_set(): return None
             try:
@@ -721,7 +650,6 @@ class GmailIMAPService:
             if not self.connect(): return None
         start_time = time.time()
         time.sleep(random.uniform(1.0, 5.0))
-        
         while time.time() - start_time < timeout:
             if STOP_EVENT.is_set(): return None
             try:
@@ -732,9 +660,7 @@ class GmailIMAPService:
                     for uid_bytes in reversed(uids[-10:]):
                         try: uid_int = int(uid_bytes)
                         except ValueError: continue
-                        
                         if uid_int <= since_uid or uid_bytes in self.seen_uids: continue
-                            
                         status, fetch_data = self.mail.uid("fetch", uid_bytes, "(RFC822)")
                         if status == "OK" and fetch_data:
                             raw = None
@@ -774,6 +700,7 @@ class GmailIMAPService:
             except Exception: pass
             time.sleep(random.uniform(6.0, 10.0)) 
         return None
+
 class HotmailAPIService:
     def __init__(self, data_line, api_mode, proxy=None):
         self.url = "https://smail1s.com/get_messages"
@@ -997,7 +924,6 @@ class starts(threading.Thread):
             hotmail_service = None
             autosms_service = None
             
-            # TẠO TÊN NAM TỰ ĐỘNG
             last_name_fb, first_name_fb, full_name, username = VietnameseMaleNameGenerator(self.used_names)
             
             if self.delay_config.get('mat_khau_fb'):
