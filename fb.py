@@ -181,12 +181,12 @@ class Colors:
 def banner():
     os.system('clear' if os.name == 'posix' else 'cls')
     built_in_print(f"""{Colors.PRIMARY}
- ██████╗ ██╗  ██╗██████╗  ██████╗ ███╗   ███╗███████╗
-██╔════╝ ██║  ██║██╔══██╗██╔═══██╗████╗ ████║██╔════╝
-██║  ███╗███████║██████╔╝██║   ██║██╔████╔██║█████╗  
-██║   ██║██╔══██║██╔══██╗██║   ██║██║╚██╔╝██║██╔══╝  
-╚██████╔╝██║  ██║██║  ██║╚██████╔╝██║ ╚═╝ ██║███████╗
- ╚═════╝ ╚═╝  ╚═╝╚═╝  ╚═╝ ╚═════╝ ╚═╝     ╚═╝╚══════╝
+  ██████╗ ██╗  ██╗██████╗  ██████╗ ███╗   ███╗███████╗
+ ██╔════╝ ██║  ██║██╔══██╗██╔═══██╗████╗ ████║██╔════╝
+ ██║  ███╗███████║██████╔╝██║   ██║██╔████╔██║█████╗  
+ ██║   ██║██╔══██║██╔══██╗██║   ██║██║╚██╔╝██║██╔══╝  
+ ╚██████╔╝██║  ██║██║  ██║╚██████╔╝██║ ╚═╝ ██║███████╗
+  ╚═════╝ ╚═╝  ╚═╝╚═╝  ╚═╝ ╚═════╝ ╚═╝     ╚═╝╚══════╝
 {Colors.RESET}""")
     built_in_print(f"{Colors.INFO}Phiên Bản: v18.5 Ultimate (FB Reg Chrome + 6 Modes + 2FA 8 Số + Token EAAAAU){Colors.RESET}")
     built_in_print(f"{Colors.LINE}{'─'*75}{Colors.RESET}\n")
@@ -1309,151 +1309,118 @@ class starts(threading.Thread):
                         try: element.send_keys(Keys.TAB)
                         except: pass
 
-                # ==================== ĐIỀN FORM ĐĂNG KÝ FACEBOOK ====================
+                # ==================== ĐIỀN FORM ĐĂNG KÝ FACEBOOK (UPDATE GIAO DIỆN META MỚI) ====================
                 try:
-                    wait.until(EC.presence_of_element_located((By.NAME, "firstname")))
+                    print(f"{Colors.color_text(f'[{self.thread_id}] Đang quét giao diện Form mới...', Colors.INFO)}")
                     
-                    lastname_el = driver.find_element(By.NAME, "lastname")
-                    firstname_el = driver.find_element(By.NAME, "firstname")
+                    # 1. Bỏ qua việc tìm đích danh 'firstname', chỉ cần đợi bất kỳ thẻ input nào xuất hiện
+                    wait.until(EC.presence_of_element_located((By.TAG_NAME, "input")))
+                    time.sleep(3) # Đợi thêm 1 chút cho animation của form Meta load xong
                     
+                    # Hàm tự động quét tìm phần tử theo nhiều kiểu nhận diện
+                    def get_meta_element(xpaths, desc):
+                        for xp in xpaths:
+                            try:
+                                els = driver.find_elements(By.XPATH, xp)
+                                for el in els:
+                                    if el.is_displayed(): return el
+                            except: continue
+                        return None
+
+                    # 2. Tìm ô Họ và Tên qua aria-label hoặc placeholder thay vì name
+                    lastname_el = get_meta_element([
+                        "//input[@name='lastname']", "//input[@aria-label='Họ']", 
+                        "//input[contains(@placeholder, 'Họ')]", "(//input[@type='text'])[1]"
+                    ], "Họ")
+                    
+                    firstname_el = get_meta_element([
+                        "//input[@name='firstname']", "//input[@aria-label='Tên']", 
+                        "//input[contains(@placeholder, 'Tên')]", "(//input[@type='text'])[2]"
+                    ], "Tên")
+
                     print(f"{Colors.color_text(f'[{self.thread_id}] Điền Họ ({last_name_fb})...', Colors.INFO)}")
-                    human_type(lastname_el, last_name_fb)
+                    if lastname_el: human_type(lastname_el, last_name_fb)
                     time.sleep(self.delay_config['delay_nhap_ho'])
                     
                     print(f"{Colors.color_text(f'[{self.thread_id}] Điền Tên ({first_name_fb})...', Colors.INFO)}")
-                    human_type(firstname_el, first_name_fb)
+                    if firstname_el: human_type(firstname_el, first_name_fb)
                     time.sleep(self.delay_config['delay_nhap_ten'])
                     
-                    print(f"{Colors.color_text(f'[{self.thread_id}] Bắt đầu chọn Ngày Sinh bằng Script Console...', Colors.INFO)}")
+                    print(f"{Colors.color_text(f'[{self.thread_id}] Chọn Ngày Sinh...', Colors.INFO)}")
+                    # 3. Chọn Ngày Sinh (Dùng JS để tương thích cả Select và Combobox)
                     try:
                         driver.set_script_timeout(15)
-                        js_script = '''
-                        const day = arguments[0];
-                        const month = arguments[1];
-                        const year = arguments[2];
-                        const callback = arguments[arguments.length - 1];
-
+                        js_date_script = '''
+                        const day = arguments[0], month = arguments[1], year = arguments[2], callback = arguments[arguments.length - 1];
                         (async function() {
                             try {
                                 const selects = Array.from(document.querySelectorAll('select'));
                                 if (selects.length >= 3) {
-                                    function setSelectVal(el, val) {
-                                        let nativeSetter = Object.getOwnPropertyDescriptor(window.HTMLSelectElement.prototype, "value").set;
-                                        nativeSetter.call(el, val);
-                                        el.dispatchEvent(new Event('change', { bubbles: true }));
-                                    }
-                                    
                                     for (let sel of selects) {
-                                        const t = (sel.title || sel.name || sel.id || "").toLowerCase();
-                                        if (t.includes("tháng") || t.includes("month")) {
-                                            setSelectVal(sel, month);
-                                        } else if (t.includes("ngày") || t.includes("day")) {
-                                            setSelectVal(sel, day);
-                                        } else if (t.includes("năm") || t.includes("year")) {
-                                            setSelectVal(sel, year);
-                                        }
+                                        const t = (sel.title || sel.name || sel.id || sel.getAttribute('aria-label') || "").toLowerCase();
+                                        let nativeSetter = Object.getOwnPropertyDescriptor(window.HTMLSelectElement.prototype, "value").set;
+                                        if (t.includes("tháng") || t.includes("month")) { nativeSetter.call(sel, month); }
+                                        else if (t.includes("ngày") || t.includes("day") || t === "ngày") { nativeSetter.call(sel, day); }
+                                        else if (t.includes("năm") || t.includes("year")) { nativeSetter.call(sel, year); }
+                                        sel.dispatchEvent(new Event('change', { bubbles: true }));
                                     }
-                                    await new Promise(r => setTimeout(r, 1000));
                                     return callback("SUCCESS");
                                 }
-
-                                const comboboxes = Array.from(document.querySelectorAll('[role="combobox"]'));
-                                if (comboboxes.length < 3) return callback("ERROR: Không tìm thấy 3 ô combobox!");
-
-                                const monthNum = parseInt(month, 10);
-                                const enMonths = ["january", "february", "march", "april", "may", "june", "july", "august", "september", "october", "november", "december"];
-                                const viMonths = ["tháng 1", "tháng 2", "tháng 3", "tháng 4", "tháng 5", "tháng 6", "tháng 7", "tháng 8", "tháng 9", "tháng 10", "tháng 11", "tháng 12"];
-                                const possibleMonths = [String(monthNum), "0" + monthNum, enMonths[monthNum-1], viMonths[monthNum-1]];
-
-                                async function clickOption(box, possibleValues) {
-                                    box.scrollIntoView({ block: 'center' });
-                                    box.click();
-                                    await new Promise(r => setTimeout(r, 600));
-                                    
-                                    const options = Array.from(document.querySelectorAll('div, span, li, option'));
-                                    const matched = options.filter(el => {
-                                        if (el.offsetHeight === 0 && !el.getClientRects().length) return false;
-                                        const txt = el.innerText?.trim().toLowerCase() || "";
-                                        return possibleValues.includes(txt);
-                                    });
-
-                                    if (matched.length > 0) {
-                                        const target = matched[matched.length - 1];
-                                        target.scrollIntoView({ block: 'nearest' });
-                                        target.click();
-                                        await new Promise(r => setTimeout(r, 400));
-                                        return true;
-                                    }
-                                    
-                                    document.body.click(); 
-                                    await new Promise(r => setTimeout(r, 200));
-                                    return false;
-                                }
-
-                                const htmlLang = document.documentElement.lang.toLowerCase();
-                                if (htmlLang.includes('vi')) {
-                                    await clickOption(comboboxes[0], [String(day), "0" + day]);
-                                    await clickOption(comboboxes[1], possibleMonths);
-                                    await clickOption(comboboxes[2], [String(year)]);
-                                } else {
-                                    await clickOption(comboboxes[0], possibleMonths);
-                                    await clickOption(comboboxes[1], [String(day), "0" + day]);
-                                    await clickOption(comboboxes[2], [String(year)]);
-                                }
-
-                                callback("SUCCESS");
-                            } catch (err) {
-                                callback("ERROR: " + err.toString());
-                            }
+                                callback("ERROR: Không tìm thấy 3 ô chọn ngày tháng năm");
+                            } catch (err) { callback("ERROR: " + err.toString()); }
                         })();
                         '''
-                        result = driver.execute_async_script(js_script, current_day, current_month, current_year)
-                        if result == "SUCCESS":
-                            print(f"{Colors.color_text(f'[{self.thread_id}] Đã chạy xong JS chọn: {current_day}/{current_month}/{current_year}', Colors.SUCCESS)}")
-                        else:
-                            print(f"{Colors.color_text(f'[{self.thread_id}] JS chạy lỗi: {result}', Colors.WARNING)}")
+                        driver.execute_async_script(js_date_script, current_day, current_month, current_year)
                     except Exception as e:
-                        print(f"{Colors.color_text(f'[{self.thread_id}] Lỗi tải khối Ngày Sinh (JS): {e}', Colors.ERROR)}")
+                        print(f"{Colors.color_text(f'[{self.thread_id}] Lỗi Ngày Sinh: {e}', Colors.WARNING)}")
                     time.sleep(self.delay_config['delay_chon_ngay_sinh'])
 
-                    # Chọn Giới tính (1 = Nữ, 2 = Nam)
+                    # 4. Chọn Giới tính (Tích hợp thêm logic cho Dropdown mới)
                     gender_val = random.choice(["1", "2"])
                     print(f"{Colors.color_text(f'[{self.thread_id}] Chọn Giới tính...', Colors.INFO)}")
                     driver.execute_script("""
                         const val = arguments[0];
+                        // Giao diện cũ (Radio button)
                         let radio = document.querySelector(`input[name="sex"][value="${val}"]`);
-                        if (radio) {
-                            radio.click();
-                            radio.checked = true;
-                            radio.dispatchEvent(new Event('change', { bubbles: true }));
+                        if (radio) { radio.click(); radio.checked = true; radio.dispatchEvent(new Event('change', { bubbles: true })); return; }
+                        
+                        // Giao diện Meta mới (Dropdown Select)
+                        let selects = Array.from(document.querySelectorAll('select'));
+                        let genderSelect = selects.find(s => {
+                            let title = (s.title || s.name || s.id || s.getAttribute('aria-label') || "").toLowerCase();
+                            return title.includes("giới") || title.includes("sex") || title.includes("gender");
+                        });
+                        if (!genderSelect && selects.length >= 4) genderSelect = selects[3];
+                        
+                        if (genderSelect) {
+                            let nativeSetter = Object.getOwnPropertyDescriptor(window.HTMLSelectElement.prototype, "value").set;
+                            nativeSetter.call(genderSelect, val);
+                            genderSelect.dispatchEvent(new Event('change', { bubbles: true }));
                         }
                     """, gender_val)
                     time.sleep(self.delay_config['delay_chon_gioi_tinh'])
 
-                    # Điền Email / SĐT
+                    # 5. Điền Email / SĐT
                     print(f"{Colors.color_text(f'[{self.thread_id}] Điền Email/SĐT ({contact_for_signup})...', Colors.INFO)}")
-                    reg_email_el = driver.find_element(By.NAME, "reg_email__")
-                    human_type(reg_email_el, contact_for_signup)
+                    reg_email_el = get_meta_element([
+                        "//input[@name='reg_email__']", "//input[@type='email']", 
+                        "//input[@aria-label='Số di động hoặc email']", 
+                        "//input[contains(@placeholder, 'email') or contains(@placeholder, 'Số di động')]"
+                    ], "Email/SĐT")
+                    if reg_email_el: human_type(reg_email_el, contact_for_signup)
                     time.sleep(self.delay_config['delay_nhap_sdt_email'])
 
-                    # Nếu Facebook hiện ô nhập lại Email (reg_email_confirmation__)
-                    try:
-                        confirm_els = driver.find_elements(By.NAME, "reg_email_confirmation__")
-                        for cel in confirm_els:
-                            if cel.is_displayed():
-                                print(f"{Colors.color_text(f'[{self.thread_id}] Điền xác nhận lại Email...', Colors.INFO)}")
-                                human_type(cel, contact_for_signup)
-                                break
-                    except: pass
-
-                    # Điền Mật khẩu
+                    # 6. Điền Mật khẩu
                     print(f"{Colors.color_text(f'[{self.thread_id}] Điền Mật khẩu...', Colors.INFO)}")
-                    reg_pass_el = driver.find_element(By.NAME, "reg_passwd__")
-                    human_type(reg_pass_el, secure_pass)
+                    reg_pass_el = get_meta_element([
+                        "//input[@name='reg_passwd__']", "//input[@type='password']", 
+                        "//input[@aria-label='Mật khẩu mới' or @aria-label='Mật khẩu']"
+                    ], "Mật khẩu")
+                    if reg_pass_el: human_type(reg_pass_el, secure_pass)
                     time.sleep(self.delay_config['delay_nhap_mat_khau'])
                     
                     ngam_form = self.delay_config['delay_ngam_form_truoc_submit']
-                    print(f"{Colors.color_text(f'[{self.thread_id}] Đã điền xong. Ngâm form {ngam_form}s trước khi bấm nút Đăng Ký...', Colors.WARNING)}")
+                    print(f"{Colors.color_text(f'[{self.thread_id}] Đã điền xong. Ngâm form {ngam_form}s trước khi submit...', Colors.WARNING)}")
                     time.sleep(ngam_form)
 
                     uid_moc = 0
@@ -1543,7 +1510,7 @@ class starts(threading.Thread):
                                 except:
                                     print(f"{Colors.color_text(f'[{self.thread_id}] Không tìm thấy nút qua Selenium, fallback phím ENTER...', Colors.WARNING)}")
                                     try:
-                                        reg_pass_el.send_keys(Keys.ENTER)
+                                        if reg_pass_el: reg_pass_el.send_keys(Keys.ENTER)
                                         print(f"{Colors.color_text(f'[{self.thread_id}] Đã bấm ENTER thành công!', Colors.SUCCESS)}")
                                     except: pass
 
