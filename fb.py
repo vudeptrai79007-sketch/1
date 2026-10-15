@@ -156,7 +156,7 @@ def banner():
 ╚██████╔╝██║  ██║██║  ██║╚██████╔╝██║ ╚═╝ ██║███████╗
  ╚═════╝ ╚═╝  ╚═╝╚═╝  ╚═╝ ╚═════╝ ╚═╝     ╚═╝╚══════╝
 {Colors.RESET}""")
-    built_in_print(f"{Colors.INFO}Phiên Bản: v20.6 (Fixed Full Syntax & Logic) {Colors.RESET}")
+    built_in_print(f"{Colors.INFO}Phiên Bản: v20.7 (Fixed Month Select & New Phone Bait UI) {Colors.RESET}")
     built_in_print(f"{Colors.LINE}{'─'*75}{Colors.RESET}\n")
 
 def load_config():
@@ -1119,46 +1119,158 @@ class starts(threading.Thread):
                         print(f"{Colors.color_text(f'[{self.thread_id}] Không tìm đủ 4 ô nhập liệu! Cấu trúc form chưa load xong.', Colors.ERROR)}")
                         return False
 
-                    # CHỌN NGÀY THÁNG NĂM VÀ GIỚI TÍNH
+                    # CHỌN NGÀY THÁNG NĂM VÀ GIỚI TÍNH (ĐÃ FIX LỖI KHÔNG CHỌN ĐƯỢC THÁNG)
                     gender_text = "Nam"
                     print(f"{Colors.color_text(f'[{self.thread_id}] Chọn Ngày Sinh ({current_day}/{current_month}/{current_year}) và Giới tính ({gender_text})...', Colors.INFO)}")
 
                     try:
-                        driver.set_script_timeout(25)
+                        driver.set_script_timeout(30)
                         js_dropdowns = """
-                        const day = arguments[0], month = arguments[1], year = arguments[2], gender = arguments[3], callback = arguments[4];
+                        const day = String(arguments[0]), month = String(arguments[1]), year = String(arguments[2]), gender = String(arguments[3]), callback = arguments[4];
 
-                        async function selectComboboxByIndex(index, searchValue) {
-                            let combos = Array.from(document.querySelectorAll('div[role="combobox"], select'));
-                            if (combos.length <= index) return false;
+                        function isVisible(el) {
+                            if (!el) return false;
+                            const rect = el.getBoundingClientRect();
+                            const style = window.getComputedStyle(el);
+                            return rect.width > 0 && rect.height > 0 && style.display !== 'none' && style.visibility !== 'hidden' && style.opacity !== '0';
+                        }
+
+                        function triggerMouseClick(el) {
+                            if (!el) return;
+                            el.scrollIntoView({block: 'center'});
+                            const rect = el.getBoundingClientRect();
+                            const cx = rect.left + rect.width / 2;
+                            const cy = rect.top + rect.height / 2;
+                            ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click'].forEach(evtType => {
+                                el.dispatchEvent(new MouseEvent(evtType, {
+                                    view: window,
+                                    bubbles: true,
+                                    cancelable: true,
+                                    clientX: cx,
+                                    clientY: cy
+                                }));
+                            });
+                            try { el.click(); } catch(e) {}
+                        }
+
+                        function normalizeText(str) {
+                            return (str || "").replace(/\\s+/g, " ").trim().toLowerCase();
+                        }
+
+                        const monthSynonyms = {
+                            "1": ["tháng 1", "tháng 01", "thg 1", "thg 01", "tháng một", "tháng giêng", "jan", "january", "1", "01"],
+                            "2": ["tháng 2", "tháng 02", "thg 2", "thg 02", "tháng hai", "feb", "february", "2", "02"],
+                            "3": ["tháng 3", "tháng 03", "thg 3", "thg 03", "tháng ba", "mar", "march", "3", "03"],
+                            "4": ["tháng 4", "tháng 04", "thg 4", "thg 04", "tháng tư", "tháng bốn", "apr", "april", "4", "04"],
+                            "5": ["tháng 5", "tháng 05", "thg 5", "thg 05", "tháng năm", "may", "5", "05"],
+                            "6": ["tháng 6", "tháng 06", "thg 6", "thg 06", "tháng sáu", "jun", "june", "6", "06"],
+                            "7": ["tháng 7", "tháng 07", "thg 7", "thg 07", "tháng bảy", "jul", "july", "7", "07"],
+                            "8": ["tháng 8", "tháng 08", "thg 8", "thg 08", "tháng tám", "aug", "august", "8", "08"],
+                            "9": ["tháng 9", "tháng 09", "thg 9", "thg 09", "tháng chín", "sep", "sept", "september", "9", "09"],
+                            "10": ["tháng 10", "thg 10", "tháng mười", "oct", "october", "10"],
+                            "11": ["tháng 11", "thg 11", "tháng mười một", "nov", "november", "11"],
+                            "12": ["tháng 12", "thg 12", "tháng mười hai", "tháng chạp", "dec", "december", "12"]
+                        };
+
+                        async function selectComboboxByIndex(index, searchValue, fieldType) {
+                            let combos = Array.from(document.querySelectorAll('div[role="combobox"], select')).filter(isVisible);
+                            if (combos.length <= index) {
+                                // Dự phòng nếu giới tính là radio button truyền thống
+                                if (fieldType === 'gender') {
+                                    let radios = Array.from(document.querySelectorAll('input[type="radio"]')).filter(isVisible);
+                                    let maleRadio = radios.find(r => r.value === "2") || radios[1] || radios[0];
+                                    if (maleRadio) {
+                                        triggerMouseClick(maleRadio);
+                                        return true;
+                                    }
+                                }
+                                return false;
+                            }
 
                             let box = combos[index];
 
-                            if(box.tagName.toLowerCase() === 'select') {
+                            // Trường hợp thẻ <select> truyền thống
+                            if (box.tagName.toLowerCase() === 'select') {
                                 let nativeSetter = Object.getOwnPropertyDescriptor(window.HTMLSelectElement.prototype, "value").set;
                                 nativeSetter.call(box, searchValue);
+                                if (box.value !== String(searchValue) && fieldType === 'month') {
+                                    let mIdx = parseInt(searchValue, 10);
+                                    if (box.options.length > mIdx) box.selectedIndex = mIdx;
+                                    else if (box.options.length === 12) box.selectedIndex = mIdx - 1;
+                                }
+                                box.dispatchEvent(new Event('input', { bubbles: true }));
                                 box.dispatchEvent(new Event('change', { bubbles: true }));
                                 return true;
                             }
 
-                            box.scrollIntoView({block: 'center'});
-                            box.click();
-                            await new Promise(r => setTimeout(r, 800));
+                            // Lưu lại các option đang hiển thị trước khi mở combobox để loại trừ
+                            let preVisibleOptions = new Set(
+                                Array.from(document.querySelectorAll('div[role="option"], li, div[role="menuitem"], div[role="menuitemradio"]')).filter(isVisible)
+                            );
 
-                            let options = Array.from(document.querySelectorAll('div[role="option"], li'));
-                            let opt = options.find(o => {
-                                let txt = (o.innerText || "").trim().toLowerCase();
-                                let search = String(searchValue).toLowerCase();
-                                return txt === search || txt === "tháng " + search || txt === "0" + search;
-                            });
+                            triggerMouseClick(box);
+                            await new Promise(r => setTimeout(r, 900));
 
-                            if(opt) {
-                                opt.scrollIntoView({block: 'center'});
-                                opt.click();
-                                await new Promise(r => setTimeout(r, 600));
+                            // Tìm các option đang hiển thị thực tế trên màn hình
+                            let controlledId = box.getAttribute('aria-controls') || box.getAttribute('aria-owns');
+                            let visibleOptions = [];
+                            if (controlledId && document.getElementById(controlledId)) {
+                                visibleOptions = Array.from(
+                                    document.getElementById(controlledId).querySelectorAll('div[role="option"], li, div[role="menuitem"], div[role="menuitemradio"]')
+                                ).filter(isVisible);
+                            }
+
+                            if (visibleOptions.length === 0) {
+                                let allVis = Array.from(
+                                    document.querySelectorAll('div[role="option"], li, div[role="menuitem"], div[role="menuitemradio"]')
+                                ).filter(isVisible);
+                                let newlyOpened = allVis.filter(o => !preVisibleOptions.has(o));
+                                visibleOptions = newlyOpened.length > 0 ? newlyOpened : allVis;
+                            }
+
+                            let opt = null;
+                            let search = normalizeText(searchValue);
+
+                            if (fieldType === 'month') {
+                                let validMonthTexts = monthSynonyms[search] || [search, "tháng " + search, "thg " + search, "0" + search];
+                                // Ưu tiên khớp định dạng có chữ "tháng"/"thg"/tên tiếng Anh trước
+                                for (let syn of validMonthTexts) {
+                                    opt = visibleOptions.find(o => normalizeText(o.innerText || o.textContent) === syn);
+                                    if (opt) break;
+                                }
+                                // Nếu chưa thấy, tìm option bắt đầu hoặc kết thúc bằng số tháng
+                                if (!opt) {
+                                    let regexMonth = new RegExp("^(tháng|thg|month)?\\\\s*0?" + search + "$", "i");
+                                    opt = visibleOptions.find(o => regexMonth.test(normalizeText(o.innerText || o.textContent)));
+                                }
+                                // Dự phòng tuyệt đối: nếu menu đang mở có 12 tháng theo thứ tự 1..12 thì chọn thẳng theo index
+                                if (!opt && visibleOptions.length === 12) {
+                                    let mIdx = parseInt(search, 10) - 1;
+                                    if (mIdx >= 0 && mIdx < 12) opt = visibleOptions[mIdx];
+                                }
+                            } else if (fieldType === 'gender') {
+                                let genderSyns = ["nam", "male", "anh ấy", "he"];
+                                opt = visibleOptions.find(o => {
+                                    let t = normalizeText(o.innerText || o.textContent);
+                                    return t === search || genderSyns.includes(t) || t.startsWith("nam ") || t.startsWith("male ");
+                                });
+                                if (!opt && visibleOptions.length >= 2) {
+                                    opt = visibleOptions[1]; // Thường vị trí 0 là Nữ, 1 là Nam
+                                }
+                            } else {
+                                opt = visibleOptions.find(o => {
+                                    let t = normalizeText(o.innerText || o.textContent);
+                                    return t === search || t === "0" + search;
+                                });
+                            }
+
+                            if (opt) {
+                                triggerMouseClick(opt);
+                                await new Promise(r => setTimeout(r, 650));
                                 return true;
                             } else {
-                                document.body.click(); 
+                                document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+                                document.body.click();
                                 await new Promise(r => setTimeout(r, 400));
                                 return false;
                             }
@@ -1166,19 +1278,25 @@ class starts(threading.Thread):
 
                         (async function() {
                             try {
-                                await selectComboboxByIndex(0, day);
-                                await selectComboboxByIndex(1, month);
-                                await selectComboboxByIndex(2, year);
-                                await selectComboboxByIndex(3, gender);
-                                callback("SUCCESS");
+                                let rDay = await selectComboboxByIndex(0, day, 'day');
+                                let rMonth = await selectComboboxByIndex(1, month, 'month');
+                                if (!rMonth) {
+                                    await new Promise(r => setTimeout(r, 500));
+                                    rMonth = await selectComboboxByIndex(1, month, 'month');
+                                }
+                                let rYear = await selectComboboxByIndex(2, year, 'year');
+                                let rGender = await selectComboboxByIndex(3, gender, 'gender');
+                                callback(`SUCCESS (Day:${rDay}, Month:${rMonth}, Year:${rYear}, Gender:${rGender})`);
                             } catch (e) {
                                 callback("ERROR: " + e.toString());
                             }
                         })();
                         """
                         res = driver.execute_async_script(js_dropdowns, current_day, current_month, current_year, gender_text)
-                        if "ERROR" in res:
+                        if "ERROR" in str(res):
                             print(f"{Colors.color_text(f'[{self.thread_id}] Cảnh báo JS Dropdown: {res}', Colors.WARNING)}")
+                        else:
+                            print(f"{Colors.color_text(f'[{self.thread_id}] Kết quả chọn Dropdown: {res}', Colors.SUCCESS)}")
                     except Exception as e:
                         print(f"{Colors.color_text(f'[{self.thread_id}] Lỗi chạy script Combobox: {e}', Colors.ERROR)}")
 
@@ -1296,38 +1414,204 @@ class starts(threading.Thread):
                 time.sleep(5)
                 return False
 
+            # ==================== XỬ LÝ MỒI SĐT ĐỔI SANG EMAIL (GIAO DIỆN MỚI) ====================
             if use_phone_bait:
-                print(f"{Colors.color_text(f'[{self.thread_id}] Đang thực hiện đổi từ SĐT mồi ({contact_for_signup}) sang Email ({used_email})...', Colors.INFO)}")
+                print(f"{Colors.color_text(f'[{self.thread_id}] Bắt đầu luồng Mồi SĐT: Đổi từ ({contact_for_signup}) sang Email ({used_email})...', Colors.INFO)}")
                 try:
+                    # Đánh dấu ô nhập OTP của SĐT cũ để tuyệt đối không nhập nhầm Email vào ô Mã xác nhận
                     driver.execute_script("""
-                        let links = Array.from(document.querySelectorAll('a, button, div[role="button"], span'));
-                        for (let el of links) {
-                            let txt = (el.innerText || el.textContent || "").trim().toLowerCase();
-                            if (txt.includes('cập nhật thông tin liên hệ') || txt.includes('update contact info') || txt.includes('xác nhận bằng email') || txt.includes('confirm by email') || txt.includes('thay đổi thông tin')) {
-                                let btn = el.closest('a, button, [role="button"]') || el;
-                                btn.click();
-                                break;
+                        document.querySelectorAll('input').forEach(inp => {
+                            if (inp.offsetWidth > 0 && inp.offsetHeight > 0) {
+                                inp.setAttribute('data-old-otp-input', 'true');
                             }
-                        }
+                        });
                     """)
-                    time.sleep(4)
-                    new_mail_inputs = driver.find_elements(By.XPATH, "//input[@name='new' or @name='contactpoint' or @type='email' or @type='text']")
-                    for nmi in new_mail_inputs:
-                        if nmi.is_displayed():
-                            human_type(nmi, used_email)
+
+                    # Bước 1: Bấm vào nút "Tôi không nhận được mã" (I didn't receive the code)
+                    clicked_didnt_get_code = False
+                    for _ in range(6):
+                        clicked_didnt_get_code = driver.execute_script("""
+                            function fireClick(el) {
+                                el.scrollIntoView({block: 'center'});
+                                const r = el.getBoundingClientRect();
+                                ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click'].forEach(t => {
+                                    el.dispatchEvent(new MouseEvent(t, {view: window, bubbles: true, cancelable: true, clientX: r.left + r.width/2, clientY: r.top + r.height/2}));
+                                });
+                                try { el.click(); } catch(e) {}
+                            }
+                            let els = Array.from(document.querySelectorAll('div[role="button"], button, a, span'));
+                            for (let el of els) {
+                                let rect = el.getBoundingClientRect();
+                                if (rect.width === 0 || rect.height === 0) continue;
+                                let txt = (el.innerText || el.textContent || "").replace(/\\s+/g, " ").trim().toLowerCase();
+                                if (
+                                    txt === 'tôi không nhận được mã' ||
+                                    txt === 'tôi chưa nhận được mã' ||
+                                    txt.includes('không nhận được mã') ||
+                                    txt.includes('chưa nhận được mã') ||
+                                    txt.includes("didn't receive") ||
+                                    txt.includes("did not receive") ||
+                                    txt.includes("didn't get a code")
+                                ) {
+                                    let btn = el.closest('div[role="button"], button, a') || el;
+                                    fireClick(btn);
+                                    return true;
+                                }
+                            }
+                            return false;
+                        """)
+                        if clicked_didnt_get_code:
+                            print(f"{Colors.color_text(f'[{self.thread_id}] Đã bấm nút \"Tôi không nhận được mã\"!', Colors.SUCCESS)}")
                             break
-                    time.sleep(1.5)
-                    driver.execute_script("""
-                        let btns = Array.from(document.querySelectorAll('button, input[type="submit"], div[role="button"]'));
-                        for (let b of btns) {
-                            let txt = (b.innerText || b.value || b.textContent || "").trim().toLowerCase();
-                            if (['thêm', 'add', 'cập nhật', 'update', 'tiếp tục', 'continue'].includes(txt) || b.name === 'change') {
-                                b.click();
-                                break;
+                        time.sleep(2)
+
+                    time.sleep(3)
+
+                    # Bước 2: Bấm vào "Thay đổi số di động hoặc email" trong bảng Popup
+                    clicked_change_contact = False
+                    for _ in range(6):
+                        clicked_change_contact = driver.execute_script("""
+                            function fireClick(el) {
+                                el.scrollIntoView({block: 'center'});
+                                const r = el.getBoundingClientRect();
+                                ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click'].forEach(t => {
+                                    el.dispatchEvent(new MouseEvent(t, {view: window, bubbles: true, cancelable: true, clientX: r.left + r.width/2, clientY: r.top + r.height/2}));
+                                });
+                                try { el.click(); } catch(e) {}
                             }
-                        }
-                    """)
-                    time.sleep(6)
+                            let els = Array.from(document.querySelectorAll('div[role="button"], div[role="menuitem"], a, button, span'));
+                            for (let el of els) {
+                                let rect = el.getBoundingClientRect();
+                                if (rect.width === 0 || rect.height === 0) continue;
+                                let txt = (el.innerText || el.textContent || "").replace(/\\s+/g, " ").trim().toLowerCase();
+                                if (
+                                    txt === 'thay đổi số di động hoặc email' ||
+                                    txt === 'thay đổi số điện thoại hoặc email' ||
+                                    txt.includes('thay đổi số di động') ||
+                                    txt.includes('thay đổi số điện thoại') ||
+                                    txt.includes('cập nhật thông tin liên hệ') ||
+                                    txt.includes('xác nhận bằng email') ||
+                                    txt.includes('change mobile number or email') ||
+                                    txt.includes('change phone number or email') ||
+                                    txt.includes('update contact info') ||
+                                    txt.includes('confirm by email')
+                                ) {
+                                    let btn = el.closest('div[role="button"], div[role="menuitem"], a, button') || el;
+                                    fireClick(btn);
+                                    return true;
+                                }
+                            }
+                            return false;
+                        """)
+                        if clicked_change_contact:
+                            print(f"{Colors.color_text(f'[{self.thread_id}] Đã bấm \"Thay đổi số di động hoặc email\"!', Colors.SUCCESS)}")
+                            break
+                        time.sleep(1.5)
+
+                    time.sleep(3.5)
+
+                    # Bước 3: Tìm ô nhập Email mới (tránh ô Mã xác nhận cũ) và điền Email
+                    new_email_inp = None
+                    for _ in range(6):
+                        candidate_inputs = driver.execute_script("""
+                            function isVis(el) {
+                                if (!el) return false;
+                                const r = el.getBoundingClientRect();
+                                const s = window.getComputedStyle(el);
+                                return r.width > 0 && r.height > 0 && s.display !== 'none' && s.visibility !== 'hidden';
+                            }
+                            // 1. Ưu tiên tìm input nằm trong hộp thoại Dialog đang mở
+                            let dialogs = Array.from(document.querySelectorAll('div[role="dialog"]')).filter(isVis);
+                            if (dialogs.length > 0) {
+                                let dlgInputs = Array.from(dialogs[dialogs.length - 1].querySelectorAll('input:not([type="hidden"])')).filter(isVis);
+                                if (dlgInputs.length > 0) return dlgInputs;
+                            }
+                            // 2. Tìm các input mới xuất hiện (không phải ô mã xác nhận cũ)
+                            let allInputs = Array.from(document.querySelectorAll('input:not([type="hidden"]):not([type="checkbox"]):not([type="radio"])')).filter(isVis);
+                            let freshInputs = allInputs.filter(inp => inp.getAttribute('data-old-otp-input') !== 'true');
+                            if (freshInputs.length > 0) return freshInputs;
+                            return [];
+                        """)
+                        if candidate_inputs and len(candidate_inputs) > 0:
+                            new_email_inp = candidate_inputs[-1]
+                            break
+                        time.sleep(1.5)
+
+                    if new_email_inp:
+                        print(f"{Colors.color_text(f'[{self.thread_id}] Đang nhập Email mới ({used_email}) vào ô thay đổi liên hệ...', Colors.INFO)}")
+                        try:
+                            human_type(new_email_inp, used_email)
+                        except Exception:
+                            pass
+
+                        # Kiểm tra và ép gán giá trị bằng JS nếu Selenium gõ thiếu
+                        driver.execute_script("""
+                            let inp = arguments[0];
+                            let val = arguments[1];
+                            if ((inp.value || "").trim() !== val) {
+                                let setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value").set;
+                                setter.call(inp, val);
+                                inp.dispatchEvent(new Event('input', { bubbles: true }));
+                                inp.dispatchEvent(new Event('change', { bubbles: true }));
+                            }
+                        """, new_email_inp, used_email)
+                        time.sleep(1.5)
+
+                        # Cập nhật mốc đọc thư ngay trước khi bấm Gửi email mới
+                        if self.mode in ["3", "4"] and imap_service:
+                            uid_moc = imap_service.get_latest_uid()
+                        elif self.mode == "5" and hotmail_service:
+                            hotmail_service.init_baseline()
+
+                        # Bước 4: Bấm nút Tiếp tục / Thêm / Cập nhật để gửi mã về Email
+                        clicked_submit_new_email = driver.execute_script("""
+                            function isVis(el) {
+                                if (!el) return false;
+                                const r = el.getBoundingClientRect();
+                                const s = window.getComputedStyle(el);
+                                return r.width > 0 && r.height > 0 && s.display !== 'none' && s.visibility !== 'hidden';
+                            }
+                            function fireClick(el) {
+                                el.scrollIntoView({block: 'center'});
+                                const r = el.getBoundingClientRect();
+                                ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click'].forEach(t => {
+                                    el.dispatchEvent(new MouseEvent(t, {view: window, bubbles: true, cancelable: true, clientX: r.left + r.width/2, clientY: r.top + r.height/2}));
+                                });
+                                try { el.click(); } catch(e) {}
+                            }
+                            let targetKeywords = ['tiếp tục', 'thêm', 'cập nhật', 'gửi', 'xác nhận', 'lưu', 'tiếp', 'continue', 'add', 'update', 'submit', 'next', 'save'];
+                            
+                            // Ưu tiên tìm nút bên trong Dialog trên cùng trước
+                            let dialogs = Array.from(document.querySelectorAll('div[role="dialog"]')).filter(isVis);
+                            let searchScopes = dialogs.length > 0 ? [dialogs[dialogs.length - 1], document.body] : [document.body];
+
+                            for (let scope of searchScopes) {
+                                let btns = Array.from(scope.querySelectorAll('div[role="button"], button, input[type="submit"]')).filter(isVis);
+                                btns.reverse(); // Duyệt từ dưới lên để ưu tiên nút trên Modal mới nhất
+                                for (let b of btns) {
+                                    let txt = (b.innerText || b.value || b.textContent || "").replace(/\\s+/g, " ").trim().toLowerCase();
+                                    if (targetKeywords.includes(txt) || b.name === 'change') {
+                                        if (!b.disabled && b.getAttribute('aria-disabled') !== 'true') {
+                                            fireClick(b);
+                                            return txt;
+                                        }
+                                    }
+                                }
+                            }
+                            return null;
+                        """)
+
+                        if clicked_submit_new_email:
+                            print(f"{Colors.color_text(f'[{self.thread_id}] Đã bấm nút gửi Email mới ({clicked_submit_new_email})! Chờ Facebook gửi OTP về Mail...', Colors.SUCCESS)}")
+                        else:
+                            try:
+                                new_email_inp.send_keys(Keys.ENTER)
+                                print(f"{Colors.color_text(f'[{self.thread_id}] Đã nhấn ENTER để gửi Email mới!', Colors.SUCCESS)}")
+                            except Exception:
+                                pass
+                        time.sleep(6)
+                    else:
+                        print(f"{Colors.color_text(f'[{self.thread_id}] Cảnh báo: Không tìm thấy ô nhập Email mới sau khi mở popup!', Colors.WARNING)}")
                 except Exception as e:
                     print(f"{Colors.color_text(f'[{self.thread_id}] Cảnh báo khi đổi SĐT sang Email: {e}', Colors.WARNING)}")
 
@@ -1413,8 +1697,10 @@ class starts(threading.Thread):
                     clicked_didnt_receive = driver.execute_script("""
                         let btns = Array.from(document.querySelectorAll('a, button, div[role="button"], span'));
                         for (let b of btns) {
+                            let r = b.getBoundingClientRect();
+                            if (r.width === 0 || r.height === 0) continue;
                             let txt = (b.innerText || b.textContent || "").trim().toLowerCase();
-                            if (txt.includes('không nhận được mã') || txt.includes("didn't receive") || txt.includes("did not receive") || txt.includes('gửi lại email') || txt.includes('send email again')) {
+                            if (txt.includes('không nhận được mã') || txt.includes('chưa nhận được mã') || txt.includes("didn't receive") || txt.includes("did not receive") || txt.includes('gửi lại email') || txt.includes('send email again')) {
                                 let clickable = b.closest('a, button, [role="button"]') || b;
                                 clickable.click();
                                 return true;
@@ -1426,11 +1712,13 @@ class starts(threading.Thread):
                     if clicked_didnt_receive:
                         time.sleep(3) 
                         clicked_resend = driver.execute_script("""
-                            let btns = Array.from(document.querySelectorAll('button, div[role="button"], a, span'));
+                            let btns = Array.from(document.querySelectorAll('button, div[role="button"], div[role="menuitem"], a, span'));
                             for (let b of btns) {
+                                let r = b.getBoundingClientRect();
+                                if (r.width === 0 || r.height === 0) continue;
                                 let txt = (b.innerText || b.textContent || "").trim().toLowerCase();
                                 if (txt.includes('gửi lại') || txt.includes('resend') || txt.includes('send email again')) {
-                                    let clickable = b.closest('button, [role="button"], a') || b;
+                                    let clickable = b.closest('button, [role="button"], [role="menuitem"], a') || b;
                                     clickable.click();
                                     return true;
                                 }
