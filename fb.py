@@ -91,8 +91,8 @@ except ImportError:
 STOP_EVENT = threading.Event()
 OTP_LOCK = threading.Lock() 
 DATA_LOCK = threading.Lock()
-BROWSER_LOCK = threading.Lock()  
-INPUT_LOCK = threading.Lock()    
+BROWSER_LOCK = threading.Lock()   
+INPUT_LOCK = threading.Lock()        
 TYPE_LOCK = threading.Lock() 
 SUBMIT_LOCK = threading.Lock() 
 PRINT_LOCK = threading.Lock()
@@ -149,14 +149,14 @@ class Colors:
 def banner():
     os.system('clear' if os.name == 'posix' else 'cls')
     built_in_print(f"""{Colors.PRIMARY}
-  ██████╗ ██╗  ██╗██████╗  ██████╗ ███╗   ███╗███████╗
- ██╔════╝ ██║  ██║██╔══██╗██╔═══██╗████╗ ████║██╔════╝
- ██║  ███╗███████║██████╔╝██║   ██║██╔████╔██║█████╗  
- ██║   ██║██╔══██║██╔══██╗██║   ██║██║╚██╔╝██║██╔══╝  
- ╚██████╔╝██║  ██║██║  ██║╚██████╔╝██║ ╚═╝ ██║███████╗
-  ╚═════╝ ╚═╝  ╚═╝╚═╝  ╚═╝ ╚═════╝ ╚═╝     ╚═╝╚══════╝
+ ██████╗ ██╗  ██╗██████╗  ██████╗ ███╗   ███╗███████╗
+██╔════╝ ██║  ██║██╔══██╗██╔═══██╗████╗ ████║██╔════╝
+██║  ███╗███████║██████╔╝██║   ██║██╔████╔██║█████╗  
+██║   ██║██╔══██║██╔══██║██║   ██║██║╚██╔╝██║██╔══╝  
+╚██████╔╝██║  ██║██║  ██║╚██████╔╝██║ ╚═╝ ██║███████╗
+ ╚═════╝ ╚═╝  ╚═╝╚═╝  ╚═╝ ╚═════╝ ╚═╝     ╚═╝╚══════╝
 {Colors.RESET}""")
-    built_in_print(f"{Colors.INFO}Phiên Bản: v20.5 (Fix Lỗi Cấu Trúc File - Chạy Mượt 100%){Colors.RESET}")
+    built_in_print(f"{Colors.INFO}Phiên Bản: v20.6 (Fixed Full Syntax & Logic) {Colors.RESET}")
     built_in_print(f"{Colors.LINE}{'─'*75}{Colors.RESET}\n")
 
 def load_config():
@@ -195,7 +195,7 @@ def luu_delay_config(config):
 
 def nhap_delay(tieu_de, gia_tri_mac_dinh):
     try:
-        nhap = input(f'   {Colors.KEY}{tieu_de} ({gia_tri_mac_dinh} giây): {Colors.RESET}').strip()
+        nhap = input(f'    {Colors.KEY}{tieu_de} ({gia_tri_mac_dinh} giây): {Colors.RESET}').strip()
         if nhap: return float(nhap)
     except KeyboardInterrupt: raise KeyboardInterrupt
     except Exception: pass
@@ -209,14 +209,14 @@ def cau_hinh_delay():
 
     built_in_print(f'\n{Colors.INFO}【MẬT KHẨU & CHẾ ĐỘ ĐĂNG KÝ】{Colors.RESET}')
     mk_hien_tai = config['mat_khau_fb'] if config['mat_khau_fb'] else "Tự động Random 12 ký tự"
-    mat_khau_moi = input(f'   {Colors.KEY}Nhập mật khẩu cố định (Enter giữ [{mk_hien_tai}], gõ "rand" để random): {Colors.RESET}').strip()
+    mat_khau_moi = input(f'    {Colors.KEY}Nhập mật khẩu cố định (Enter giữ [{mk_hien_tai}], gõ "rand" để random): {Colors.RESET}').strip()
     if mat_khau_moi.lower() == 'rand': config['mat_khau_fb'] = ''
     elif mat_khau_moi: config['mat_khau_fb'] = mat_khau_moi
 
-    chon_moi_sdt = input(f'   {Colors.KEY}Bật chế độ Mồi SĐT +84 ảo rồi đổi sang Xác nhận Email ở Mode 1-5? (y/n, hiện tại: {config["use_phone_bait"]}): {Colors.RESET}').strip().lower()
+    chon_moi_sdt = input(f'    {Colors.KEY}Bật chế độ Mồi SĐT +84 ảo rồi đổi sang Xác nhận Email ở Mode 1-5? (y/n, hiện tại: {config["use_phone_bait"]}): {Colors.RESET}').strip().lower()
     if chon_moi_sdt in ['y', 'n']: config['use_phone_bait'] = (chon_moi_sdt == 'y')
 
-    chon_token = input(f'   {Colors.KEY}Tự động lấy thêm Access Token Android (EAAAAU...) sau khi reg xong? (y/n, hiện tại: {config["lay_token_android"]}): {Colors.RESET}').strip().lower()
+    chon_token = input(f'    {Colors.KEY}Tự động lấy thêm Access Token Android (EAAAAU...) sau khi reg xong? (y/n, hiện tại: {config["lay_token_android"]}): {Colors.RESET}').strip().lower()
     if chon_token in ['y', 'n']: config['lay_token_android'] = (chon_token == 'y')
 
     built_in_print(f'\n{Colors.INFO}【THÔNG SỐ DELAY TRÌNH DUYỆT (Giây)】{Colors.RESET}')
@@ -1077,7 +1077,7 @@ class starts(threading.Thread):
                         try: element.send_keys(Keys.TAB)
                         except: pass
 
-                # ==================== ĐIỀN FORM ĐĂNG KÝ FACEBOOK THEO INDEX MÀN HÌNH ====================
+                # ==================== ĐIỀN FORM ĐĂNG KÝ FACEBOOK ====================
                 try:
                     print(f"{Colors.color_text(f'[{self.thread_id}] Đang phân tích các ô nhập liệu trên Form Meta...', Colors.INFO)}")
 
@@ -1119,7 +1119,7 @@ class starts(threading.Thread):
                         print(f"{Colors.color_text(f'[{self.thread_id}] Không tìm đủ 4 ô nhập liệu! Cấu trúc form chưa load xong.', Colors.ERROR)}")
                         return False
 
-                    # CHỌN NGÀY THÁNG NĂM VÀ GIỚI TÍNH BẰNG SCRIPT ÉP TƯƠNG TÁC THEO INDEX
+                    # CHỌN NGÀY THÁNG NĂM VÀ GIỚI TÍNH
                     gender_text = "Nam"
                     print(f"{Colors.color_text(f'[{self.thread_id}] Chọn Ngày Sinh ({current_day}/{current_month}/{current_year}) và Giới tính ({gender_text})...', Colors.INFO)}")
 
@@ -1545,7 +1545,7 @@ class starts(threading.Thread):
             else:
                 print(f"{Colors.color_text(f'[{self.thread_id}] KHÔNG THỂ BẤM NÚT, trình duyệt có thể bị treo.', Colors.ERROR)}")
 
-            # ==================== CHỜ TẢI TRANG CHỦ & KIỂM TRA ACC DIE ====================
+            # CHỜ TẢI TRANG CHỦ & KIỂM TRA ACC DIE
             load_tc_wait = self.delay_config['delay_cho_load_trang_chu']
             print(f"{Colors.color_text(f'[{self.thread_id}] Chờ FB xử lý OTP và load trang chủ ({load_tc_wait}s)...', Colors.INFO)}")
             time.sleep(load_tc_wait)
@@ -1706,7 +1706,7 @@ class starts(threading.Thread):
                     time.sleep(1.5)
 
                 if is_email_check_screen:
-                    print(f"{Colors.color_text(f'[{self.thread_id}] ĐÃ HIỆN MÀN HÌNH Kiểm tra email của bạn. Bắt đầu quét MÃ 8 SỐ trong nội dung thư...', Colors.WARNING)}")
+                    print(f"{Colors.color_text(f'[{self.thread_id}] ĐÃ HIỆN MÀN HÌNH Kiểm tra email của bạn. Bắt đầu quét MÃ 8 SỐ...', Colors.WARNING)}")
                     verify_code = None
                     if self.mode == "1" or (self.mode == "2" and mail_service and mail_service.token):
                         verify_code = mail_service.get_otp_code(timeout=120, force_8_digits=True)
@@ -1758,8 +1758,6 @@ class starts(threading.Thread):
                             }
                         """, first_name_fb)
                         time.sleep(4)
-                    else:
-                        print(f"{Colors.color_text(f'[{self.thread_id}] Không nhận được mã 8 số từ email/sim! Bỏ qua 2FA.', Colors.ERROR)}")
                 
                 try:
                     clicked_app = driver.execute_script("""
@@ -1789,7 +1787,7 @@ class starts(threading.Thread):
                         time.sleep(5)
                 except: pass
 
-                print(f"{Colors.color_text(f'[{self.thread_id}] Đang tìm và bóc tách Secret Key 2FA bằng Clipboard Hook...', Colors.INFO)}")
+                print(f"{Colors.color_text(f'[{self.thread_id}] Đang tìm và bóc tách Secret Key 2FA...', Colors.INFO)}")
                 driver.execute_script("""
                     window.hooked2FAKey = "";
                     if (navigator.clipboard && !window.clipboardHooked) {
@@ -1934,23 +1932,24 @@ class starts(threading.Thread):
             save_account(self.thread_id, used_email, secure_pass, fb_uid, full_name, f"mode_{self.mode}", cookie_str, two_fa_secret, access_token)
             return True
             
-        except Exception as e:
-            print(f"{Colors.color_text(f'[{self.thread_id}] Gặp Lỗi Ngoại Lệ Toàn Cục: {e}', Colors.ERROR)}")
-            return False
-    
-    success_count = 0
-    for i in range(1, self.account_count + 1):
-        if STOP_EVENT.is_set(): break
-        status = create_one_account(i)
-        if status == True: success_count += 1
-        elif status == "DEAD":
-            print(f"{Colors.color_text(f'[{self.thread_id}] Dừng luồng này vì acc đã Die, bảo toàn các tài nguyên còn lại!', Colors.WARNING)}")
-            break 
-        else:
-            print(f"{Colors.color_text(f'[{self.thread_id}] Dừng luồng do lỗi quá trình tạo, bảo toàn tài nguyên!', Colors.WARNING)}")
-            break 
-        time.sleep(self.delay_config.get('delay_giua_cac_lan_chay', 6.0))
-    print(f"\n{Colors.color_text(f'[{self.thread_id}] TỔNG KẾT TAB: {success_count}/{self.account_count} THÀNH CÔNG', Colors.TITLE)}")
+        success_count = 0
+        for i in range(1, self.account_count + 1):
+            if STOP_EVENT.is_set(): break
+            try:
+                status = create_one_account(i)
+            except Exception as e:
+                print(f"{Colors.color_text(f'[{self.thread_id}] Gặp Lỗi Ngoại Lệ Toàn Cục: {e}', Colors.ERROR)}")
+                status = False
+
+            if status == True: success_count += 1
+            elif status == "DEAD":
+                print(f"{Colors.color_text(f'[{self.thread_id}] Dừng luồng này vì acc đã Die, bảo toàn các tài nguyên còn lại!', Colors.WARNING)}")
+                break 
+            else:
+                print(f"{Colors.color_text(f'[{self.thread_id}] Dừng luồng do lỗi quá trình tạo, bảo toàn tài nguyên!', Colors.WARNING)}")
+                break 
+            time.sleep(self.delay_config.get('delay_giua_cac_lan_chay', 6.0))
+        print(f"\n{Colors.color_text(f'[{self.thread_id}] TỔNG KẾT TAB: {success_count}/{self.account_count} THÀNH CÔNG', Colors.TITLE)}")
 
 def select_mode():
     while True:
@@ -2006,7 +2005,8 @@ if __name__ == "__main__":
         app_password = input(f"{Colors.KEY}Nhập App Password: {Colors.RESET}").strip()
         data_source = generate_dot_variants(base_gmail)
     elif mode == "5":
-        api_mode = "oauth" if input("1. OAuth | 2. Graph API | 3. Roundcube\n>> ").strip()=="1" else "graph" if input().strip()=="2" else "roundcube"
+        chon_api = input("1. OAuth | 2. Graph API | 3. Roundcube\n>> ").strip()
+        api_mode = "oauth" if chon_api == "1" else "graph" if chon_api == "2" else "roundcube"
         data_source = process_file_input("last_file_mode5", f"{Colors.KEY}Nhập đường dẫn file/list Hotmail: {Colors.RESET}")
     elif mode == "6":
         autosms_api_key = input(f"{Colors.KEY}Nhập API Key của web Autosms.site: {Colors.RESET}").strip()
