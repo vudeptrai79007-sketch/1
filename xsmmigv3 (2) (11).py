@@ -33,7 +33,6 @@ TTC_12_JOB_MODES = {
     "ttc_like_thuong": {
         "name": "1. Like Bài Viết Thường",
         "get_ep": "/kiemtien/getpost.php",
-        "fallback_get_ep": "/kiemtien/likegiare/getpost.php",
         "claim_ep": "/kiemtien/nhantien.php",
         "referer": "https://tuongtaccheo.com/kiemtien/",
         "action": "like",
@@ -338,9 +337,6 @@ def get_ig_headers(cookie, csrftoken, referer="https://www.instagram.com/"):
         'x-requested-with': 'XMLHttpRequest'
     }
 
-# ==============================================================================
-# CLASS INSTAGRAM (DÙNG CHO TAB XSMM & IG AUTO)
-# ==============================================================================
 class INSTAGRAM:
     def __init__(self, cookies_str, proxy=None):
         self.cookies_str = unquote(cookies_str).strip()
@@ -569,9 +565,6 @@ class INSTAGRAM:
             self.last_error = str(e)[:40]
         return False
 
-# ==============================================================================
-# CLASS XSMM TOOL (TÁCH RIÊNG CHO HỆ THỐNG XSMM)
-# ==============================================================================
 class XSMMTool:
     def __init__(self, token):
         self.base_url = "https://xsmm.net/api/taskapi"
@@ -710,16 +703,7 @@ def gui_nhan_xu(job_type, task_ids, uid, cookie_check="", xsmm_obj=None):
             return {"error": str(e)}
     return {"error": "Thất bại"}
 
-# ==============================================================================
-# CLASS TƯƠNG TÁC CHÉO (TRÍCH XUẤT CHUẨN TỪ Lk2/z.smali - GIỮ PHPSESSID & DATNICK)
-# ==============================================================================
 class TuongTacCheoTool:
-    """
-    Bộ máy xử lý Tương Tác Chéo chuẩn hóa từ Lk2/z.smali:
-    - Tự động trích xuất và duy trì PHPSESSID sau khi gọi /logintoken.php.
-    - Đặt cấu hình Nick (/cauhinh/datnick.php) chuẩn xác, nếu Page con chưa thêm sẽ tự động fallback sang UID FB Mẹ.
-    - Quét nhiệm vụ (getpost.php) và Nhận thưởng (nhantien.php) cho đủ 12 chế độ.
-    """
     def __init__(self, ttc_token, proxy=None):
         self.ttc_token = str(ttc_token or "").strip()
         self.base_url = "https://tuongtaccheo.com"
@@ -747,7 +731,6 @@ class TuongTacCheoTool:
             pass
 
     def _extract_session_cookies(self, response=None):
-        """Trích xuất toàn bộ cookie phiên (đặc biệt là PHPSESSID) giống hệt Lk2/z.smali"""
         ck_dict = {}
         try:
             for k, v in self.session.cookies.items():
@@ -768,7 +751,6 @@ class TuongTacCheoTool:
             self.headers["Cookie"] = self.cookie_str
 
     def login(self):
-        """Đăng nhập TTC qua Access Token & Lưu cứng PHPSESSID vào Header"""
         try:
             res = self.session.post(
                 f"{self.base_url}/logintoken.php",
@@ -795,7 +777,6 @@ class TuongTacCheoTool:
             return False, "", 0, f"Lỗi kết nối TTC: {str(e)[:35]}"
 
     def fetch_configured_pages_on_web(self):
-        """Quét trang /cauhinh/facebook.php và /cauhinh/index.php để lấy các UID/Page đã thêm"""
         for ep in ["/cauhinh/facebook.php", "/cauhinh/index.php"]:
             try:
                 hdr = {
@@ -839,11 +820,6 @@ class TuongTacCheoTool:
         return self.current_configured_uid, self.configured_pages_map
 
     def dat_nick(self, page_id, fallback_parent_uid=""):
-        """
-        Đặt Page ID làm nick chạy trên TTC (/cauhinh/datnick.php) chuẩn theo Lk2/z.smali (hàm r).
-        Nếu Page ID chưa được cấu hình trên web (mã trả về khác '1'), tự động thử đặt bằng UID FB Mẹ
-        hoặc giữ nguyên Nick đang chọn trên Web để getpost.php luôn lấy được Job!
-        """
         page_id_str = str(page_id or "").strip()
         parent_str = str(fallback_parent_uid or "").strip()
 
@@ -875,11 +851,10 @@ class TuongTacCheoTool:
                 if txt == "1" or '"1"' in txt or "success" in txt.lower():
                     self.current_configured_uid = cand_uid
                     self.configured_pages_map[cand_uid] = self.configured_pages_map.get(cand_uid, f"Page_{cand_uid}")
-                    return True, f"Đã đặt cấu hình ID {cand_uid} (Mã: 1)"
+                    return True, f"Đã đặt cấu hình ID {cand_uid}"
             except Exception:
                 pass
 
-        # Nếu cả page_id và parent_uid đều chưa thêm vào mục cấu hình của TTC, thử lấy bất kỳ ID nào đã có trên Web TTC
         if not self.configured_pages_map:
             self.fetch_configured_pages_on_web()
         if self.current_configured_uid:
@@ -903,100 +878,101 @@ class TuongTacCheoTool:
             except Exception:
                 pass
 
-        return True, f"Chạy theo cấu hình sẵn trên Web TTC"
+        return True, "Chạy theo cấu hình sẵn trên Web TTC"
 
-    def get_tasks(self, mode_key):
-        """Lấy danh sách nhiệm vụ chuẩn xác theo Lk2/z.smali (hàm t)"""
+    def get_tasks_with_cooldown(self, mode_key):
         cfg = TTC_12_JOB_MODES.get(mode_key)
         if not cfg:
-            return [], "Chế độ không hợp lệ"
+            return [], "Chế độ không hợp lệ", 0
 
         if not self.cookie_str:
             self.login()
 
-        endpoints = [cfg["get_ep"]]
-        if cfg.get("fallback_get_ep"):
-            endpoints.append(cfg["fallback_get_ep"])
+        hdr = self.headers.copy()
+        hdr["Referer"] = cfg["referer"]
+        if self.cookie_str:
+            hdr["Cookie"] = self.cookie_str
 
-        last_err = "Hết job hoặc đang countdown"
-        for ep in endpoints:
-            hdr = self.headers.copy()
-            hdr["Referer"] = cfg["referer"]
-            if self.cookie_str:
-                hdr["Cookie"] = self.cookie_str
+        try:
+            res = self.session.get(
+                f"{self.base_url}{cfg['get_ep']}",
+                headers=hdr,
+                impersonate="chrome120",
+                timeout=12
+            )
+            self._extract_session_cookies(res)
+            txt = res.text.strip()
 
-            try:
-                res = self.session.get(
-                    f"{self.base_url}{ep}",
-                    headers=hdr,
-                    impersonate="chrome120",
-                    timeout=12
-                )
-                self._extract_session_cookies(res)
-                txt = res.text.strip()
+            if "logintoken" in txt.lower() or "<html" in txt.lower():
+                ok_re, _, _, _ = self.login()
+                if ok_re and self.current_configured_uid:
+                    self.dat_nick(self.current_configured_uid)
+                return [], "Đang làm mới phiên TTC...", 3
 
-                # Nếu mất phiên đăng nhập (trả về trang login HTML), tự động login lại
-                if "logintoken" in txt.lower() or "<html" in txt.lower():
-                    ok_re, _, _, _ = self.login()
-                    if ok_re and self.current_configured_uid:
-                        self.dat_nick(self.current_configured_uid)
-                    continue
+            if not txt or txt == "[]":
+                return [], "EMPTY", 0
 
-                if not txt or txt == "[]":
-                    continue
+            data = json.loads(txt)
+            if isinstance(data, dict):
+                err_str = str(data.get("error") or data.get("mess") or "").strip()
+                if err_str:
+                    m_sec = re.search(r'(\d+)\s*(?:giây|s\b|sec)', err_str, re.I)
+                    wait_s = int(m_sec.group(1)) if m_sec else 5
+                    return [], err_str, wait_s
 
-                data = json.loads(txt)
-                if isinstance(data, dict):
-                    if data.get("error"):
-                        last_err = str(data.get("error"))
+                for k in ["data", "list", "posts"]:
+                    if isinstance(data.get(k), list):
+                        data = data[k]
+                        break
+
+            if isinstance(data, list):
+                if len(data) == 0:
+                    return [], "EMPTY", 0
+                norm_tasks = []
+                for item in data:
+                    if not isinstance(item, dict):
                         continue
-                    for k in ["data", "list", "posts"]:
-                        if isinstance(data.get(k), list):
-                            data = data[k]
-                            break
-
-                if isinstance(data, list) and len(data) > 0:
-                    norm_tasks = []
-                    for item in data:
-                        if not isinstance(item, dict):
-                            continue
-                        tid = str(item.get("idpost") or item.get("id") or "").strip()
-                        if not tid:
-                            continue
-                        link = str(item.get("link") or tid).strip()
-                        loaicx = str(item.get("loaicx") or item.get("type") or "LIKE").upper().strip()
-                        nd_raw = item.get("nd") or ""
-                        cmt_msg = ""
-                        if nd_raw:
-                            try:
-                                parsed_nd = json.loads(nd_raw)
-                                if isinstance(parsed_nd, list) and parsed_nd:
-                                    cmt_msg = str(random.choice(parsed_nd))
-                                else:
-                                    cmt_msg = str(nd_raw)
-                            except Exception:
+                    tid = str(item.get("idpost") or item.get("id") or "").strip()
+                    if not tid:
+                        continue
+                    link = str(item.get("link") or tid).strip()
+                    loaicx = str(item.get("loaicx") or item.get("type") or "LIKE").upper().strip()
+                    nd_raw = item.get("nd") or ""
+                    cmt_msg = ""
+                    if nd_raw:
+                        try:
+                            parsed_nd = json.loads(nd_raw)
+                            if isinstance(parsed_nd, list) and parsed_nd:
+                                cmt_msg = str(random.choice(parsed_nd))
+                            else:
                                 cmt_msg = str(nd_raw)
+                        except Exception:
+                            cmt_msg = str(nd_raw)
 
-                        target_url = link if link.startswith("http") else f"https://www.facebook.com/{link}"
-                        norm_tasks.append({
-                            "id": tid,
-                            "target_id": tid,
-                            "link": link,
-                            "target_url": target_url,
-                            "loaicx": loaicx,
-                            "msg": cmt_msg,
-                            "points": cfg["default_xu"],
-                            "action": cfg["action"]
-                        })
-                    if norm_tasks:
-                        return norm_tasks, "OK"
-            except Exception as e:
-                last_err = f"Chờ tải job ({str(e)[:20]})"
+                    target_url = link if link.startswith("http") else f"https://www.facebook.com/{link}"
+                    norm_tasks.append({
+                        "id": tid,
+                        "target_id": tid,
+                        "link": link,
+                        "target_url": target_url,
+                        "loaicx": loaicx,
+                        "msg": cmt_msg,
+                        "points": cfg["default_xu"],
+                        "action": cfg["action"]
+                    })
+                if norm_tasks:
+                    return norm_tasks, "OK", 0
+                return [], "EMPTY", 0
 
-        return [], last_err
+            return [], "EMPTY", 0
+        except Exception as e:
+            return [], f"Lỗi mạng ({str(e)[:20]})", 4
+
+    def get_tasks(self, mode_key):
+        tasks, msg, _ = self.get_tasks_with_cooldown(mode_key)
+        return tasks, msg
 
     def claim_reward(self, mode_key, task_id, loaicx="LIKE"):
-        """Gửi nhận xu chuẩn xác theo Lk2/z.smali (hàm q)"""
         cfg = TTC_12_JOB_MODES.get(mode_key)
         if not cfg:
             return 0, "Sai chế độ"
@@ -1039,14 +1015,9 @@ class TuongTacCheoTool:
         except Exception as e:
             return 0, str(e)[:35]
 
-# ==============================================================================
-# BỘ MÁY THỰC THI FACEBOOK GRAPHQL (TRÍCH XUẤT CHUẨN TỪ Li2/X.smali)
-# ==============================================================================
-# Bộ nhớ đệm fb_dtsg theo từng Actor ID (Page ID / UID) giống Li2/X;->b
 _FB_DTSG_CACHE = {}
 _FB_DTSG_LOCK = threading.Lock()
 
-# Bảng mã Reaction ID của Facebook GraphQL (Li2/X.smali)
 FB_REACTION_MAP = {
     "LIKE": 1,
     "LOVE": 2,
@@ -1057,7 +1028,6 @@ FB_REACTION_MAP = {
     "ANGRY": 8
 }
 
-# 5 mẫu Regex lấy fb_dtsg trích xuất từ Li2/X;-><clinit>
 _FB_DTSG_PATTERNS = [
     re.compile(r'"DTSGInitialData"[^}]*"token"\s*:\s*"([^"]+)"'),
     re.compile(r'"DTSGInitData"[^}]*"token"\s*:\s*"([^"]+)"'),
@@ -1065,23 +1035,6 @@ _FB_DTSG_PATTERNS = [
     re.compile(r'name="fb_dtsg"\s+value="([^"]+)"'),
     re.compile(r'"fb_dtsg"\s*:\s*"([^"]+)"')
 ]
-
-def check_cookie_ig(cookie, proxy=None):
-    if not cookie or not cookie.strip():
-        return json.dumps({"status_check": "DIE", "error": "Cookie trống"})
-    ig_client = INSTAGRAM(cookie, proxy)
-    try:
-        uid, fb_dtsg, status_code_str, uname = ig_client.GETINFO()
-    finally:
-        ig_client.close()
-
-    if status_code_str == "LIVE" and uid and uname:
-        return json.dumps({"status_check": "LIVE", "form_data": {"username": uname, "id": str(uid), "fb_dtsg": fb_dtsg}})
-    elif status_code_str == "CHECKPOINT":
-        return json.dumps({"status_check": "CHECKPOINT", "error": "Checkpoint"})
-    elif status_code_str == "PROXY_ERR":
-        return json.dumps({"status_check": "PROXY_ERR", "error": "Lỗi Proxy"})
-    return json.dumps({"status_check": "DIE", "error": "Cookie Die"})
 
 def scan_facebook_account_and_pages(cookie="", access_token="", proxy=None):
     cookie = (cookie or "").strip()
@@ -1192,17 +1145,12 @@ def scan_facebook_account_and_pages(cookie="", access_token="", proxy=None):
     return fb_info, list(pages_dict.values())
 
 def _build_page_cookie(parent_cookie, page_id):
-    """Gắn i_user=<page_id> vào Cookie FB Mẹ để chuyển ngữ cảnh sang Fanpage (Li2/X.smali)"""
     base_ck = re.sub(r';?\s*i_user=\d+', '', (parent_cookie or "").strip()).strip(';')
     if base_ck and page_id and str(page_id).isdigit():
         return f"{base_ck}; i_user={page_id}"
     return base_ck
 
 def _get_fb_dtsg(session, page_cookie, page_id="", force_refresh=False):
-    """
-    Lấy và lưu cache fb_dtsg theo đúng thuật toán Li2/X;->f(Ljava/lang/String;)Ljava/lang/String;
-    Quét qua www.facebook.com và mbasic.facebook.com với 5 mẫu Regex chuẩn.
-    """
     cache_key = str(page_id or "")
     if not force_refresh and cache_key:
         with _FB_DTSG_LOCK:
@@ -1245,26 +1193,18 @@ def _get_fb_dtsg(session, page_cookie, page_id="", force_refresh=False):
     return ""
 
 def _resolve_fb_feedback_and_post_id(session, page_cookie, target_id, target_url=""):
-    """
-    Giải mã ID bài viết & Feedback ID chuẩn theo Li2/X;->k, l, m, n:
-    - Xử lý ID ghép 'uid_postid' (vd: 1000123_987654 -> 987654).
-    - Xử lý pfbid0... hoặc link bài viết bằng cách tải trang đích để lấy feedback_id (Base64) và numeric post_id.
-    """
     raw_id = str(target_id or "").strip()
     raw_url = str(target_url or "").strip()
 
-    # Nếu ID có dạng uid_postid (123456_789012)
     if "_" in raw_id:
         parts = raw_id.split("_")
         if parts[-1].isdigit():
             raw_id = parts[-1]
 
-    # Nếu raw_id đã là số thuần túy
     if raw_id.isdigit() and len(raw_id) >= 8:
         fb_b64 = base64.b64encode(f"feedback:{raw_id}".encode("utf-8")).decode("utf-8")
         return raw_id, fb_b64
 
-    # Tìm ID số trong URL nếu có
     for src in [raw_url, raw_id]:
         m_num = re.search(r'(?:story_fbid=|fbid=|/posts/|/videos/|/reel/|/photos/[^/]+/)(\d{8,25})', src)
         if m_num:
@@ -1272,7 +1212,6 @@ def _resolve_fb_feedback_and_post_id(session, page_cookie, target_id, target_url
             fb_b64 = base64.b64encode(f"feedback:{num_id}".encode("utf-8")).decode("utf-8")
             return num_id, fb_b64
 
-    # Nếu là pfbid hoặc URL rút gọn -> tải trang để bóc feedback_id giống Li2/X;->n
     fetch_url = raw_url if raw_url.startswith("http") else f"https://www.facebook.com/{raw_id}"
     try:
         html = session.get(
@@ -1287,7 +1226,6 @@ def _resolve_fb_feedback_and_post_id(session, page_cookie, target_id, target_url
             max_redirects=5
         ).text
 
-        # Tìm trực tiếp chuỗi feedback_id đã encode Base64
         m_fb = re.search(r'"feedback"\s*:\s*\{\s*"id"\s*:\s*"([^"]+)"', html) or re.search(r'"feedback_id"\s*:\s*"([^"]+)"', html)
         m_post = (
             re.search(r'"top_level_post_id"\s*:\s*"(\d+)"', html)
@@ -1307,7 +1245,6 @@ def _resolve_fb_feedback_and_post_id(session, page_cookie, target_id, target_url
     return raw_id, fallback_b64
 
 def _post_fb_graphql(session, page_cookie, actor_id, dtsg, friendly_name, doc_id, variables_dict):
-    """Hàm gửi request GraphQL chuẩn theo Li2/X;->o(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)"""
     headers = {
         "User-Agent": USER_AGENT,
         "Cookie": page_cookie,
@@ -1328,7 +1265,6 @@ def _post_fb_graphql(session, page_cookie, actor_id, dtsg, friendly_name, doc_id
         "fb_dtsg": dtsg,
         "fb_api_caller_class": "RelayModern",
         "fb_api_req_friendly_name": friendly_name,
-        " variables": json.dumps(variables_dict, ensure_ascii=False),
         "variables": json.dumps(variables_dict, ensure_ascii=False),
         "server_timestamps": "true",
         "doc_id": str(doc_id)
@@ -1342,11 +1278,6 @@ def _post_fb_graphql(session, page_cookie, actor_id, dtsg, friendly_name, doc_id
     )
 
 def fb_page_react_or_like(target_url, page_token, proxy=None, session=None, page_id="", parent_cookie="", target_id="", reaction_type="LIKE"):
-    """
-    Thực hiện Like hoặc Thả Cảm Xúc (LOVE, CARE, HAHA, WOW, SAD, ANGRY) chuẩn theo Li2/X;->e:
-    - Sử dụng khóa 'feedback_reaction_id' (Sửa lỗi 'feedback_reaction' bị FB từ chối ở code cũ).
-    - Sử dụng doc_id '9014612158646528' và fallback '6623712531077310'.
-    """
     own_sess = session is None
     sess = session or c_requests.Session()
     if proxies := format_proxy(proxy):
@@ -1366,7 +1297,6 @@ def fb_page_react_or_like(target_url, page_token, proxy=None, session=None, page
         pg_ck = _build_page_cookie(raw_ck, actor_id) if raw_ck else ""
         obj_id, feedback_b64 = _resolve_fb_feedback_and_post_id(sess, pg_ck, target_id, target_url)
 
-        # 1. Thử qua Graph API nếu có Page Access Token EAA... và chế độ là LIKE
         if page_token and str(page_token).startswith("EAA") and react_upper == "LIKE" and obj_id:
             try:
                 res = sess.post(
@@ -1379,7 +1309,6 @@ def fb_page_react_or_like(target_url, page_token, proxy=None, session=None, page
             except Exception:
                 pass
 
-        # 2. Thực thi qua GraphQL CometUFIFeedbackReactMutation (Chuẩn Li2/X;->e)
         if pg_ck and actor_id and feedback_b64:
             dtsg = _get_fb_dtsg(sess, pg_ck, actor_id)
             if dtsg:
@@ -1394,7 +1323,7 @@ def fb_page_react_or_like(target_url, page_token, proxy=None, session=None, page
                         "tracking": [],
                         "session_id": f"session_{random.randint(100000, 999999)}",
                         "actor_id": str(actor_id),
-                        "client_mutation_id": str(random.randint(1, 9))
+                        "client_mutation_id": "1"
                     },
                     "useDefaultActor": False,
                     "scale": 1
@@ -1405,7 +1334,7 @@ def fb_page_react_or_like(target_url, page_token, proxy=None, session=None, page
                     if gql_res.status_code == 200 and ('"feedback"' in txt_res or '"viewer_feedback_reaction_info"' in txt_res or '"errors"' not in txt_res):
                         return json.dumps({"success": True})
 
-        return json.dumps({"error": f"Không thể {react_upper} (Kiểm tra Cookie/Page)"})
+        return json.dumps({"error": f"Không thể {react_upper}"})
     except Exception as e:
         return json.dumps({"error": str(e)[:40]})
     finally:
@@ -1419,10 +1348,6 @@ def fb_page_like(target_url, page_token, proxy=None, session=None, page_id="", p
     return fb_page_react_or_like(target_url, page_token, proxy, session, page_id, parent_cookie, target_id, "LIKE")
 
 def fb_page_follow(target_id, page_token, proxy=None, session=None, page_id="", parent_cookie=""):
-    """
-    Thực hiện Follow / Sub hoặc Like Fanpage chuẩn theo Li2/X;->g & Li2/X;->j:
-    - Gửi CometPageLikeMutation (doc_id: 7341530392590924) và CometUserFollowMutation (doc_id: 7894270510655852).
-    """
     own_sess = session is None
     sess = session or c_requests.Session()
     if proxies := format_proxy(proxy):
@@ -1456,7 +1381,6 @@ def fb_page_follow(target_id, page_token, proxy=None, session=None, page_id="", 
             pg_ck = _build_page_cookie(raw_ck, actor_id)
             dtsg = _get_fb_dtsg(sess, pg_ck, actor_id)
             if dtsg:
-                # 1. CometUserFollowMutation (Chuẩn Li2/X;->g - doc_id: 7894270510655852)
                 variables_sub = {
                     "input": {
                         "attribution_id_v2": "ProfileCometTimelineListViewRoot.react,comet.profile.timeline.list,via_cold_start,1700000000000,123456,190055527696468,,",
@@ -1471,13 +1395,12 @@ def fb_page_follow(target_id, page_token, proxy=None, session=None, page_id="", 
                 }
                 gql_sub = _post_fb_graphql(sess, pg_ck, actor_id, dtsg, "CometUserFollowMutation", "7894270510655852", variables_sub)
 
-                # 2. CometPageLikeMutation (Chuẩn Li2/X;->j - doc_id: 7341530392590924)
                 variables_like_page = {
                     "input": {
                         "attribution_id_v2": "ProfileCometTimelineListViewRoot.react,comet.profile.timeline.list,via_cold_start,1700000000000,123456,190055527696468,,",
                         "is_tracking_encrypted": True,
                         "page_id": str(clean_tid),
-                        "source": " unknown",
+                        "source": "unknown",
                         "tracking": None,
                         "actor_id": str(actor_id),
                         "client_mutation_id": "1"
@@ -1501,10 +1424,6 @@ def fb_page_follow(target_id, page_token, proxy=None, session=None, page_id="", 
                 pass
 
 def fb_page_comment(target_id_or_post, comment_text, page_token, proxy=None, session=None, page_id="", parent_cookie="", target_url=""):
-    """
-    Thực hiện Bình luận (Comment) bài viết chuẩn theo Li2/X;->c:
-    - Sử dụng CometUFICommentCreateMutation (doc_id: 7302660669831903 & fallback 6993516810709754).
-    """
     own_sess = session is None
     sess = session or c_requests.Session()
     if proxies := format_proxy(proxy):
@@ -1580,7 +1499,6 @@ def fb_page_comment(target_id_or_post, comment_text, page_token, proxy=None, ses
                 pass
 
 def fb_page_share(target_id_or_url, page_token, proxy=None, session=None, page_id="", parent_cookie=""):
-    """Chia sẻ bài viết lên tường Page chuẩn theo Li2/X;->p"""
     own_sess = session is None
     sess = session or c_requests.Session()
     if proxies := format_proxy(proxy):
@@ -1623,8 +1541,7 @@ def fb_page_share(target_id_or_url, page_token, proxy=None, session=None, page_i
             except Exception:
                 pass
 # ==============================================================================
-# PHẦN 2: GIAO DIỆN CHÍNH MMOApp (TÁCH RIÊNG TTC 12 CHẾ ĐỘ & XSMM ĐỘC LẬP)
-# (Dán nối tiếp ngay bên dưới Phần 1)
+# PHẦN 2: GIAO DIỆN CHÍNH MMOApp & LUỒNG CHẠY TTC CHUẨN MTOOL MAX
 # ==============================================================================
 
 class MMOApp(ctk.CTk):
@@ -1641,20 +1558,17 @@ class MMOApp(ctk.CTk):
         self.start_time = None
         self.lock = threading.Lock()
 
-        # Quản lý dữ liệu UI
-        self.acc_rows = {}          # XSMM IG rows
-        self.page_rows = {}         # TTC FB Page rows
+        self.acc_rows = {}
+        self.page_rows = {}
         self.fb_parent_sections = {}
-        self.ttc_accounts = {}      # {ttc_user: dict}
+        self.ttc_accounts = {}
         self.ttc_rows_ui = {}
         self.ttc_account_locks = {}
         self.ttc_clients_cache = {}
         self.single_running_threads = {}
 
-        # Checkboxes cho 12 chế độ TTC
         self.ttc_mode_vars = {}
 
-        # Bộ nhớ đệm cấu hình
         self.cfg_cache = {
             "token": "",
             "global_proxy": "",
@@ -1678,7 +1592,6 @@ class MMOApp(ctk.CTk):
         self.grid_rowconfigure(1, weight=1)
         self.grid_rowconfigure(2, weight=0)
 
-        # ---------------- TOP NAVIGATION BAR ----------------
         self.top_nav = ctk.CTkFrame(self, height=54, fg_color="#ffffff", corner_radius=0, border_width=1, border_color="#e2e8f0")
         self.top_nav.grid(row=0, column=0, sticky="ew")
         self.top_nav.grid_columnconfigure(3, weight=1)
@@ -1737,13 +1650,11 @@ class MMOApp(ctk.CTk):
         )
         self.btn_config_chung.grid(row=0, column=4, padx=(4, 14), pady=9, sticky="e")
 
-        # ---------------- MAIN CONTENT AREA ----------------
         self.main_content = ctk.CTkFrame(self, fg_color="#f8fafc", corner_radius=0)
         self.main_content.grid(row=1, column=0, sticky="nsew", padx=10, pady=8)
         self.main_content.grid_columnconfigure(0, weight=1)
         self.main_content.grid_rowconfigure(0, weight=1)
 
-        # Các biến cấu hình ẩn
         self.ent_token = ctk.CTkEntry(self)
         self.ent_delay_min = ctk.CTkEntry(self); self.ent_delay_min.insert(0, "8")
         self.ent_delay_max = ctk.CTkEntry(self); self.ent_delay_max.insert(0, "12")
@@ -1755,7 +1666,6 @@ class MMOApp(ctk.CTk):
         self.setup_tab_accounts()
         self.setup_tab_dashboard()
 
-        # ---------------- BOTTOM STATUS BAR ----------------
         self.status_bar = ctk.CTkFrame(self, height=34, fg_color="#ffffff", corner_radius=0, border_width=1, border_color="#e2e8f0")
         self.status_bar.grid(row=2, column=0, sticky="ew")
         self.status_bar.grid_columnconfigure(2, weight=1)
@@ -1778,9 +1688,6 @@ class MMOApp(ctk.CTk):
         self._process_ui_queue_loop()
         self.switch_tab("pages")
 
-    # ==========================================================================
-    # HỆ THỐNG CẬP NHẬT UI & DB BẤT ĐỒNG BỘ
-    # ==========================================================================
     def _sync_proxy_cache_from_top_bar(self):
         try:
             self.cfg_cache["global_proxy"] = self.ent_global_proxy.get().strip()
@@ -2031,22 +1938,17 @@ class MMOApp(ctk.CTk):
 
         ctk.CTkButton(modal, text="💾 LƯU CẤU HÌNH", fg_color="#059669", hover_color="#047857", height=40, font=ctk.CTkFont(size=12, weight="bold"), command=save_modal).pack(fill="x", padx=24, pady=18)
 
-    # ==========================================================================
-    # TAB 1: KHU VỰC TƯƠNG TÁC CHÉO (TTC - 12 CHẾ ĐỘ ĐỘC LẬP HOÀN TOÀN)
-    # ==========================================================================
     def setup_tab_fb_pages(self):
         self.frame_page_tab = ctk.CTkFrame(self.main_content, fg_color="#ffffff", corner_radius=10, border_width=1, border_color="#e2e8f0")
         self.frame_page_tab.grid_rowconfigure(3, weight=1)
         self.frame_page_tab.grid_columnconfigure(0, weight=1)
 
-        # --- KHUNG TRÊN CHIA 3 PANEL: [1. TÀI KHOẢN TTC] | [2. THÊM FB & QUÉT PAGE] | [3. 12 CHẾ ĐỘ JOB TTC] ---
         top_split = ctk.CTkFrame(self.frame_page_tab, fg_color="transparent")
         top_split.grid(row=0, column=0, sticky="ew", padx=10, pady=(8, 4))
         top_split.grid_columnconfigure(0, weight=4)
         top_split.grid_columnconfigure(1, weight=4)
         top_split.grid_columnconfigure(2, weight=5)
 
-        # ---------------- PANEL 1: DANH SÁCH ACC TTC & PAGE ĐÃ LIÊN KẾT ----------------
         ttc_box = ctk.CTkFrame(top_split, fg_color="#f8fafc", corner_radius=8, border_width=1, border_color="#cbd5e1")
         ttc_box.grid(row=0, column=0, sticky="nsew", padx=(0, 4))
         ttc_box.grid_columnconfigure(0, weight=1)
@@ -2061,7 +1963,7 @@ class MMOApp(ctk.CTk):
         ttc_input_row.grid(row=1, column=0, sticky="ew", padx=8, pady=(2, 4))
         ttc_input_row.grid_columnconfigure(0, weight=1)
 
-        self.ent_ttc_token = ctk.CTkEntry(ttc_input_row, placeholder_text="Dán Access Token TươngTácChéo (Có thể dán nhiều token cách nhau dấu phẩy)...", height=30, font=ctk.CTkFont(family="Consolas", size=10), fg_color="#ffffff")
+        self.ent_ttc_token = ctk.CTkEntry(ttc_input_row, placeholder_text="Dán Access Token TươngTácChéo...", height=30, font=ctk.CTkFont(family="Consolas", size=10), fg_color="#ffffff")
         self.ent_ttc_token.grid(row=0, column=0, padx=(0, 4), sticky="ew")
         ctk.CTkButton(ttc_input_row, text="➕ Thêm Acc TTC", width=105, height=30, fg_color="#059669", hover_color="#047857", font=ctk.CTkFont(size=10, weight="bold"), corner_radius=6, command=self.add_ttc_account_action).grid(row=0, column=1)
 
@@ -2069,7 +1971,6 @@ class MMOApp(ctk.CTk):
         self.scroll_ttc_accs.grid(row=2, column=0, sticky="nsew", padx=8, pady=(0, 6))
         self.scroll_ttc_accs.grid_columnconfigure(0, weight=1)
 
-        # ---------------- PANEL 2: NẠP FB MẸ (COOKIE / TOKEN) & QUÉT PAGE CON ----------------
         fb_link_box = ctk.CTkFrame(top_split, fg_color="#f8fafc", corner_radius=8, border_width=1, border_color="#cbd5e1")
         fb_link_box.grid(row=0, column=1, sticky="nsew", padx=4)
         fb_link_box.grid_columnconfigure(0, weight=1)
@@ -2097,12 +1998,10 @@ class MMOApp(ctk.CTk):
         ctk.CTkButton(fb_row2, text="🔍 Quét Page", width=95, height=30, fg_color="#0284c7", hover_color="#0369a1", font=ctk.CTkFont(size=10, weight="bold"), corner_radius=6, command=self.quick_link_fb_and_scan_pages).grid(row=0, column=1, padx=(0, 3))
         ctk.CTkButton(fb_row2, text="📥 Nạp Nhiều FB", width=100, height=30, fg_color="#2563eb", hover_color="#1d4ed8", font=ctk.CTkFont(size=10, weight="bold"), corner_radius=6, command=self.scan_and_import_fb_pages).grid(row=0, column=2)
 
-        # Mini Log trực tiếp ngay trên màn hình TTC để theo dõi tức thì
         ctk.CTkLabel(fb_link_box, text="⚡ Nhật ký chạy TTC trực tiếp:", font=ctk.CTkFont(size=10, weight="bold"), text_color="#475569").grid(row=3, column=0, sticky="w", padx=8, pady=(2, 0))
         self.txt_ttc_mini_log = ctk.CTkTextbox(fb_link_box, height=62, font=ctk.CTkFont(family="Consolas", size=9), text_color="#065f46", fg_color="#ffffff", border_width=1, border_color="#cbd5e1", corner_radius=5)
         self.txt_ttc_mini_log.grid(row=4, column=0, sticky="nsew", padx=8, pady=(2, 6))
 
-        # ---------------- PANEL 3: BẢNG TICK CHỌN 12 CHẾ ĐỘ LÀM JOB TTC ----------------
         modes_box = ctk.CTkFrame(top_split, fg_color="#f8fafc", corner_radius=8, border_width=1, border_color="#cbd5e1")
         modes_box.grid(row=0, column=2, sticky="nsew", padx=(4, 0))
         modes_box.grid_columnconfigure((0, 1), weight=1)
@@ -2129,7 +2028,6 @@ class MMOApp(ctk.CTk):
             )
             chk_m.grid(row=r_idx, column=c_idx, sticky="w", padx=8, pady=2)
 
-        # --- THANH ĐIỀU KHIỂN CHẠY PAGE TTC ---
         tool_tbl = ctk.CTkFrame(self.frame_page_tab, fg_color="#eff6ff", height=42, corner_radius=6, border_width=1, border_color="#bfdbfe")
         tool_tbl.grid(row=1, column=0, sticky="ew", padx=10, pady=3)
         tool_tbl.grid_columnconfigure(7, weight=1)
@@ -2144,7 +2042,6 @@ class MMOApp(ctk.CTk):
         self.opt_bulk_ttc.grid(row=0, column=5, padx=2)
         ctk.CTkButton(tool_tbl, text="📌 Gán vào Page đã tích", width=135, height=28, fg_color="#334155", hover_color="#1e293b", font=ctk.CTkFont(size=10, weight="bold"), corner_radius=6, command=self.assign_ttc_to_selected_pages_only).grid(row=0, column=6, padx=2)
 
-        # Nút BẮT ĐẦU CHẠY NGAY và DỪNG TẤT CẢ đặt ngay tại tab TTC
         btn_right_frame = ctk.CTkFrame(tool_tbl, fg_color="transparent")
         btn_right_frame.grid(row=0, column=7, sticky="e", padx=6)
 
@@ -2160,7 +2057,6 @@ class MMOApp(ctk.CTk):
             corner_radius=6, command=self.trigger_kill_switch
         ).pack(side="left")
 
-        # --- HEADER BẢNG PHÂN CẤP FB MẸ -> PAGE CON ---
         tbl_head = ctk.CTkFrame(self.frame_page_tab, fg_color="#f1f5f9", height=34, corner_radius=6)
         tbl_head.grid(row=2, column=0, sticky="ew", padx=10, pady=(2, 4))
         tbl_head.grid_columnconfigure(2, weight=1)
@@ -2187,21 +2083,17 @@ class MMOApp(ctk.CTk):
     def get_selected_ttc_modes(self):
         return [m_key for m_key, var in self.ttc_mode_vars.items() if var.get()]
 
-    # ==========================================================================
-    # TAB 2: KHU VỰC XSMM.NET (IG ĐỘC LẬP HOÀN TOÀN VỚI TTC)
-    # ==========================================================================
     def setup_tab_accounts(self):
         self.frame_acc_tab = ctk.CTkFrame(self.main_content, fg_color="#ffffff", corner_radius=10, border_width=1, border_color="#e2e8f0")
         self.frame_acc_tab.grid_rowconfigure(3, weight=1)
         self.frame_acc_tab.grid_columnconfigure(0, weight=1)
 
-        # Thanh cấu hình riêng biệt của XSMM
         xsmm_top_cfg = ctk.CTkFrame(self.frame_acc_tab, fg_color="#eff6ff", corner_radius=8, border_width=1, border_color="#bfdbfe")
         xsmm_top_cfg.grid(row=0, column=0, sticky="ew", padx=12, pady=(10, 4))
         xsmm_top_cfg.grid_columnconfigure(1, weight=1)
 
         ctk.CTkLabel(xsmm_top_cfg, text="🔑 XSMM Bearer Token:", font=ctk.CTkFont(size=11, weight="bold"), text_color="#1e3a8a").grid(row=0, column=0, padx=10, pady=8, sticky="w")
-        self.ent_xsmm_token_bar = ctk.CTkEntry(xsmm_top_cfg, placeholder_text="Nhập Bearer Token XSMM.NET riêng tại đây...", height=32, font=ctk.CTkFont(family="Consolas", size=10), fg_color="#ffffff")
+        self.ent_xsmm_token_bar = ctk.CTkEntry(xsmm_top_cfg, placeholder_text="Nhập Bearer Token XSMM.NET...", height=32, font=ctk.CTkFont(family="Consolas", size=10), fg_color="#ffffff")
         self.ent_xsmm_token_bar.grid(row=0, column=1, padx=6, pady=8, sticky="ew")
 
         self.chk_ig_like = ctk.CTkCheckBox(xsmm_top_cfg, text="IG Like", font=ctk.CTkFont(size=11, weight="bold"), fg_color="#2563eb", width=70)
@@ -2213,12 +2105,11 @@ class MMOApp(ctk.CTk):
 
         ctk.CTkButton(xsmm_top_cfg, text="💾 Lưu Token XSMM", width=125, height=32, fg_color="#2563eb", hover_color="#1d4ed8", font=ctk.CTkFont(size=10, weight="bold"), command=self.save_config).grid(row=0, column=5, padx=10, pady=8)
 
-        # Thanh thêm Cookie IG
         top_bar = ctk.CTkFrame(self.frame_acc_tab, fg_color="#f8fafc", height=50, corner_radius=8, border_width=1, border_color="#e2e8f0")
         top_bar.grid(row=1, column=0, sticky="ew", padx=12, pady=4)
         top_bar.grid_columnconfigure(0, weight=1)
 
-        self.ent_quick_cookie = ctk.CTkEntry(top_bar, placeholder_text="Nhập Cookie Instagram (Dành riêng cho XSMM)...", height=34, font=ctk.CTkFont(family="Consolas", size=10), fg_color="#ffffff")
+        self.ent_quick_cookie = ctk.CTkEntry(top_bar, placeholder_text="Nhập Cookie Instagram...", height=34, font=ctk.CTkFont(family="Consolas", size=10), fg_color="#ffffff")
         self.ent_quick_cookie.grid(row=0, column=0, padx=(10, 6), pady=8, sticky="ew")
 
         self.max_jobs_entry = ctk.CTkEntry(top_bar, placeholder_text="Max Job", width=100, height=34, font=ctk.CTkFont(size=10), fg_color="#ffffff")
@@ -2228,7 +2119,6 @@ class MMOApp(ctk.CTk):
         ctk.CTkButton(top_bar, text="📥 Batch Import IG", width=130, height=34, fg_color="#2563eb", hover_color="#1d4ed8", font=ctk.CTkFont(size=11, weight="bold"), command=self.batch_import_accounts).grid(row=0, column=3, padx=4)
         ctk.CTkButton(top_bar, text="🚀 Chạy Tất Cả IG Đã Chọn", width=175, height=34, fg_color="#0f172a", hover_color="#1e293b", font=ctk.CTkFont(size=11, weight="bold"), command=self.start_all_checked_xsmm_ig).grid(row=0, column=4, padx=(4, 10))
 
-        # Header bảng IG
         tbl_head = ctk.CTkFrame(self.frame_acc_tab, fg_color="#f1f5f9", height=34, corner_radius=6)
         tbl_head.grid(row=2, column=0, sticky="ew", padx=12, pady=4)
         tbl_head.grid_columnconfigure(3, weight=1)
@@ -2247,9 +2137,6 @@ class MMOApp(ctk.CTk):
         self.scroll_accs.grid(row=3, column=0, sticky="nsew", padx=12, pady=(0, 10))
         self.scroll_accs.grid_columnconfigure(0, weight=1)
 
-    # ==========================================================================
-    # TAB 3: DASHBOARD & LOGS
-    # ==========================================================================
     def setup_tab_dashboard(self):
         self.frame_dash_tab = ctk.CTkFrame(self.main_content, fg_color="#ffffff", corner_radius=10, border_width=1, border_color="#e2e8f0")
         self.frame_dash_tab.grid_rowconfigure(1, weight=1)
@@ -2270,9 +2157,6 @@ class MMOApp(ctk.CTk):
         self.txt_log = ctk.CTkTextbox(self.frame_dash_tab, font=ctk.CTkFont(family="Consolas", size=11), text_color="#065f46", fg_color="#ffffff", border_width=1, border_color="#e2e8f0", corner_radius=8)
         self.txt_log.grid(row=1, column=0, sticky="nsew", padx=12, pady=(0, 12))
 
-    # ==========================================================================
-    # LƯU / TẢI CẤU HÌNH & THỐNG KÊ
-    # ==========================================================================
     def load_config(self):
         if os.path.exists(CONFIG_FILE):
             try:
@@ -2376,9 +2260,6 @@ class MMOApp(ctk.CTk):
             self.queue_row_ui("page", p, status_text="Đã dừng theo lệnh", status_color="#d97706", btn_text="Bắt đầu", btn_color="#0284c7")
         self.log("🛑 Đã dừng toàn bộ các luồng theo yêu cầu của bạn.")
 
-    # ==========================================================================
-    # QUẢN LÝ TÀI KHOẢN TTC & TỰ ĐỘNG HIỂN THỊ PAGE ĐÃ LIÊN KẾT TRÊN WEB
-    # ==========================================================================
     def get_ttc_dropdown_values(self):
         vals = [f"TTC: {u}" for u in self.ttc_accounts.keys()]
         return vals if vals else ["-- Chưa thêm Acc TTC --"]
@@ -2398,7 +2279,6 @@ class MMOApp(ctk.CTk):
                     info["data"]["assigned_ttc"] = vals[0]
 
     def format_ttc_linked_summary(self, ttc_user):
-        """Tạo chuỗi hiển thị rõ Acc TTC này đã liên kết những Page nào và đang chọn Page nào"""
         info = self.ttc_accounts.get(ttc_user, {})
         active_pid = str(info.get("active_page_id") or "").strip()
         cfg_map = info.get("configured_pages_map") or {}
@@ -2419,11 +2299,6 @@ class MMOApp(ctk.CTk):
         return "📌 Chưa quét thấy Page LK (Bấm 🔄 Quét)"
 
     def update_page_link_badges_from_ttc(self):
-        """
-        Quét toàn bộ các Page trên bảng và tự động:
-        1. Hiển thị rõ ở cột '📌 PAGE ĐÃ LK TRÊN WEB / ĐANG CHỌN LÀM' xem Page đó thuộc Acc TTC nào.
-        2. Tự động chọn sẵn đúng Acc TTC đó trong cột Dropdown để bạn không bao giờ bị nhầm!
-        """
         for pid, p_info in self.page_rows.items():
             parent_uid = str(p_info["data"].get("parent") or "")
             linked_ttc_users = []
@@ -2540,7 +2415,6 @@ class MMOApp(ctk.CTk):
         threading.Thread(target=_do_login_ttc, daemon=True).start()
 
     def sync_all_ttc_linked_pages_from_web(self):
-        """Quét lại toàn bộ các Acc TTC để lấy danh sách Page đã liên kết trên Web và tự khớp với bảng Page"""
         if not self.ttc_accounts:
             self.log("⚠️ Chưa có tài khoản TTC nào trong danh sách!")
             return
@@ -2609,9 +2483,6 @@ class MMOApp(ctk.CTk):
             "status_text": summary_txt
         }
 
-    # ==========================================================================
-    # QUẢN LÝ CÂY PHÂN CẤP: TÀI KHOẢN FB MẸ -> CÁC PAGE CON
-    # ==========================================================================
     def ensure_fb_parent_section(self, fb_uid, fb_name="", cookie="", access_token=""):
         fb_uid = str(fb_uid or "Main").strip()
         if fb_uid in self.fb_parent_sections:
@@ -2791,9 +2662,6 @@ class MMOApp(ctk.CTk):
             "data": page_data
         }
 
-    # ==========================================================================
-    # KHỞI CHẠY PAGE TTC VỚI 12 CHẾ ĐỘ (ĐỒNG BỘ Lk2/z.smali & Li2/X.smali)
-    # ==========================================================================
     def start_single_page_worker(self, pid, stagger_delay=0.0):
         if pid not in self.page_rows:
             return
@@ -2813,7 +2681,7 @@ class MMOApp(ctk.CTk):
 
         selected_modes = self.get_selected_ttc_modes()
         if not selected_modes:
-            self.log("⚠️ Bạn chưa tích chọn chế độ Job nào trong 12 Chế Độ TTC (Ở khung số 3)!")
+            self.log("⚠️ Bạn chưa tích chọn chế độ Job nào trong 12 Chế Độ TTC!")
             self.queue_row_ui("page", pid, status_text="❌ Chưa chọn Job TTC!", status_color="#dc2626")
             return
 
@@ -2867,9 +2735,11 @@ class MMOApp(ctk.CTk):
 
     def worker_ttc_page_loop(self, ttc_user, page, stagger_delay=0.0):
         """
-        Luồng chạy Page trên Tương Tác Chéo (12 Chế độ Job - Chuẩn Lk2/z.smali & Li2/X.smali):
-        - Duy trì PHPSESSID xuyên suốt và tự động đặt cấu hình Nick (hỗ trợ cả Page ID lẫn UID FB Mẹ).
-        - Giải mã chuẩn xác feedback_id Base64 và doc_id GraphQL mới nhất.
+        Luồng chạy Page trên Tương Tác Chéo chuẩn theo MTool Max (Lk2/z.smali & Lk2/x.smali):
+        - Quét tuần tự từng loại nhiệm vụ.
+        - Nếu API TTC trả về đếm ngược (Vui lòng thực hiện lại sau X giây) -> app sẽ đếm ngược đúng X giây rồi gọi lại ngay mục đó.
+        - Nếu mục đó hết job ([]) -> đợi 3s nhả cooldown rồi chuyển sang mục tiếp theo.
+        - Nếu đi hết vòng mà không còn job nào -> thông báo 'Toàn bộ nhiệm vụ đã hết' và đợi vòng mới.
         """
         pid = str(page["page_id"]).strip()
         pname = str(page.get("page_name") or pid)
@@ -2904,6 +2774,7 @@ class MMOApp(ctk.CTk):
 
                 self.queue_row_ui("page", pid, status_text=f"⏳ Chờ lượt luồng TTC ({ttc_user})...", status_color="#0284c7")
 
+                found_any_job = False
                 with ttc_lock:
                     if not self.single_running_threads.get(pid, False):
                         break
@@ -2926,7 +2797,6 @@ class MMOApp(ctk.CTk):
                             continue
                         self.ttc_clients_cache[ttc_user] = ttc_client
 
-                    # Đặt Nick trên TTC với hỗ trợ fallback sang UID FB Mẹ hoặc Nick đang cấu hình trên Web
                     _, dat_msg = ttc_client.dat_nick(pid, fallback_parent_uid=parent_uid)
                     ttc_info["active_page_id"] = ttc_client.current_configured_uid or pid
                     self.queue_row_ui(
@@ -2942,9 +2812,7 @@ class MMOApp(ctk.CTk):
                         status_color="#0284c7"
                     )
 
-                    found_any_job = False
-                    last_mode_err = ""
-                    for mode_key in active_modes:
+                    for idx_m, mode_key in enumerate(active_modes):
                         if not self.single_running_threads.get(pid, False) or attempted_jobs >= max_jobs:
                             break
 
@@ -2952,14 +2820,35 @@ class MMOApp(ctk.CTk):
                         mode_name = mode_cfg.get("name", mode_key)
                         action_type = mode_cfg.get("action", "like")
 
-                        self.queue_row_ui("page", pid, status_text=f"🔍 Tìm [{mode_name}]...", status_color="#0284c7")
-                        tasks, err_msg = ttc_client.get_tasks(mode_key)
+                        self.queue_row_ui("page", pid, status_text=f"🔍 Đang tìm [{mode_name}]...", status_color="#0284c7")
+                        tasks, status_msg, wait_api_sec = ttc_client.get_tasks_with_cooldown(mode_key)
+
+                        if not tasks and wait_api_sec > 0:
+                            wait_total = min(25, max(2, int(wait_api_sec) + 1))
+                            self.log(f"⏳ [TTC: {ttc_user} | {pname}] [{mode_name}] API TTC báo: {status_msg} -> Đợi {wait_total}s...")
+                            for rem in range(wait_total, 0, -1):
+                                self.queue_row_ui("page", pid, status_text=f"⏳ Đợi TTC ({rem}s) -> [{mode_name[:14]}]...", status_color="#d97706")
+                                if not self.smart_sleep(1, pid):
+                                    break
+                            if not self.single_running_threads.get(pid, False):
+                                break
+                            self.queue_row_ui("page", pid, status_text=f"🔍 Quét lại [{mode_name}]...", status_color="#0284c7")
+                            tasks, status_msg, _ = ttc_client.get_tasks_with_cooldown(mode_key)
+
                         if not tasks:
-                            last_mode_err = err_msg
+                            if idx_m < len(active_modes) - 1:
+                                next_mode_name = TTC_12_JOB_MODES.get(active_modes[idx_m + 1], {}).get("name", "mục kế tiếp")
+                                self.log(f"📭 [TTC: {ttc_user} | {pname}] Hết nhiệm vụ [{mode_name}] -> Đợi 3s chuyển sang [{next_mode_name}]")
+                                for rem in range(3, 0, -1):
+                                    self.queue_row_ui("page", pid, status_text=f"📭 Hết [{mode_name[:12]}], đợi {rem}s chuyển mục...", status_color="#64748b")
+                                    if not self.smart_sleep(1, pid):
+                                        break
+                            else:
+                                self.log(f"📭 [TTC: {ttc_user} | {pname}] Hết nhiệm vụ [{mode_name}]")
                             continue
 
                         found_any_job = True
-                        self.log(f"📥 [TTC: {ttc_user} | Page: {pname}] Có {len(tasks)} job [{mode_name}]")
+                        self.log(f"📥 [TTC: {ttc_user} | Page: {pname}] Tải được {len(tasks)} nhiệm vụ [{mode_name}]")
 
                         for nv in tasks:
                             if not self.single_running_threads.get(pid, False) or attempted_jobs >= max_jobs:
@@ -3003,8 +2892,11 @@ class MMOApp(ctk.CTk):
                             attempted_jobs += 1
                             if success:
                                 wait_coin = random.randint(delay_coin_min, delay_coin_max)
-                                self.queue_row_ui("page", pid, status_text=f"⏳ Chờ {wait_coin}s nhận xu...", status_color="#0284c7")
-                                if not self.smart_sleep(wait_coin, pid):
+                                for rem_c in range(wait_coin, 0, -1):
+                                    self.queue_row_ui("page", pid, status_text=f"⏳ Chờ {rem_c}s nhận xu [{task_id[:6]}]...", status_color="#0284c7")
+                                    if not self.smart_sleep(1, pid):
+                                        break
+                                if not self.single_running_threads.get(pid, False):
                                     break
 
                                 earned, claim_msg = ttc_client.claim_reward(mode_key, task_id, loaicx=loaicx)
@@ -3020,19 +2912,33 @@ class MMOApp(ctk.CTk):
                                 self.queue_row_ui("page", pid, status_text=f"❌ {fail_reason[:20]}", status_color="#dc2626")
 
                             wait_next = random.randint(delay_min, delay_max)
-                            if not self.smart_sleep(wait_next, pid):
-                                break
+                            for rem_n in range(wait_next, 0, -1):
+                                self.queue_row_ui("page", pid, status_text=f"⏳ Nghỉ {rem_n}s làm job tiếp...", status_color="#059669")
+                                if not self.smart_sleep(1, pid):
+                                    break
+
+                        if idx_m < len(active_modes) - 1 and self.single_running_threads.get(pid, False):
+                            self.log(f"✅ [Page {pname}] Đã chạy hết mục [{mode_name}] -> Đợi 3s chuyển sang mục tiếp theo...")
+                            for rem_sw in range(3, 0, -1):
+                                self.queue_row_ui("page", pid, status_text=f"🔄 Đợi {rem_sw}s chuyển mục kế tiếp...", status_color="#0284c7")
+                                if not self.smart_sleep(1, pid):
+                                    break
 
                 if self.single_running_threads.get(pid, False) and attempted_jobs < max_jobs:
-                    rest_sec = 6 if found_any_job else 8
-                    if found_any_job:
-                        w_txt = f"🔄 Nghỉ {rest_sec}s quét vòng mới..."
+                    if not found_any_job:
+                        rest_sec = 5
+                        self.log(f"📭 [TTC: {ttc_user} | {pname}] Toàn bộ nhiệm vụ đã hết! Đợi {rest_sec}s để chuyển sang Page/vòng khác...")
+                        for rem_all in range(rest_sec, 0, -1):
+                            self.queue_row_ui("page", pid, status_text=f"📭 Toàn bộ nhiệm vụ đã hết! Đợi {rem_all}s...", status_color="#d97706")
+                            if not self.smart_sleep(1, pid):
+                                break
                     else:
-                        short_err = last_mode_err[:18] if last_mode_err else "Đang tải thêm"
-                        w_txt = f"⏳ {short_err} (Chờ {rest_sec}s)..."
-                    self.queue_row_ui("page", pid, status_text=w_txt, status_color="#059669" if found_any_job else "#d97706")
-                    if not self.smart_sleep(rest_sec, pid):
-                        break
+                        rest_sec = 4
+                        self.log(f"🔄 [TTC: {ttc_user} | {pname}] Hoàn tất 1 vòng nhiệm vụ, đợi {rest_sec}s chuyển vòng tiếp theo...")
+                        for rem_all in range(rest_sec, 0, -1):
+                            self.queue_row_ui("page", pid, status_text=f"🔄 Đợi {rem_all}s chuyển vòng mới...", status_color="#059669")
+                            if not self.smart_sleep(1, pid):
+                                break
         except Exception as fatal_e:
             self.log(f"⚠️ [Page {pname}] Cảnh báo luồng: {str(fatal_e)[:40]}")
         finally:
@@ -3044,9 +2950,6 @@ class MMOApp(ctk.CTk):
         self.single_running_threads[pid] = False
         self.queue_row_ui("page", pid, status_text="Đã dừng", status_color="#d97706", btn_text="Bắt đầu", btn_color="#0284c7")
 
-    # ==========================================================================
-    # CÁC HÀM TIỆN ÍCH FACEBOOK PAGE & INSTAGRAM XSMM
-    # ==========================================================================
     def toggle_all_pages(self, select_state):
         for item in self.page_rows.values():
             item["var"].set(select_state)
@@ -3201,9 +3104,6 @@ class MMOApp(ctk.CTk):
 
         ctk.CTkButton(modal, text="🚀 BẮT ĐẦU QUÉT DÀN PAGE", fg_color="#0284c7", height=40, font=ctk.CTkFont(size=12, weight="bold"), command=process_scan).pack(fill="x", padx=20, pady=12)
 
-    # ==========================================================================
-    # KHU VỰC XSMM.NET (IG WORKER ĐỘC LẬP)
-    # ==========================================================================
     def load_accounts_from_db(self):
         if not os.path.exists(DB_FILE):
             return
