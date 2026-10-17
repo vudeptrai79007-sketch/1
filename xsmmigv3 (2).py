@@ -1,3097 +1,2186 @@
-# -*- coding: utf-8 -*-
 import os
-import sys
-import time
-import json
 import re
+import sys
+import json
+import time
+import base64
 import random
+import sqlite3
 import threading
 import queue
-import sqlite3
-import base64
-import urllib.parse
-from concurrent.futures import ThreadPoolExecutor, as_completed
-from datetime import datetime, timedelta
-from urllib.parse import unquote
-import keyboard
-from curl_cffi import requests as c_requests
+from datetime import datetime
+from urllib.parse import urlparse, parse_qs
 import requests
+import urllib3
 import customtkinter as ctk
-from tkinter import filedialog, Menu
+from tkinter import ttk, messagebox, filedialog
 
-# Cấu hình giao diện Light Pro Theme (Enterprise Dashboard Style)
-ctk.set_appearance_mode("Light")
-ctk.set_default_color_theme("green")
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-CONFIG_FILE = "config_mmo_fb_ig_v7.json"
-DB_FILE = "mmo_fb_ig_accounts_v7.db"
-USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-SEC_CH_UA_120 = '"Not_A Brand";v="8", "Chromium";v="120", "Google Chrome";v="120"'
+# ==============================================================================
+# CẤU HÌNH HỆ THỐNG & DATABASE (mmo_fb_ig_accounts_v6.db)
+# ==============================================================================
+ctk.set_appearance_mode("Dark")
+ctk.set_default_color_theme("blue")
 
-# Danh sách 12 Chế độ làm Job chuẩn trên Tương Tác Chéo (TTC)
-TTC_12_JOB_MODES = {
-    "ttc_like_thuong": {
-        "name": "1. Like Bài Viết Thường",
-        "get_ep": "/kiemtien/getpost.php",
-        "claim_ep": "/kiemtien/nhantien.php",
-        "referer": "https://tuongtaccheo.com/kiemtien/",
-        "action": "like",
-        "default_xu": 300
-    },
-    "ttc_like_vip": {
-        "name": "2. Like Bài Viết VIP / Giá Rẻ",
-        "get_ep": "/kiemtien/likegiare/getpost.php",
-        "claim_ep": "/kiemtien/likegiare/nhantien.php",
-        "referer": "https://tuongtaccheo.com/kiemtien/likegiare/",
-        "action": "like",
-        "default_xu": 400
-    },
-    "ttc_camxuc_thuong": {
-        "name": "3. Cảm Xúc Bài Viết Thường",
-        "get_ep": "/kiemtien/camxuccheo/getpost.php",
-        "claim_ep": "/kiemtien/camxuccheo/nhantien.php",
-        "referer": "https://tuongtaccheo.com/kiemtien/camxuccheo/",
-        "action": "react",
-        "default_xu": 400
-    },
-    "ttc_camxuc_vip": {
-        "name": "4. Cảm Xúc Bài Viết VIP",
-        "get_ep": "/kiemtien/camxucvipcheo/getpost.php",
-        "claim_ep": "/kiemtien/camxucvipcheo/nhantien.php",
-        "referer": "https://tuongtaccheo.com/kiemtien/camxucvipcheo/",
-        "action": "react",
-        "default_xu": 600
-    },
-    "ttc_cmt_thuong": {
-        "name": "5. Bình Luận (Comment) Thường",
-        "get_ep": "/kiemtien/cmtcheo/getpost.php",
-        "claim_ep": "/kiemtien/cmtcheo/nhantien.php",
-        "referer": "https://tuongtaccheo.com/kiemtien/cmtcheo/",
-        "action": "comment",
-        "default_xu": 600
-    },
-    "ttc_cmt_vip": {
-        "name": "6. Bình Luận (Comment) VIP",
-        "get_ep": "/kiemtien/cmtvip/getpost.php",
-        "claim_ep": "/kiemtien/cmtvip/nhantien.php",
-        "referer": "https://tuongtaccheo.com/kiemtien/cmtvip/",
-        "action": "comment",
-        "default_xu": 800
-    },
-    "ttc_sub_thuong": {
-        "name": "7. Theo Dõi (Follow/Sub) Thường",
-        "get_ep": "/kiemtien/subcheo/getpost.php",
-        "claim_ep": "/kiemtien/subcheo/nhantien.php",
-        "referer": "https://tuongtaccheo.com/kiemtien/subcheo/",
-        "action": "follow",
-        "default_xu": 600
-    },
-    "ttc_sub_vip": {
-        "name": "8. Theo Dõi (Follow/Sub) VIP",
-        "get_ep": "/kiemtien/subgiare/getpost.php",
-        "claim_ep": "/kiemtien/subgiare/nhantien.php",
-        "referer": "https://tuongtaccheo.com/kiemtien/subgiare/",
-        "action": "follow",
-        "default_xu": 700
-    },
-    "ttc_likepage_thuong": {
-        "name": "9. Like Fanpage Thường",
-        "get_ep": "/kiemtien/likepagecheo/getpost.php",
-        "claim_ep": "/kiemtien/likepagecheo/nhantien.php",
-        "referer": "https://tuongtaccheo.com/kiemtien/likepagecheo/",
-        "action": "likepage",
-        "default_xu": 600
-    },
-    "ttc_likepage_vip": {
-        "name": "10. Like Fanpage VIP",
-        "get_ep": "/kiemtien/likepagegiare/getpost.php",
-        "claim_ep": "/kiemtien/likepagegiare/nhantien.php",
-        "referer": "https://tuongtaccheo.com/kiemtien/likepagegiare/",
-        "action": "likepage",
-        "default_xu": 700
-    },
-    "ttc_share_thuong": {
-        "name": "11. Chia Sẻ (Share) Bài Viết",
-        "get_ep": "/kiemtien/sharecheo/getpost.php",
-        "claim_ep": "/kiemtien/sharecheo/nhantien.php",
-        "referer": "https://tuongtaccheo.com/kiemtien/sharecheo/",
-        "action": "share",
-        "default_xu": 500
-    },
-    "ttc_camxuc_cmt": {
-        "name": "12. Cảm Xúc Bình Luận (React Cmt)",
-        "get_ep": "/kiemtien/camxuccmt/getpost.php",
-        "claim_ep": "/kiemtien/camxuccmt/nhantien.php",
-        "referer": "https://tuongtaccheo.com/kiemtien/camxuccmt/",
-        "action": "react_cmt",
-        "default_xu": 400
-    }
-}
+DB_NAME = "mmo_fb_ig_accounts_v6.db"
+db_lock = threading.Lock()
+MAX_CONCURRENT_THREADS = 15
+worker_semaphore = threading.Semaphore(MAX_CONCURRENT_THREADS)
+
+
+def get_db_connection():
+    conn = sqlite3.connect(DB_NAME, timeout=30.0, check_same_thread=False)
+    conn.execute("PRAGMA journal_mode=WAL;")
+    conn.execute("PRAGMA synchronous=NORMAL;")
+    return conn
+
 
 def init_database():
-    conn = sqlite3.connect(DB_FILE, check_same_thread=False, timeout=30)
-    cursor = conn.cursor()
-    try:
-        cursor.execute("PRAGMA journal_mode=WAL;")
-        cursor.execute("PRAGMA synchronous=NORMAL;")
-    except Exception:
-        pass
+    with db_lock:
+        conn = get_db_connection()
+        c = conn.cursor()
 
-    cursor.execute('''CREATE TABLE IF NOT EXISTS accounts (
-                        id INTEGER PRIMARY KEY AUTOINCREMENT,
-                        username TEXT UNIQUE,
-                        cookie TEXT,
-                        proxy TEXT,
-                        status TEXT,
-                        coins INTEGER DEFAULT 0,
-                        max_jobs INTEGER DEFAULT 999999
-                    )''')
-    cursor.execute('''CREATE TABLE IF NOT EXISTS fb_accounts (
-                        id INTEGER PRIMARY KEY AUTOINCREMENT,
-                        fb_uid TEXT UNIQUE,
-                        fb_name TEXT,
-                        cookie TEXT,
-                        access_token TEXT,
-                        proxy TEXT,
-                        status TEXT,
-                        platform TEXT DEFAULT 'TTC'
-                    )''')
-    cursor.execute('''CREATE TABLE IF NOT EXISTS ttc_accounts (
-                        id INTEGER PRIMARY KEY AUTOINCREMENT,
-                        ttc_user TEXT UNIQUE,
-                        ttc_token TEXT,
-                        coins INTEGER DEFAULT 0,
-                        status TEXT,
-                        active_page_id TEXT DEFAULT '',
-                        configured_pages TEXT DEFAULT ''
-                    )''')
-    cursor.execute('''CREATE TABLE IF NOT EXISTS fb_pages (
-                        id INTEGER PRIMARY KEY AUTOINCREMENT,
-                        parent_username TEXT,
-                        page_id TEXT UNIQUE,
-                        page_name TEXT,
-                        page_token TEXT,
-                        proxy TEXT,
-                        status TEXT,
-                        coins INTEGER DEFAULT 0,
-                        max_jobs INTEGER DEFAULT 999999,
-                        parent_cookie TEXT DEFAULT '',
-                        user_token TEXT DEFAULT '',
-                        assigned_ttc TEXT DEFAULT '',
-                        platform TEXT DEFAULT 'TTC'
-                    )''')
+        # 1. Bảng tài khoản Instagram (Chạy XSMM)
+        c.execute('''CREATE TABLE IF NOT EXISTS accounts (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            username TEXT UNIQUE,
+            cookie TEXT,
+            proxy TEXT,
+            status TEXT DEFAULT 'Stopped',
+            coins INTEGER DEFAULT 0,
+            max_jobs INTEGER DEFAULT 100
+        )''')
 
-    for col_sql in [
-        "ALTER TABLE accounts ADD COLUMN max_jobs INTEGER DEFAULT 999999;",
-        "ALTER TABLE accounts ADD COLUMN coins INTEGER DEFAULT 0;",
-        "ALTER TABLE fb_accounts ADD COLUMN platform TEXT DEFAULT 'TTC';",
-        "ALTER TABLE ttc_accounts ADD COLUMN active_page_id TEXT DEFAULT '';",
-        "ALTER TABLE ttc_accounts ADD COLUMN configured_pages TEXT DEFAULT '';",
-        "ALTER TABLE fb_pages ADD COLUMN coins INTEGER DEFAULT 0;",
-        "ALTER TABLE fb_pages ADD COLUMN max_jobs INTEGER DEFAULT 999999;",
-        "ALTER TABLE fb_pages ADD COLUMN parent_cookie TEXT DEFAULT '';",
-        "ALTER TABLE fb_pages ADD COLUMN user_token TEXT DEFAULT '';",
-        "ALTER TABLE fb_pages ADD COLUMN assigned_ttc TEXT DEFAULT '';",
-        "ALTER TABLE fb_pages ADD COLUMN platform TEXT DEFAULT 'TTC';"
-    ]:
-        try:
-            cursor.execute(col_sql)
-        except sqlite3.OperationalError:
-            pass
+        # 2. Bảng tài khoản Facebook gốc (Quản lý Cookie / Token để quét Fanpage)
+        c.execute('''CREATE TABLE IF NOT EXISTS fb_accounts (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            fb_uid TEXT UNIQUE,
+            fb_name TEXT,
+            cookie TEXT,
+            access_token TEXT,
+            proxy TEXT,
+            status TEXT DEFAULT 'Ready'
+        )''')
 
-    conn.commit()
-    conn.close()
+        # 3. Bảng tài khoản Tương Tác Chéo (Lưu danh sách Token TTC)
+        c.execute('''CREATE TABLE IF NOT EXISTS ttc_accounts (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            ttc_user TEXT,
+            ttc_token TEXT UNIQUE,
+            coins INTEGER DEFAULT 0,
+            status TEXT DEFAULT 'Ready'
+        )''')
 
-def encrypt_local_data(raw_text):
-    return base64.b64encode(raw_text.encode('utf-8')).decode('utf-8')
+        # 4. Bảng Fanpage / Profile FB chạy Job (Dùng chung cho XSMM và TTC)
+        c.execute('''CREATE TABLE IF NOT EXISTS fb_pages (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            parent_username TEXT,
+            page_id TEXT UNIQUE,
+            page_name TEXT,
+            page_token TEXT,
+            proxy TEXT,
+            status TEXT DEFAULT 'Stopped',
+            coins INTEGER DEFAULT 0,
+            max_jobs INTEGER DEFAULT 100,
+            parent_cookie TEXT DEFAULT '',
+            user_token TEXT DEFAULT '',
+            assigned_ttc TEXT DEFAULT '',
+            platform TEXT DEFAULT 'TTC'
+        )''')
 
-def decrypt_local_data(enc_text):
-    try:
-        return base64.b64decode(enc_text.encode('utf-8')).decode('utf-8')
-    except Exception:
-        return enc_text
-
-def ai_generate_unique_comment():
-    comments = [
-        "Bài viết tuyệt vời quá! 🔥",
-        "Quá đỉnh luôn bạn ơi 💯",
-        "Tuyệt vời, ủng hộ bạn nhé ✨",
-        "Nhìn cuốn phết nhỉ 👍",
-        "Quá chất lượng cho chiếc post này 🚀",
-        "Thả tim nhiệt tình luôn nha ❤️",
-        "Tuyệt vời ông mặt trời 🌟",
-        "Đỉnh của chóp luôn bạn nhé 🎯",
-        "Quá xuất sắc, tương tác mạnh nào 💎"
-    ]
-    return random.choice(comments) + f" [{random.randint(1000, 9999)}]"
-
-def format_proxy(proxy_str):
-    if not proxy_str:
-        return None
-    proxy_str = proxy_str.strip()
-    if not proxy_str:
-        return None
-    scheme = "http"
-    if "://" in proxy_str:
-        scheme, proxy_str = proxy_str.split("://", 1)
-    parts = proxy_str.split(":")
-    if len(parts) == 4:
-        ip, port, user, pwd = parts
-        formatted = f"{scheme}://{user}:{pwd}@{ip}:{port}"
-    elif "@" in proxy_str:
-        formatted = f"{scheme}://{proxy_str}"
-    else:
-        formatted = f"{scheme}://{proxy_str}"
-    return {"http": formatted, "https": formatted}
-
-def parse_cookie_string(cookie_str: str) -> dict:
-    cookies = {}
-    cookie_str = unquote(cookie_str).strip().rstrip(',')
-    for item in cookie_str.split(';'):
-        if '=' in item:
-            parts = item.strip().split('=', 1)
-            if len(parts) == 2:
-                key, value = parts
-                cookies[key.strip()] = value.strip()
-    return cookies
-
-def get_media_id(input_str: str) -> str:
-    input_str = str(input_str or "").strip()
-    if not input_str:
-        return ""
-    if input_str.isdigit():
-        return input_str
-    if "_" in input_str and input_str.split("_")[0].isdigit():
-        return input_str.split("_")[0]
-
-    match = re.search(r'/(?:p|reel|reels|tv)/([A-Za-z0-9_-]+)', input_str)
-    shortcode = match.group(1) if match else (input_str if re.match(r'^[A-Za-z0-9_-]{8,15}$', input_str) and not input_str.startswith("http") else None)
-
-    if shortcode:
-        alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_'
-        media_id = 0
-        for char in shortcode:
-            if char in alphabet:
-                media_id = (media_id * 64) + alphabet.index(char)
-            else:
-                break
-        return str(media_id) if media_id > 0 else input_str
-    return input_str
-
-def parse_real_earned_points(response_data, default_points=10):
-    if isinstance(response_data, dict):
-        if response_data.get("is_timeout"):
-            return default_points, response_data.get("message", "Thành công")
-        if "error" in response_data and response_data.get("error"):
-            return 0, str(response_data.get("error"))
-        if response_data.get("success") is False or response_data.get("status") in ["error", "fail", False]:
-            return 0, str(response_data.get("message") or response_data.get("msg") or "Từ chối duyệt")
-
-        for key in ['points', 'coins', 'xu', 'reward', 'money', 'point', 'earned', 'sodu']:
-            val = response_data.get(key)
-            if val is not None:
+        # Tự động migrate cột nếu file DB từ phiên bản cũ
+        existing_cols = [col[1] for col in c.execute("PRAGMA table_info(fb_pages)").fetchall()]
+        migration_cols = [
+            ("parent_cookie", "TEXT DEFAULT ''"),
+            ("user_token", "TEXT DEFAULT ''"),
+            ("assigned_ttc", "TEXT DEFAULT ''"),
+            ("platform", "TEXT DEFAULT 'TTC'")
+        ]
+        for col_name, col_def in migration_cols:
+            if col_name not in existing_cols:
                 try:
-                    v_int = int(float(val))
-                    if v_int > 0:
-                        return v_int, "Thành công"
+                    c.execute(f"ALTER TABLE fb_pages ADD COLUMN {col_name} {col_def}")
                 except Exception:
                     pass
 
-        if isinstance(response_data.get("data"), dict):
-            for key in ['points', 'coins', 'xu', 'reward', 'success_count']:
-                val = response_data["data"].get(key)
-                if val is not None:
-                    try:
-                        v_int = int(float(val))
-                        if v_int > 0:
-                            return (v_int * default_points if key == 'success_count' else v_int), "Thành công"
-                    except Exception:
-                        pass
+        # 5. Bảng Nhật ký hệ thống (Logs)
+        c.execute('''CREATE TABLE IF NOT EXISTS logs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            timestamp TEXT,
+            username TEXT,
+            action TEXT,
+            status TEXT
+        )''')
 
-        if response_data.get("success") is True or response_data.get("status") in ["success", "ok", 200, True]:
-            return default_points, str(response_data.get("message") or response_data.get("mess") or "Thành công")
+        conn.commit()
+        conn.close()
 
-        msg = str(response_data.get("message") or response_data.get("mess") or "Thành công")
-        return 0, msg
-    return 0, "Phản hồi từ server không hợp lệ"
 
-def get_ig_headers(cookie, csrftoken, referer="https://www.instagram.com/"):
-    return {
-        'accept': '*/*',
-        'accept-language': 'vi-VN,vi;q=0.9,en-US;q=0.8,en;q=0.7',
-        'content-type': 'application/x-www-form-urlencoded',
-        'cookie': cookie,
-        'origin': 'https://www.instagram.com',
-        'referer': referer,
-        'sec-ch-ua': SEC_CH_UA_120,
-        'sec-ch-ua-mobile': '?0',
-        'sec-ch-ua-platform': '"Windows"',
-        'sec-fetch-dest': 'empty',
-        'sec-fetch-mode': 'cors',
-        'sec-fetch-site': 'same-origin',
-        'user-agent': USER_AGENT,
-        'x-asbd-id': '129477',
-        'x-csrftoken': csrftoken,
-        'x-ig-app-id': '936619743392459',
-        'x-ig-www-claim': '0',
-        'x-requested-with': 'XMLHttpRequest'
-    }
-
-# ==============================================================================
-# CLASS INSTAGRAM (DÙNG CHO TAB XSMM)
-# ==============================================================================
-class INSTAGRAM:
-    def __init__(self, cookies_str, proxy=None):
-        self.cookies_str = unquote(cookies_str).strip()
-        self.cookies_dict = parse_cookie_string(self.cookies_str)
-        self.csrftoken = self.cookies_dict.get('csrftoken', '')
-        self.ds_user_id = self.cookies_dict.get('ds_user_id', '')
-        self.proxies = format_proxy(proxy)
-        self.last_error = ""
-        self.lsd = "Jfq8VQNmkkkJufHSbEE9bf"
-        self.jazoest = "26328"
-
-        self.session = c_requests.Session()
-        if self.proxies:
-            self.session.proxies = self.proxies
-        for k, v in self.cookies_dict.items():
-            try:
-                self.session.cookies.set(k, v, domain='.instagram.com')
-            except Exception:
-                pass
-
-    def update_proxy(self, proxy_str):
-        new_px = format_proxy(proxy_str)
-        if new_px != self.proxies:
-            self.proxies = new_px
-            self.session.proxies = new_px if new_px else {}
-
-    def close(self):
-        try:
-            self.session.close()
-        except Exception:
-            pass
-
-    def GETINFO(self):
-        ig_username = None
-        userID1 = self.ds_user_id if (self.ds_user_id and self.ds_user_id != "0") else None
-        fb_dtsg = ""
-
-        try:
-            r_edit = self.session.get(
-                'https://www.instagram.com/api/v1/accounts/edit/web_form_data/',
-                headers={
-                    'x-ig-app-id': '936619743392459',
-                    'x-csrftoken': self.csrftoken,
-                    'cookie': self.cookies_str,
-                    'user-agent': USER_AGENT,
-                    'referer': 'https://www.instagram.com/accounts/edit/'
-                },
-                impersonate="chrome120",
-                timeout=10,
-                max_redirects=5
-            )
-            txt_edit = r_edit.text
-            if "/challenge/" in str(r_edit.url) or "checkpoint_required" in txt_edit or "challenge_required" in txt_edit:
-                return False, False, "CHECKPOINT", False
-            if "/accounts/login" in str(r_edit.url) or '"login_required"' in txt_edit:
-                return False, False, "DIE", False
-
-            j_edit = json.loads(txt_edit)
-            if isinstance(j_edit, dict) and j_edit.get("form_data", {}).get("username"):
-                ig_username = j_edit["form_data"]["username"]
-                if not userID1 and j_edit["form_data"].get("id"):
-                    userID1 = str(j_edit["form_data"]["id"])
-        except Exception:
-            pass
-
-        try:
-            resp_home = self.session.get(
-                "https://www.instagram.com/",
-                headers={
-                    'accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-                    'accept-language': 'vi-VN,vi;q=0.9,en-US;q=0.8',
-                    'cookie': self.cookies_str,
-                    'user-agent': USER_AGENT,
-                },
-                impersonate="chrome120",
-                timeout=12,
-                max_redirects=5
-            )
-            final_url = str(resp_home.url)
-            html = resp_home.text
-
-            if "/challenge/" in final_url or "checkpoint_required" in html or "challenge_required" in html:
-                return False, False, "CHECKPOINT", False
-            if "/accounts/login" in final_url and not ig_username:
-                return False, False, "DIE", False
-
-            if lsd_m := re.search(r'"LSD",\[\],\{"token":"([^"]+)"\}', html):
-                self.lsd = lsd_m.group(1)
-            if dtsg_m := (re.search(r'"dtsg":\s*\{"token":"([^"]+)"', html) or re.search(r'name="fb_dtsg" value="([^"]+)"', html)):
-                fb_dtsg = dtsg_m.group(1)
-            if jaz_m := re.search(r'name="jazoest" value="(\d+)"', html):
-                self.jazoest = jaz_m.group(1)
-
-            if not userID1:
-                uid_m = re.search(r'"viewerId":"(\d+)"', html) or re.search(r'"actorID":"(\d+)"', html) or re.search(r'"userID":"(\d+)"', html)
-                if uid_m and uid_m.group(1) != "0":
-                    userID1 = uid_m.group(1)
-
-            if not ig_username:
-                uname_m = (
-                    re.search(r'"viewer":\{[^}]*?"username":"([^"]+)"', html)
-                    or re.search(r'\\"viewer\\":\{[^}]*?\\"username\\":\\"([^\\"]+)\\"', html)
-                    or re.search(r'"username":"([^"]+)"', html)
-                )
-                if uname_m:
-                    ig_username = uname_m.group(1)
-        except Exception as e:
-            if not ig_username and not userID1:
-                self.last_error = str(e)
-                return False, False, "PROXY_ERR", False
-
-        if ig_username or (userID1 and str(userID1) != "0" and fb_dtsg):
-            final_uid = str(userID1 or self.ds_user_id or "0")
-            final_uname = str(ig_username or final_uid)
-            return final_uid, fb_dtsg, "LIVE", final_uname
-
-        return False, False, "DIE", False
-
-    def resolve_media_id_full(self, post_id, link=""):
-        for candidate in [post_id, link]:
-            mid = get_media_id(candidate)
-            if mid and str(mid).isdigit():
-                return str(mid)
-        if link and link.startswith("http"):
-            try:
-                html = self.session.get(link, headers={'cookie': self.cookies_str, 'user-agent': USER_AGENT}, impersonate="chrome120", timeout=10, max_redirects=5).text
-                m = re.search(r'"media_id":"(\d+)"', html) or re.search(r'instagram://media\?id=(\d+)', html) or re.search(r'"pk":"(\d+)"', html)
-                if m:
-                    return m.group(1)
-            except Exception:
-                pass
-        return ""
-
-    def resolve_user_id_full(self, target_user_id, target_url=""):
-        raw_uid = str(target_user_id or "").strip()
-        if raw_uid.isdigit():
-            return raw_uid
-
-        uname = ""
-        if target_url and "instagram.com/" in target_url:
-            m = re.search(r'instagram\.com/([A-Za-z0-9._]+)', target_url)
-            if m and m.group(1).lower() not in ["p", "reel", "reels", "tv", "stories", "explore"]:
-                uname = m.group(1)
-        if not uname and raw_uid and not raw_uid.startswith("http"):
-            uname = raw_uid.replace("@", "").strip()
-
-        if uname:
-            try:
-                api_url = f"https://www.instagram.com/api/v1/users/web_profile_info/?username={uname}"
-                r_prof = self.session.get(
-                    api_url,
-                    headers=get_ig_headers(self.cookies_str, self.csrftoken, f"https://www.instagram.com/{uname}/"),
-                    impersonate="chrome120",
-                    timeout=10
-                )
-                if r_prof.status_code == 200:
-                    uid_found = r_prof.json().get("data", {}).get("user", {}).get("id")
-                    if uid_found and str(uid_found).isdigit():
-                        return str(uid_found)
-            except Exception:
-                pass
-        return ""
-
-    def LIKE(self, av, dtsg, post_id, cookies, link, lsd_token=""):
-        media_id = self.resolve_media_id_full(post_id, link)
-        if not media_id or not str(media_id).isdigit():
-            self.last_error = f"Không lấy được media_id ({post_id})"
-            return False
-
-        ref_url = link if (link and link.startswith("http")) else "https://www.instagram.com/"
-        headers = get_ig_headers(self.cookies_str, self.csrftoken, ref_url)
-        try:
-            res_v1 = self.session.post(
-                f"https://www.instagram.com/api/v1/web/likes/{media_id}/like/",
-                headers=headers, data={}, impersonate="chrome120", timeout=12
-            )
-            if res_v1.status_code == 200 and res_v1.json().get("status") == "ok":
-                return True
-        except Exception as e:
-            self.last_error = str(e)[:40]
-        return False
-
-    def FOLLOW(self, dtsg, target_user_id, target_url="", av=""):
-        target_uid = self.resolve_user_id_full(target_user_id, target_url)
-        if not target_uid or not str(target_uid).isdigit():
-            self.last_error = f"Không lấy được UID ({target_user_id})"
-            return False
-
-        ref_url = target_url if (target_url and target_url.startswith("http")) else "https://www.instagram.com/"
-        headers = get_ig_headers(self.cookies_str, self.csrftoken, ref_url)
-        try:
-            data_v1 = {
-                'container_module': 'profile',
-                'include_follow_friction_check': 'true',
-                'nav_chain': 'PolarisProfileRoot:profilePage:1:via_cold_start',
-                'user_id': str(target_uid),
-                'jazoest': self.jazoest,
-                'fb_dtsg': dtsg if dtsg else ''
-            }
-            res_v1 = self.session.post(
-                f"https://www.instagram.com/api/v1/friendships/create/{target_uid}/",
-                headers=headers, data=data_v1, impersonate="chrome120", timeout=12
-            )
-            if res_v1.status_code == 200 and res_v1.json().get("status") == "ok":
-                return True
-        except Exception as e:
-            self.last_error = str(e)[:40]
-        return False
-
-    def COMMENT(self, av, dtsg, target_id, target_url, comment_content):
-        media_id = self.resolve_media_id_full(target_id, target_url)
-        if not media_id or not str(media_id).isdigit():
-            self.last_error = f"Không lấy được media_id ({target_id})"
-            return False
-
-        ref_url = target_url if (target_url and target_url.startswith("http")) else "https://www.instagram.com/"
-        headers = get_ig_headers(self.cookies_str, self.csrftoken, ref_url)
-        try:
-            res_v1 = self.session.post(
-                f"https://www.instagram.com/api/v1/web/comments/{media_id}/add/",
-                headers=headers, data={"comment_text": comment_content}, impersonate="chrome120", timeout=12
-            )
-            if res_v1.status_code == 200 and res_v1.json().get("status") == "ok":
-                return True
-        except Exception as e:
-            self.last_error = str(e)[:40]
-        return False
-
-# ==============================================================================
-# CLASS XSMM TOOL (TÁCH RIÊNG CHO HỆ THỐNG XSMM)
-# ==============================================================================
-class XSMMTool:
-    def __init__(self, token):
-        self.base_url = "https://xsmm.net/api/taskapi"
-        self.headers = {
-            "Authorization": f"Bearer {token}",
-            "Content-Type": "application/json",
-            "User-Agent": USER_AGENT
-        }
-        self.session = requests.Session()
-        self.session.headers.update(self.headers)
-
-    def close(self):
-        try:
-            self.session.close()
-        except Exception:
-            pass
-
-    def add_social_account(self, username_or_link, social_type="instagram"):
-        url = f"{self.base_url}/accounts2"
-        if "instagram.com" in username_or_link or "facebook.com" in username_or_link:
-            link_fmt = username_or_link
-        else:
-            clean_user = username_or_link.replace("@", "").strip()
-            link_fmt = f"https://www.instagram.com/{clean_user}" if social_type == "instagram" else f"https://www.facebook.com/{clean_user}"
-
-        payload = {"type": social_type, "link_account": link_fmt}
-        try:
-            response = self.session.post(url, json=payload, timeout=20)
-            res_json = response.json()
-            if response.status_code in [200, 201] and ("id" in res_json or "account_id" in res_json or res_json.get("success")):
-                return True
-        except Exception:
-            pass
-        return False
-
-    def get_instagram_accounts(self, search_uid=""):
-        try:
-            url = f"{self.base_url}/accounts2?account_type=instagram"
-            if search_uid:
-                url += f"&search={search_uid}"
-            res = self.session.get(url, timeout=15).json()
-            if isinstance(res, dict):
-                for key in ["accounts", "data", "list", "items"]:
-                    if isinstance(res.get(key), list):
-                        return res[key]
-            elif isinstance(res, list):
-                return res
-            return []
-        except Exception:
-            return []
-
-    def sync_and_get_xsmm_id(self, ig_username, fallback_av):
-        clean_user = str(ig_username).replace("@", "").strip()
-        if clean_user and not clean_user.isdigit():
-            payload = {"type": "instagram", "link_account": f"https://www.instagram.com/{clean_user}"}
-            try:
-                r_add = self.session.post(f"{self.base_url}/accounts2", json=payload, timeout=15).json()
-                if isinstance(r_add, dict):
-                    direct_id = r_add.get("account_id") or r_add.get("uid") or (r_add.get("data", {}).get("account_id") if isinstance(r_add.get("data"), dict) else None)
-                    if direct_id:
-                        return str(direct_id)
-            except Exception:
-                pass
-
-        for query_val in [fallback_av, clean_user, ""]:
-            accounts = self.get_instagram_accounts(search_uid=query_val)
-            for acc in accounts:
-                if isinstance(acc, dict):
-                    acc_id_str = str(acc.get("account_id") or acc.get("uid") or "")
-                    link_str = str(acc.get("link_account") or acc.get("username") or "").lower()
-                    if (fallback_av and acc_id_str == str(fallback_av)) or (clean_user and clean_user.lower() in link_str):
-                        return str(acc.get("account_id") or acc.get("id") or fallback_av)
-
-        return str(fallback_av if fallback_av else clean_user)
-
-    def get_tasks(self, job_type, uid, typejob="normal", fallback_uids=None):
-        uid_candidates = []
-        for u in [uid] + (fallback_uids or []):
-            u_str = str(u or "").strip()
-            if u_str and u_str not in uid_candidates:
-                uid_candidates.append(u_str)
-
-        last_error_msg = ""
-        for curr_uid in uid_candidates:
-            endpoints_to_try = [
-                (f"{self.base_url}/tasks2", {"type": job_type, "uid": curr_uid, "typejob": typejob}),
-                (f"{self.base_url}/tasks2", {"type": job_type, "uid": curr_uid, "typejob": "normal,better,best"}),
-                (f"{self.base_url}/tasks", {"type": job_type, "uid": curr_uid}),
-            ]
-            for url, params in endpoints_to_try:
-                try:
-                    res = self.session.get(url, params=params, timeout=12).json()
-                    if isinstance(res, list) and len(res) > 0:
-                        return res, "OK", curr_uid
-                    elif isinstance(res, dict):
-                        if "error" in res or res.get("success") is False:
-                            last_error_msg = str(res.get("message") or res.get("error") or "Lỗi từ API Server")
-                        for key in ["data", "tasks", "list", "result", "job", "jobs", "data_task", "items"]:
-                            val = res.get(key)
-                            if isinstance(val, list) and len(val) > 0:
-                                return val, "OK", curr_uid
-                except Exception as e:
-                    last_error_msg = str(e)
-                    continue
-
-        return [], (last_error_msg if last_error_msg else "Hết job XSMM"), str(uid)
-
-def gui_nhan_xu(job_type, task_ids, uid, cookie_check="", xsmm_obj=None):
-    if isinstance(cookie_check, XSMMTool):
-        xsmm_obj = cookie_check
-        cookie_check = ""
-
-    url = "https://xsmm.net/api/taskapi/tasks2/complete"
-    payload = {
-        "type": job_type,
-        "task_id": task_ids if isinstance(task_ids, list) else [task_ids],
-        "uid": str(uid)
-    }
-    if cookie_check:
-        payload["cookie_check"] = cookie_check
-
-    req_client = xsmm_obj.session if (xsmm_obj and hasattr(xsmm_obj, "session")) else requests
-    headers = xsmm_obj.headers if (xsmm_obj and hasattr(xsmm_obj, "headers")) else {"Content-Type": "application/json"}
-
-    for _ in range(2):
-        try:
-            response = req_client.post(url, headers=headers, json=payload, timeout=25)
-            res_data = response.json()
-            if isinstance(res_data, dict) and res_data.get("retry") is True:
-                time.sleep(3)
-                continue
-            return res_data
-        except requests.exceptions.Timeout:
-            return {"is_timeout": True, "message": f"Đã gửi duyệt {len(payload['task_id'])} job"}
-        except Exception as e:
-            return {"error": str(e)}
-    return {"error": "Thất bại"}
-
-# ==============================================================================
-# CLASS TƯƠNG TÁC CHÉO (HỖ TRỢ ĐỦ 12 CHẾ ĐỘ & QUÉT PAGE ĐÃ CẤU HÌNH TRÊN WEB)
-# ==============================================================================
-class TuongTacCheoTool:
-    """
-    Xử lý độc lập Tương Tác Chéo (tuongtaccheo.com):
-    - Hỗ trợ đủ 12 chế độ làm Job (Like thường, Like VIP, Cảm xúc thường/VIP, Cmt thường/VIP, Sub thường/VIP, LikePage thường/VIP, Share, Cảm xúc Cmt).
-    - Tự động đọc trang /cauhinh/index.php để lấy danh sách các Page/FB đã thêm vào TTC & biết chính xác Page nào đang được chọn chạy.
-    - Không bao giờ tự ngắt luồng nếu bạn đã liên kết sẵn trên web.
-    """
-    def __init__(self, ttc_token, proxy=None):
-        self.ttc_token = str(ttc_token or "").strip()
-        self.base_url = "https://tuongtaccheo.com"
-        self.session = c_requests.Session()
-        if proxies := format_proxy(proxy):
-            self.session.proxies = proxies
-        self.headers = {
-            "User-Agent": USER_AGENT,
-            "Accept": "application/json, text/javascript, */*; q=0.01",
-            "Accept-Language": "vi-VN,vi;q=0.9,en-US;q=0.8",
-            "X-Requested-With": "XMLHttpRequest",
-            "Origin": self.base_url,
-            "Referer": f"{self.base_url}/kiemtien/"
-        }
-        self.username = ""
-        self.coins = 0
-        self.current_configured_uid = ""
-        self.configured_pages_map = {}  # {page_id: page_name_on_ttc}
-
-    def close(self):
-        try:
-            self.session.close()
-        except Exception:
-            pass
-
-    def login(self):
-        """Đăng nhập TTC qua Access Token & Quét luôn danh sách Page đã cấu hình trên TTC"""
-        try:
-            res = self.session.post(
-                f"{self.base_url}/logintoken.php",
-                headers={"User-Agent": USER_AGENT, "Content-Type": "application/x-www-form-urlencoded"},
-                data={"access_token": self.ttc_token},
-                impersonate="chrome120",
-                timeout=15
-            )
-            j = res.json()
-            if j.get("status") == "success" and isinstance(j.get("data"), dict):
-                self.username = str(j["data"].get("user", "TTC_User"))
-                self.coins = int(j["data"].get("sodu", 0))
-                self.fetch_configured_pages_on_web()
-                return True, self.username, self.coins, "OK"
-            return False, "", 0, str(j.get("mess") or "Token TTC không hợp lệ")
-        except Exception as e:
-            return False, "", 0, f"Lỗi kết nối TTC: {str(e)[:35]}"
-
-    def fetch_configured_pages_on_web(self):
-        """
-        Quét trực tiếp trang /cauhinh/facebook.php và /cauhinh/index.php của TTC
-        để biết Acc TTC này đã liên kết những Page ID nào và đang đặt Page nào làm Nick chạy chính.
-        """
-        for ep in ["/cauhinh/facebook.php", "/cauhinh/index.php"]:
-            try:
-                html = self.session.get(
-                    f"{self.base_url}{ep}",
-                    headers={"User-Agent": USER_AGENT, "Referer": f"{self.base_url}/"},
-                    impersonate="chrome120",
-                    timeout=12
-                ).text
-
-                # Tìm các ID FB/Page có trong danh sách cấu hình (checkbox value hoặc idfb)
-                matches = re.findall(r'value=["\']?(\d{10,22})["\']?[^>]*>([^<\n]{1,60})', html)
-                for uid, raw_name in matches:
-                    clean_n = re.sub(r'\s+', ' ', raw_name).strip(" -|:\t\r\n")
-                    self.configured_pages_map[str(uid)] = clean_n if clean_n else f"ID_{uid}"
-
-                all_ids = re.findall(r'(?:idfb|iddat|uid|facebook\.com/)["\'\s:=/>]*(\d{10,22})', html, re.I)
-                for uid in all_ids:
-                    if str(uid) not in self.configured_pages_map:
-                        self.configured_pages_map[str(uid)] = f"Page_{uid}"
-
-                # Tìm Nick đang được chọn làm mặc định trên web
-                active_m = (
-                    re.search(r'Nick đang chạy[^0-9]*(\d{10,22})', html, re.I)
-                    or re.search(r'checked[^>]*value=["\']?(\d{10,22})["\']?', html, re.I)
-                    or re.search(r'value=["\']?(\d{10,22})["\']?[^>]*checked', html, re.I)
-                )
-                if active_m:
-                    self.current_configured_uid = str(active_m.group(1))
-
-                if self.configured_pages_map:
-                    break
-            except Exception:
-                pass
-        return self.current_configured_uid, self.configured_pages_map
-
-    def dat_nick(self, page_id):
-        """
-        Đặt Page ID làm nick chạy trên TTC (/cauhinh/datnick.php).
-        Kể cả khi bạn đã tự đặt trên web (hoặc mã trả về khác '1'), hàm vẫn cho phép chạy tiếp chứ KHÔNG ngắt luồng!
-        """
-        page_id_str = str(page_id).strip()
-        if self.current_configured_uid == page_id_str:
-            return True, f"Đang chọn sẵn Page {page_id_str}"
-        try:
-            hdr = self.headers.copy()
-            hdr["Referer"] = f"{self.base_url}/cauhinh/facebook.php"
-            hdr["Content-Type"] = "application/x-www-form-urlencoded; charset=UTF-8"
-            res = self.session.post(
-                f"{self.base_url}/cauhinh/datnick.php",
-                headers=hdr,
-                data={"iddat[]": page_id_str, "loai": "fb"},
-                impersonate="chrome120",
-                timeout=12
-            )
-            txt = res.text.strip()
-            self.current_configured_uid = page_id_str
-            self.configured_pages_map[page_id_str] = self.configured_pages_map.get(page_id_str, f"Page_{page_id_str}")
-            if txt == "1" or '"1"' in txt or "success" in txt.lower():
-                return True, f"Đã đặt cấu hình Page {page_id_str}"
-            # Nếu người dùng đã đặt sẵn trên web, vẫn trả về True để chạy tiếp, không kill lệnh!
-            return True, f"Chạy theo cấu hình Web (Mã TTC: {txt[:15]})"
-        except Exception as e:
-            return True, f"Bỏ qua datnick, chạy thẳng ({str(e)[:20]})"
-
-    def get_tasks(self, mode_key):
-        """Lấy danh sách nhiệm vụ cho bất kỳ chế độ nào trong 12 Chế Độ Job TTC"""
-        cfg = TTC_12_JOB_MODES.get(mode_key)
-        if not cfg:
-            return [], "Chế độ không hợp lệ"
-
-        hdr = self.headers.copy()
-        hdr["Referer"] = cfg["referer"]
-
-        try:
-            res = self.session.get(
-                f"{self.base_url}{cfg['get_ep']}",
-                headers=hdr,
-                impersonate="chrome120",
-                timeout=12
-            )
-            txt = res.text.strip()
-            if not txt:
-                return [], "Trống (Đang chờ job mới)"
-
-            data = json.loads(txt)
-            if isinstance(data, dict) and data.get("error"):
-                return [], str(data.get("error"))
-
-            if isinstance(data, list) and len(data) > 0:
-                norm_tasks = []
-                for item in data:
-                    if not isinstance(item, dict):
-                        continue
-                    tid = str(item.get("idpost") or item.get("id") or "").strip()
-                    if not tid:
-                        continue
-                    link = str(item.get("link") or tid)
-                    loaicx = str(item.get("loaicx") or item.get("type") or "LIKE").upper().strip()
-                    nd_raw = item.get("nd") or ""
-                    cmt_msg = ""
-                    if nd_raw:
-                        try:
-                            parsed_nd = json.loads(nd_raw)
-                            if isinstance(parsed_nd, list) and parsed_nd:
-                                cmt_msg = str(random.choice(parsed_nd))
-                            else:
-                                cmt_msg = str(nd_raw)
-                        except Exception:
-                            cmt_msg = str(nd_raw)
-
-                    norm_tasks.append({
-                        "id": tid,
-                        "target_id": tid,
-                        "target_url": f"https://www.facebook.com/{link}" if (link and not link.startswith("http")) else link,
-                        "loaicx": loaicx,
-                        "msg": cmt_msg,
-                        "points": cfg["default_xu"],
-                        "action": cfg["action"]
-                    })
-                return norm_tasks, "OK"
-            return [], "Hết job hoặc đang countdown"
-        except Exception as e:
-            return [], f"Chờ tải job ({str(e)[:20]})"
-
-    def claim_reward(self, mode_key, task_id, loaicx="LIKE"):
-        """Gửi nhận xu chuẩn xác cho cả 12 chế độ Job TTC"""
-        cfg = TTC_12_JOB_MODES.get(mode_key)
-        if not cfg:
-            return 0, "Sai chế độ"
-
-        hdr = self.headers.copy()
-        hdr["Referer"] = cfg["referer"]
-        hdr["Content-Type"] = "application/x-www-form-urlencoded; charset=UTF-8"
-
-        id_val = ",".join(str(x) for x in task_id) if isinstance(task_id, list) else str(task_id)
-        payload = {"id": id_val}
-        if cfg["action"] in ["react", "react_cmt"]:
-            payload["loaicx"] = loaicx if loaicx else "LOVE"
-
-        try:
-            res = self.session.post(
-                f"{self.base_url}{cfg['claim_ep']}",
-                headers=hdr,
-                data=payload,
-                impersonate="chrome120",
-                timeout=15
-            )
-            j = res.json()
-            if isinstance(j, dict):
-                if "mess" in j and ("thành công" in str(j["mess"]).lower() or "cộng" in str(j["mess"]).lower()):
-                    m_xu = re.search(r'(\d+)\s*xu', str(j["mess"]).replace(",", "").replace(".", ""), re.I)
-                    earned = int(m_xu.group(1)) if m_xu else cfg["default_xu"]
-                    if j.get("sodu"):
-                        self.coins = int(j["sodu"])
-                    return earned, str(j["mess"])
-                if j.get("sodu"):
-                    self.coins = int(j["sodu"])
-                    return cfg["default_xu"], "Nhận xu thành công"
-                return 0, str(j.get("error") or j.get("mess") or "Từ chối duyệt")
-            return 0, "Phản hồi TTC không hợp lệ"
-        except Exception as e:
-            return 0, str(e)[:35]
-
-# ==============================================================================
-# CÁC HÀM THAO TÁC FACEBOOK PAGE (HỖ TRỢ ĐỦ 12 CHẾ ĐỘ: LIKE, REACT, CMT, SUB, SHARE...)
-# ==============================================================================
-def check_cookie_ig(cookie, proxy=None):
-    if not cookie or not cookie.strip():
-        return json.dumps({"status_check": "DIE", "error": "Cookie trống"})
-    ig_client = INSTAGRAM(cookie, proxy)
+def log_to_db(username, action, status):
+    now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     try:
-        uid, fb_dtsg, status_code_str, uname = ig_client.GETINFO()
-    finally:
-        ig_client.close()
-
-    if status_code_str == "LIVE" and uid and uname:
-        return json.dumps({"status_check": "LIVE", "form_data": {"username": uname, "id": str(uid), "fb_dtsg": fb_dtsg}})
-    elif status_code_str == "CHECKPOINT":
-        return json.dumps({"status_check": "CHECKPOINT", "error": "Checkpoint"})
-    elif status_code_str == "PROXY_ERR":
-        return json.dumps({"status_check": "PROXY_ERR", "error": "Lỗi Proxy"})
-    return json.dumps({"status_check": "DIE", "error": "Cookie Die"})
-
-def scan_facebook_account_and_pages(cookie="", access_token="", proxy=None):
-    cookie = (cookie or "").strip()
-    access_token = (access_token or "").strip()
-    fb_uid = (re.search(r'c_user=(\d+)', cookie) or [None, ""])[1]
-    fb_name = f"FB_{fb_uid}" if fb_uid else "FB_Account"
-    pages_dict = {}
-
-    session = c_requests.Session()
-    if proxies := format_proxy(proxy):
-        session.proxies = proxies
-
-    for item in cookie.split(';'):
-        if '=' in item:
-            try:
-                k, v = item.strip().split('=', 1)
-                session.cookies.set(k, v, domain='.facebook.com')
-            except Exception:
-                pass
-
-    try:
-        if access_token:
-            try:
-                r_me = session.get(f"https://graph.facebook.com/v18.0/me?fields=id,name&access_token={access_token}", timeout=10).json()
-                if r_me.get("id"):
-                    fb_uid = str(r_me["id"])
-                    fb_name = str(r_me.get("name") or fb_name)
-
-                r_acc = session.get(f"https://graph.facebook.com/v18.0/me/accounts?fields=id,name,access_token&limit=100&access_token={access_token}", timeout=12).json()
-                for pg in r_acc.get("data", []):
-                    pid = str(pg.get("id", ""))
-                    if pid:
-                        pages_dict[pid] = {
-                            "page_id": pid,
-                            "page_name": str(pg.get("name") or f"Page_{pid}"),
-                            "page_token": str(pg.get("access_token") or access_token)
-                        }
-            except Exception:
-                pass
-
-        if cookie:
-            try:
-                res = session.get(
-                    "https://www.facebook.com/bookmarks/pages",
-                    headers={"User-Agent": USER_AGENT, "Cookie": cookie},
-                    impersonate="chrome120", timeout=12, max_redirects=5
-                ).text
-
-                if not fb_uid:
-                    m_uid = re.search(r'"USER_ID":"(\d+)"', res) or re.search(r'"actorID":"(\d+)"', res)
-                    if m_uid and m_uid.group(1) != "0":
-                        fb_uid = m_uid.group(1)
-
-                m_name = re.search(r'"NAME":"([^"]+)"', res)
-                if m_name and fb_name.startswith("FB_"):
-                    try:
-                        fb_name = json.loads(f'"{m_name.group(1)}"')
-                    except Exception:
-                        fb_name = m_name.group(1)
-
-                found_matches = re.findall(r'\{"id":"(\d+)","name":"([^"]+)".*?"access_token":"([^"]+)"\}', res)
-                for pid, pname, ptok in found_matches:
-                    if pid not in pages_dict and pid != fb_uid:
-                        try:
-                            clean_name = json.loads(f'"{pname}"')
-                        except Exception:
-                            clean_name = unquote(pname)
-                        pages_dict[pid] = {"page_id": pid, "page_name": clean_name, "page_token": ptok}
-
-                plus_matches = re.findall(r'"profile":\{"__typename":"User","id":"(\d+)","name":"([^"]+)"\}', res)
-                if not plus_matches:
-                    plus_matches = re.findall(r'entity_id["\s*:]+["\'](\d+)["\'][\s\S]{1,120}?name["\s*:]+["\']([^"\']+)["\']', res)
-                for pid, pname in plus_matches:
-                    if pid not in pages_dict and pid != fb_uid:
-                        try:
-                            clean_name = json.loads(f'"{pname}"')
-                        except Exception:
-                            clean_name = unquote(pname)
-                        pages_dict[pid] = {
-                            "page_id": pid,
-                            "page_name": clean_name,
-                            "page_token": access_token if access_token else cookie
-                        }
-            except Exception:
-                pass
-    finally:
-        try:
-            session.close()
-        except Exception:
-            pass
-
-    if not fb_uid:
-        fb_uid = f"FB_{random.randint(100000, 999999)}"
-    fb_info = {
-        "fb_uid": str(fb_uid),
-        "fb_name": fb_name,
-        "cookie": cookie,
-        "access_token": access_token,
-        "status": "Live ✅"
-    }
-    return fb_info, list(pages_dict.values())
-
-def _build_page_cookie(parent_cookie, page_id):
-    base_ck = re.sub(r';?\s*i_user=\d+', '', (parent_cookie or "").strip()).strip(';')
-    if base_ck and page_id:
-        return f"{base_ck}; i_user={page_id}"
-    return base_ck
-
-def _get_fb_dtsg(session, page_cookie, page_id):
-    try:
-        html = session.get(
-            "https://m.facebook.com/",
-            headers={"User-Agent": USER_AGENT, "Cookie": page_cookie},
-            impersonate="chrome120", timeout=10
-        ).text
-        m = re.search(r'"DTSGInitialData",\[\],\{"token":"([^"]+)"\}', html) or re.search(r'name="fb_dtsg" value="([^"]+)"', html)
-        if m:
-            return m.group(1)
+        with db_lock:
+            conn = get_db_connection()
+            conn.execute(
+                "INSERT INTO logs (timestamp, username, action, status) VALUES (?, ?, ?, ?)",
+                (now_str, str(username), str(action), str(status))
+            )
+            conn.commit()
+            conn.close()
     except Exception:
         pass
-    return ""
 
-# Bảng mã Reaction ID của Facebook GraphQL
-FB_REACTION_MAP = {
-    "LIKE": 1,
-    "LOVE": 2,
-    "CARE": 16,
-    "HAHA": 4,
-    "WOW": 3,
-    "SAD": 7,
-    "ANGRY": 8
-}
 
-def fb_page_react_or_like(target_url, page_token, proxy=None, session=None, page_id="", parent_cookie="", target_id="", reaction_type="LIKE"):
-    """Thực hiện Like hoặc Thả Cảm Xúc (LOVE, CARE, HAHA, WOW, SAD, ANGRY) cho Bài viết / Comment"""
-    own_sess = session is None
-    sess = session or c_requests.Session()
-    if proxies := format_proxy(proxy):
-        sess.proxies = proxies
+def format_proxies(proxy_str):
+    if not proxy_str or not str(proxy_str).strip():
+        return None
+    p = str(proxy_str).strip()
+    if not p.startswith("http"):
+        parts = p.split(":")
+        if len(parts) == 4:
+            p = f"http://{parts[2]}:{parts[3]}@{parts[0]}:{parts[1]}"
+        else:
+            p = f"http://{p}"
+    return {"http": p, "https": p}
 
-    obj_id = str(target_id or "").strip()
-    if not obj_id and target_url:
-        m = re.search(r'(?:posts/|videos/|photo\.php\?fbid=|story_fbid=|/)(\d{8,})', str(target_url))
+
+# ==============================================================================
+# CLASS 1: INSTAGRAM AUTOMATION (PHỤC VỤ TAB INSTAGRAM XSMM)
+# ==============================================================================
+class INSTAGRAM:
+    def __init__(self, cookies, proxy=None):
+        self.cookies = (cookies or "").strip()
+        self.proxies = format_proxies(proxy)
+        self.session = requests.Session()
+        self.session.verify = False
+        if self.proxies:
+            self.session.proxies.update(self.proxies)
+
+        self.csrf_token = self._extract_cookie_val("csrftoken")
+        self.ds_user_id = self._extract_cookie_val("ds_user_id")
+        self.headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+            "Accept": "*/*",
+            "Accept-Language": "vi-VN,vi;q=0.9,en-US;q=0.8,en;q=0.7",
+            "X-CSRFToken": self.csrf_token,
+            "X-IG-App-ID": "936619743392459",
+            "X-ASBD-ID": "129477",
+            "X-IG-WWW-Claim": "0",
+            "X-Requested-With": "XMLHttpRequest",
+            "Cookie": self.cookies,
+            "Origin": "https://www.instagram.com",
+            "Referer": "https://www.instagram.com/"
+        }
+
+    def _extract_cookie_val(self, key):
+        m = re.search(rf"{key}=([^;]+)", self.cookies)
+        return m.group(1).strip() if m else ""
+
+    def GETINFO(self):
+        try:
+            url = "https://www.instagram.com/api/v1/accounts/edit/web_form_data/"
+            r = self.session.get(url, headers=self.headers, timeout=15)
+            if r.status_code == 200 and "form_data" in r.text:
+                data = r.json()
+                username = data.get("form_data", {}).get("username", "")
+                if username:
+                    return True, username
+            # Fallback trang chủ
+            r2 = self.session.get("https://www.instagram.com/", headers=self.headers, timeout=15)
+            m = re.search(r'"username":"([^"]+)"', r2.text)
+            if m:
+                return True, m.group(1)
+            if self.ds_user_id:
+                return True, f"IG_{self.ds_user_id}"
+            return False, "Cookie IG die hoặc hết hạn"
+        except Exception as e:
+            return False, f"Lỗi mạng IG: {e}"
+
+    def _shortcode_to_media_id(self, shortcode):
+        alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_"
+        media_id = 0
+        for char in shortcode:
+            if char in alphabet:
+                media_id = media_id * 64 + alphabet.index(char)
+        return str(media_id)
+
+    def resolve_media_id(self, target):
+        target = str(target).strip()
+        if target.isdigit():
+            return target
+        m = re.search(r"/(?:p|reel|tv)/([A-Za-z0-9_-]+)", target)
         if m:
-            obj_id = m.group(1)
+            return self._shortcode_to_media_id(m.group(1))
+        return target
 
-    react_upper = str(reaction_type or "LIKE").upper().strip()
-    react_code = FB_REACTION_MAP.get(react_upper, 1)
+    def resolve_user_id(self, target):
+        target = str(target).strip()
+        if target.isdigit():
+            return target
+        username = target.rstrip("/").split("/")[-1].split("?")[0]
+        try:
+            url = f"https://www.instagram.com/api/v1/users/web_profile_info/?username={username}"
+            r = self.session.get(url, headers=self.headers, timeout=15)
+            if r.status_code == 200:
+                uid = r.json().get("data", {}).get("user", {}).get("id", "")
+                if uid:
+                    return str(uid)
+        except Exception:
+            pass
+        return target
 
-    try:
-        if page_token and str(page_token).startswith("EAA") and react_upper == "LIKE":
-            target_ep = f"https://graph.facebook.com/v18.0/{obj_id}/likes" if obj_id else "https://graph.facebook.com/v18.0/me/likes"
-            payload = {"access_token": page_token}
-            if not obj_id:
-                payload["object"] = target_url
-            res = sess.post(target_ep, data=payload, timeout=10)
-            if "true" in res.text.lower() or '"success":true' in res.text.lower() or '"id"' in res.text.lower():
-                return json.dumps({"success": True})
+    def FOLLOW(self, target_user):
+        uid = self.resolve_user_id(target_user)
+        if not uid.isdigit():
+            return False, f"Không lấy được UID từ {target_user}"
+        try:
+            url = f"https://www.instagram.com/api/v1/friendships/create/{uid}/"
+            r = self.session.post(url, headers=self.headers, timeout=15)
+            if r.status_code == 200 and ('"status":"ok"' in r.text or '"following":true' in r.text):
+                return True, f"Follow thành công {uid}"
+            return False, f"Follow thất bại ({r.status_code})"
+        except Exception as e:
+            return False, str(e)
 
-        raw_ck = parent_cookie if parent_cookie else (page_token if "c_user=" in str(page_token) else "")
-        if raw_ck and page_id and obj_id:
-            pg_ck = _build_page_cookie(raw_ck, page_id)
-            dtsg = _get_fb_dtsg(sess, pg_ck, page_id)
-            if dtsg:
-                feedback_b64 = base64.b64encode(f"feedback:{obj_id}".encode()).decode()
-                variables = {
-                    "input": {
-                        "actor_id": str(page_id),
-                        "feedback_id": feedback_b64,
-                        "feedback_reaction": react_code,
-                        "feedback_source": "OBJECT",
-                        "is_tracking_encrypted": True,
-                        "session_id": f"session_{random.randint(10000,99999)}",
-                        "client_mutation_id": str(random.randint(1, 9))
-                    },
-                    "useDefaultActor": False
-                }
-                gql_res = sess.post(
-                    "https://www.facebook.com/api/graphql/",
-                    headers={"User-Agent": USER_AGENT, "Cookie": pg_ck, "Content-Type": "application/x-www-form-urlencoded"},
-                    data={
-                        "av": str(page_id),
-                        "__user": str(page_id),
-                        "fb_dtsg": dtsg,
-                        "fb_api_req_friendly_name": "CometUFIFeedbackReactMutation",
-                        "doc_id": "6623712531077310",
-                        "variables": json.dumps(variables)
-                    },
-                    impersonate="chrome120",
-                    timeout=10
-                )
-                if gql_res.status_code == 200 and '"errors"' not in gql_res.text:
-                    return json.dumps({"success": True})
+    def LIKE(self, target_post):
+        media_id = self.resolve_media_id(target_post)
+        if not media_id.isdigit():
+            return False, f"Không lấy được MediaID từ {target_post}"
+        try:
+            url = f"https://www.instagram.com/api/v1/web/likes/{media_id}/like/"
+            r = self.session.post(url, headers=self.headers, timeout=15)
+            if r.status_code == 200 and '"status":"ok"' in r.text:
+                return True, f"Like thành công {media_id}"
+            return False, f"Like thất bại ({r.status_code})"
+        except Exception as e:
+            return False, str(e)
 
-        return json.dumps({"error": f"Không thể {react_upper}"})
-    except Exception as e:
-        return json.dumps({"error": str(e)})
-    finally:
-        if own_sess:
+    def COMMENT(self, target_post, comment_text):
+        media_id = self.resolve_media_id(target_post)
+        if not media_id.isdigit():
+            return False, f"Không lấy được MediaID từ {target_post}"
+        try:
+            url = f"https://www.instagram.com/api/v1/web/comments/{media_id}/add/"
+            r = self.session.post(url, data={"comment_text": comment_text}, headers=self.headers, timeout=15)
+            if r.status_code == 200 and '"status":"ok"' in r.text:
+                return True, f"Comment thành công {media_id}"
+            return False, f"Comment thất bại ({r.status_code})"
+        except Exception as e:
+            return False, str(e)
+
+
+# ==============================================================================
+# CLASS 2: XSMM API TOOL (PHỤC VỤ TAB INSTAGRAM & FANPAGE XSMM)
+# ==============================================================================
+class XSMMTool:
+    def __init__(self, api_token, proxy=None):
+        self.token = (api_token or "").strip()
+        self.base_url = "https://xsmm.net/api/taskapi"
+        self.session = requests.Session()
+        self.session.verify = False
+        proxies = format_proxies(proxy)
+        if proxies:
+            self.session.proxies.update(proxies)
+
+        self.headers = {
+            "Content-Type": "application/json",
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/122.0.0.0 Safari/537.36",
+            "Authorization": f"Bearer {self.token}" if self.token and not self.token.startswith("Bearer") else self.token
+        }
+
+    def get_tasks(self, social="instagram", account_uid=""):
+        try:
+            url = f"{self.base_url}/tasks2"
+            params = {"social": social, "account": account_uid, "token": self.token}
+            r = self.session.get(url, params=params, headers=self.headers, timeout=20)
+            if r.status_code == 200:
+                data = r.json()
+                if isinstance(data, list):
+                    return data
+                if isinstance(data, dict):
+                    return data.get("data") or data.get("tasks") or []
+        except Exception:
+            pass
+        return []
+
+    def claim_reward(self, task_id, account_uid=""):
+        try:
+            url = f"{self.base_url}/tasks2/complete"
+            payload = {"task_id": task_id, "account": account_uid, "token": self.token}
+            r = self.session.post(url, json=payload, headers=self.headers, timeout=20)
+            if r.status_code == 200:
+                data = r.json()
+                ok = data.get("status") in (True, "success", 200, "ok") or data.get("success") is True
+                reward = int(data.get("reward", data.get("coins", 1)))
+                msg = data.get("message", "Hoàn thành job XSMM")
+                return ok, msg, reward
+        except Exception as e:
+            return False, str(e), 0
+        return False, "Lỗi claim XSMM", 0
+
+
+# ==============================================================================
+# CLASS 3: TUONGTACCHEO TOOL (BỘ LÕI TTC FACEBOOK CHUẨN SMALI MTOOLV2)
+# ==============================================================================
+class TuongTacCheoTool:
+    BASE_URL = "https://tuongtaccheo.com"
+    USER_AGENT = "Mozilla/5.0 (Linux; Android 13; SM-S918B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Mobile Safari/537.36"
+
+    # Đầy đủ 12 Chế Độ Job TTC Facebook khớp với APK MToolv2
+    JOB_MODES = {
+        "like_vip": {
+            "name": "Like Bài Viết VIP",
+            "paths": ["/kiemtien/likepostvipcheo"],
+            "action": "LIKE"
+        },
+        "like_re": {
+            "name": "Like Bài Viết Rẻ/Thường",
+            "paths": ["/kiemtien/likepostvipre", "/kiemtien"],
+            "action": "LIKE"
+        },
+        "camxuc_vip": {
+            "name": "Cảm Xúc VIP",
+            "paths": ["/kiemtien/camxucvipcheo"],
+            "action": "REACT"
+        },
+        "camxuc_re": {
+            "name": "Cảm Xúc Rẻ/Thường",
+            "paths": ["/kiemtien/camxucvipre", "/kiemtien/camxuccheo"],
+            "action": "REACT"
+        },
+        "sub_vip": {
+            "name": "Theo Dõi (Sub) VIP",
+            "paths": ["/kiemtien/subcheo"],
+            "action": "FOLLOW"
+        },
+        "sub_re": {
+            "name": "Theo Dõi (Sub) Rẻ",
+            "paths": ["/kiemtien/subcheore", "/kiemtien/subcheo"],
+            "action": "FOLLOW"
+        },
+        "cmt_vip": {
+            "name": "Comment VIP",
+            "paths": ["/kiemtien/cmtcheo"],
+            "action": "COMMENT"
+        },
+        "cmt_re": {
+            "name": "Comment Rẻ/Thường",
+            "paths": ["/kiemtien/cmtcheore", "/kiemtien/cmtcheo"],
+            "action": "COMMENT"
+        },
+        "likepage_vip": {
+            "name": "Like Fanpage VIP",
+            "paths": ["/kiemtien/likepagecheo"],
+            "action": "LIKE_PAGE"
+        },
+        "likepage_re": {
+            "name": "Like Fanpage Rẻ",
+            "paths": ["/kiemtien/likepagecheore", "/kiemtien/likepagecheo"],
+            "action": "LIKE_PAGE"
+        },
+        "share": {
+            "name": "Chia Sẻ (Share)",
+            "paths": ["/kiemtien/sharecheo"],
+            "action": "SHARE"
+        },
+        "camxuc_cmt": {
+            "name": "Cảm Xúc Comment",
+            "paths": ["/kiemtien/camxuccmtcheo", "/kiemtien/camxuccmtcheore"],
+            "action": "REACT_CMT"
+        }
+    }
+
+    REACTION_CODE_MAP = {
+        "LIKE": 1,
+        "LOVE": 2,
+        "WOW": 3,
+        "HAHA": 4,
+        "SAD": 7,
+        "ANGRY": 8,
+        "CARE": 16,
+        "THUONG": 16,
+        "THƯƠNG THƯƠNG": 16
+    }
+
+    def __init__(self, ttc_token, proxy=None):
+        self.ttc_token = (ttc_token or "").strip()
+        self.proxies = format_proxies(proxy)
+        self.session = requests.Session()
+        self.session.verify = False
+        if self.proxies:
+            self.session.proxies.update(self.proxies)
+
+        self.session.headers.update({
+            "User-Agent": self.USER_AGENT,
+            "Accept-Language": "vi-VN,vi;q=0.9,en-US;q=0.8,en;q=0.7"
+        })
+
+        self.logged_in = False
+        self.ttc_user = ""
+        self.coins = 0
+        self.configured_uid = ""
+        self.fb_dtsg_cache = {}  # page_id -> fb_dtsg
+
+    # --------------------------------------------------------------------------
+    # 1. ĐĂNG NHẬP TOKEN TTC -> GIỮ PHPSESSID TRONG SESSION
+    # --------------------------------------------------------------------------
+    def login(self):
+        try:
+            url = f"{self.BASE_URL}/logintoken.php"
+            headers = {
+                "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
+                "X-Requested-With": "XMLHttpRequest",
+                "Origin": self.BASE_URL,
+                "Referer": f"{self.BASE_URL}/"
+            }
+            resp = self.session.post(url, data={"access_token": self.ttc_token}, headers=headers, timeout=20)
+            if resp.status_code == 200:
+                try:
+                    data = resp.json()
+                except Exception:
+                    return False, f"Phản hồi TTC không phải JSON: {resp.text[:80]}"
+
+                if str(data.get("status", "")).lower() == "success":
+                    info = data.get("data", {})
+                    self.ttc_user = str(info.get("user", "TTC_User"))
+                    self.coins = int(info.get("sodu", 0))
+                    self.logged_in = True
+                    return True, f"Login TTC thành công: {self.ttc_user} | Số dư: {self.coins:,} xu"
+                else:
+                    return False, str(data.get("mess", "Token TTC không hợp lệ hoặc chờ 60s login lại"))
+            return False, f"Lỗi HTTP {resp.status_code} khi đăng nhập TTC"
+        except Exception as e:
+            return False, f"Lỗi kết nối TTC: {e}"
+
+    # --------------------------------------------------------------------------
+    # 2. LẤY DANH SÁCH NICK FB ĐÃ THÊM TRONG CẤU HÌNH TTC
+    # --------------------------------------------------------------------------
+    def get_configured_nicks(self):
+        if not self.logged_in:
+            ok, _ = self.login()
+            if not ok:
+                return []
+        try:
+            url = f"{self.BASE_URL}/cauhinh/facebook.php"
+            resp = self.session.get(url, timeout=20)
+            html = resp.text
+            # Tìm các checkbox/id cấu hình nick fb trên trang cauhinh/facebook.php
+            uids = re.findall(r'value=["\'](\d{6,25})["\']', html)
+            if not uids:
+                uids = re.findall(r'id=["\'](\d{10,25})["\']', html)
+            return list(dict.fromkeys(uids))
+        except Exception:
+            return []
+
+    # --------------------------------------------------------------------------
+    # 3. ĐẶT NICK FACEBOOK LÀM NICK CHẠY CHÍNH (BẮT BUỘC TRƯỚC KHI QUÉT JOB)
+    # --------------------------------------------------------------------------
+    def dat_nick(self, fb_uid):
+        fb_uid = str(fb_uid).strip()
+        if not self.logged_in:
+            ok, msg = self.login()
+            if not ok:
+                return False, msg
+
+        try:
+            url = f"{self.BASE_URL}/cauhinh/datnick.php"
+            headers = {
+                "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
+                "X-Requested-With": "XMLHttpRequest",
+                "Origin": self.BASE_URL,
+                "Referer": f"{self.BASE_URL}/cauhinh/facebook.php"
+            }
+            payload = {
+                "iddat[]": fb_uid,
+                "loai": "fb"
+            }
+            resp = self.session.post(url, data=payload, headers=headers, timeout=20)
+            raw = resp.text.strip()
+            if raw == "1" or '"1"' in raw or raw == "true":
+                self.configured_uid = fb_uid
+                return True, f"Đặt cấu hình thành công cho UID/Page {fb_uid}"
+
+            # Kiểm tra xem UID đã có trong danh sách cấu hình của web chưa
+            configured_list = self.get_configured_nicks()
+            if configured_list and fb_uid not in configured_list:
+                return False, f"UID {fb_uid} chưa được thêm vào trang Cấu hình trên tuongtaccheo.com! (Đang có: {', '.join(configured_list[:5])})"
+
+            return False, f"Đặt nick thất bại (Phản hồi: {raw}). Hãy thêm UID {fb_uid} vào Cấu hình Facebook trên web TTC!"
+        except Exception as e:
+            return False, f"Lỗi gọi datnick.php: {e}"
+
+    # --------------------------------------------------------------------------
+    # 4. QUÉT JOB THEO MỤC (GETPOST.PHP - CHUẨN HEADER XMLHTTPREQUEST MTOOLV2)
+    # --------------------------------------------------------------------------
+    def get_tasks(self, job_key):
+        """
+        Trả về: (list_jobs, status_message, countdown_seconds)
+        """
+        cfg = self.JOB_MODES.get(job_key)
+        if not cfg:
+            return [], f"Không hỗ trợ mục {job_key}", 0
+
+        for sub_path in cfg["paths"]:
+            url = f"{self.BASE_URL}{sub_path}/getpost.php"
+            headers = {
+                "Accept": "application/json, text/javascript, */*; q=0.01",
+                "X-Requested-With": "XMLHttpRequest",
+                "Referer": f"{self.BASE_URL}{sub_path}/"
+            }
             try:
-                sess.close()
+                resp = self.session.get(url, headers=headers, timeout=20)
+                raw = resp.text.strip()
+                if not raw:
+                    continue
+
+                # Kiểm tra nếu trả về Object báo countdown hoặc lỗi
+                if raw.startswith("{"):
+                    try:
+                        obj = json.loads(raw)
+                        if "countdown" in obj:
+                            cd = int(obj.get("countdown") or 5)
+                            return [], f"Mục {cfg['name']} bị countdown {cd}s", cd
+                        if "error" in obj or "mess" in obj:
+                            err_str = obj.get("error") or obj.get("mess")
+                            return [], f"TTC báo ({cfg['name']}): {err_str}", 5
+                    except Exception:
+                        pass
+                    continue
+
+                # Parse danh sách Job dạng JSON Array
+                if raw.startswith("["):
+                    arr = json.loads(raw)
+                    jobs = []
+                    for item in arr:
+                        if not isinstance(item, dict):
+                            continue
+                        idpost = str(item.get("idpost") or item.get("id") or "").strip()
+                        link = str(item.get("link") or "").strip()
+                        loaicx = str(item.get("loaicx") or "LIKE").strip().upper()
+                        nd = item.get("nd", "")
+                        if idpost:
+                            jobs.append({
+                                "idpost": idpost,
+                                "link": link,
+                                "loaicx": loaicx,
+                                "nd": nd,
+                                "sub_path": sub_path,
+                                "job_key": job_key,
+                                "job_name": cfg["name"],
+                                "action": cfg["action"]
+                            })
+                    if jobs:
+                        return jobs, f"Quét được {len(jobs)} job {cfg['name']}", 0
             except Exception:
-                pass
+                continue
 
-def fb_page_like(target_url, page_token, proxy=None, session=None, page_id="", parent_cookie="", target_id=""):
-    return fb_page_react_or_like(target_url, page_token, proxy, session, page_id, parent_cookie, target_id, "LIKE")
+        return [], f"Hết nhiệm vụ {cfg['name']}", 0
 
-def fb_page_follow(target_id, page_token, proxy=None, session=None, page_id="", parent_cookie=""):
-    """Thực hiện Follow / Sub hoặc Like Fanpage"""
-    own_sess = session is None
-    sess = session or c_requests.Session()
-    if proxies := format_proxy(proxy):
-        sess.proxies = proxies
+    # --------------------------------------------------------------------------
+    # 5. NHẬN XU SAU KHI HOÀN THÀNH JOB (NHANTIEN.PHP)
+    # --------------------------------------------------------------------------
+    def claim_reward(self, job_key, idpost, sub_path=None):
+        cfg = self.JOB_MODES.get(job_key, {})
+        if not sub_path:
+            sub_path = cfg.get("paths", ["/kiemtien/likepostvipcheo"])[0]
 
-    clean_tid = str(target_id or "").strip()
-    if "facebook.com/" in clean_tid:
-        m = re.search(r'id=(\d+)', clean_tid) or re.search(r'facebook\.com/(\d+)', clean_tid)
-        if m:
-            clean_tid = m.group(1)
+        url = f"{self.BASE_URL}{sub_path}/nhantien.php"
+        headers = {
+            "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
+            "Accept": "application/json, text/javascript, */*; q=0.01",
+            "X-Requested-With": "XMLHttpRequest",
+            "Origin": self.BASE_URL,
+            "Referer": f"{self.BASE_URL}{sub_path}/"
+        }
+        try:
+            resp = self.session.post(url, data={"id": str(idpost).strip()}, headers=headers, timeout=20)
+            raw = resp.text.strip()
+            if not raw:
+                return False, "Phản hồi nhận tiền rỗng", self.coins
 
-    try:
-        if page_token and str(page_token).startswith("EAA") and clean_tid:
-            res = sess.post(f"https://graph.facebook.com/v18.0/{clean_tid}/subscribers", data={"access_token": page_token}, timeout=10)
-            if "true" in res.text.lower() or '"success":true' in res.text.lower():
-                return json.dumps({"success": True})
+            data = json.loads(raw)
+            if "mess" in data:
+                if "sodu" in data:
+                    try:
+                        self.coins = int(data["sodu"])
+                    except Exception:
+                        pass
+                return True, str(data["mess"]), self.coins
+            if "error" in data:
+                return False, str(data["error"]), self.coins
+            return False, raw[:100], self.coins
+        except Exception as e:
+            return False, f"Lỗi nhận tiền: {e}", self.coins
 
-        raw_ck = parent_cookie if parent_cookie else (page_token if "c_user=" in str(page_token) else "")
-        if raw_ck and page_id and clean_tid:
-            pg_ck = _build_page_cookie(raw_ck, page_id)
-            dtsg = _get_fb_dtsg(sess, pg_ck, page_id)
-            if dtsg:
-                # Gửi đồng thời mutation Follow & PageLike để tương thích cả Profile lẫn Fanpage cũ
-                variables_sub = {
+    # --------------------------------------------------------------------------
+    # 6. THỰC THI TƯƠNG TÁC TRÊN FACEBOOK (CHUẨN GRAPHQL MTOOLV2 + GRAPH API)
+    # --------------------------------------------------------------------------
+    def _build_page_cookie(self, parent_cookie, actor_id):
+        if not parent_cookie:
+            return ""
+        actor_id = str(actor_id).strip()
+        c_user_m = re.search(r"c_user=(\d+)", parent_cookie)
+        c_user = c_user_m.group(1) if c_user_m else ""
+        cleaned = re.sub(r"i_user=\d+;?\s*", "", parent_cookie).strip().rstrip(";")
+        if c_user and actor_id and c_user != actor_id:
+            return f"{cleaned}; i_user={actor_id};"
+        return cleaned
+
+    def get_fb_dtsg(self, page_id, parent_cookie):
+        page_id = str(page_id).strip()
+        if page_id in self.fb_dtsg_cache and self.fb_dtsg_cache[page_id]:
+            return self.fb_dtsg_cache[page_id]
+
+        eff_cookie = self._build_page_cookie(parent_cookie, page_id)
+        if not eff_cookie:
+            return ""
+
+        headers = {
+            "User-Agent": self.USER_AGENT,
+            "Cookie": eff_cookie,
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
+        }
+        urls = [
+            "https://m.facebook.com/composer/ocelot/async_loader/?publisher=feed",
+            "https://mbasic.facebook.com/home.php",
+            "https://www.facebook.com/"
+        ]
+        patterns = [
+            r'name=\\"fb_dtsg\\" value=\\"([^\\"]+)\\"',
+            r'name="fb_dtsg" value="([^"]+)"',
+            r'"DTSGInitialData",\[\],\{"token":"([^"]+)"',
+            r'"dtsg":\{"token":"([^"]+)"'
+        ]
+        for u in urls:
+            try:
+                r = requests.get(u, headers=headers, proxies=self.proxies, timeout=15, verify=False)
+                for pat in patterns:
+                    m = re.search(pat, r.text)
+                    if m:
+                        token = m.group(1)
+                        self.fb_dtsg_cache[page_id] = token
+                        return token
+            except Exception:
+                continue
+        return ""
+
+    def _call_fb_graphql(self, page_id, parent_cookie, friendly_name, doc_id, variables_dict):
+        fb_dtsg = self.get_fb_dtsg(page_id, parent_cookie)
+        if not fb_dtsg:
+            return False, "Không lấy được fb_dtsg từ Cookie"
+
+        eff_cookie = self._build_page_cookie(parent_cookie, page_id)
+        headers = {
+            "User-Agent": self.USER_AGENT,
+            "Cookie": eff_cookie,
+            "Content-Type": "application/x-www-form-urlencoded",
+            "Origin": "https://www.facebook.com",
+            "Referer": "https://www.facebook.com/"
+        }
+        payload = {
+            "av": str(page_id),
+            "__user": str(page_id),
+            "__a": "1",
+            "fb_dtsg": fb_dtsg,
+            "fb_api_caller_class": "RelayModern",
+            "fb_api_req_friendly_name": friendly_name,
+            "variables": json.dumps(variables_dict, ensure_ascii=False),
+            "doc_id": str(doc_id)
+        }
+        try:
+            r = requests.post(
+                "https://www.facebook.com/api/graphql/",
+                data=payload,
+                headers=headers,
+                proxies=self.proxies,
+                timeout=20,
+                verify=False
+            )
+            txt = r.text
+            if r.status_code == 200 and '"error":' not in txt and '"errorSummary"' not in txt:
+                return True, "GraphQL thành công"
+            # Nếu token dtsg hết hạn thì xóa cache để lần sau lấy lại
+            if "1357004" in txt or "dtsg" in txt.lower():
+                self.fb_dtsg_cache.pop(str(page_id), None)
+            return False, f"GraphQL lỗi: {txt[:90]}"
+        except Exception as e:
+            return False, f"Lỗi mạng GraphQL: {e}"
+
+    def _extract_target_id(self, idpost, link):
+        target = str(idpost).strip()
+        if "_" in target:
+            parts = target.split("_")
+            if parts[-1].isdigit():
+                return parts[-1]
+        if target.isdigit():
+            return target
+        # Bóc từ link nếu idpost chứa ký tự lạ
+        for pat in [
+            r"story_fbid=(\d+)",
+            r"fbid=(\d+)",
+            r"/posts/(\d+)",
+            r"/videos/(\d+)",
+            r"id=(\d+)",
+            r"/(\d{10,25})"
+        ]:
+            m = re.search(pat, str(link))
+            if m:
+                return m.group(1)
+        return target
+
+    def do_fb_action(self, page_id, page_token, parent_cookie, job):
+        """
+        Thực thi đầy đủ 12 loại nhiệm vụ TTC FB:
+        - Ưu tiên 1: Facebook GraphQL với Cookie + i_user=page_id (chuẩn MToolv2, hỗ trợ đủ 7 cảm xúc, Follow, Like Page, Share, Cmt)
+        - Ưu tiên 2: Facebook Graph API với page_token
+        """
+        action = job.get("action", "LIKE")
+        raw_id = job.get("idpost", "")
+        link = job.get("link", "")
+        loaicx = str(job.get("loaicx", "LIKE")).upper()
+        nd_raw = job.get("nd", "")
+        target_id = self._extract_target_id(raw_id, link)
+
+        # ----------------------------------------------------------------------
+        # NHÓM 1: LIKE & THẢ CẢM XÚC BÀI VIẾT / COMMENT
+        # ----------------------------------------------------------------------
+        if action in ("LIKE", "REACT", "REACT_CMT"):
+            react_type = "LIKE" if action == "LIKE" else loaicx
+            react_code = self.REACTION_CODE_MAP.get(react_type, 1)
+
+            if parent_cookie:
+                b64_feedback = base64.b64encode(f"feedback:{target_id}".encode("utf-8")).decode("utf-8")
+                vars_dict = {
                     "input": {
-                        "subscribe_location": "PROFILE",
-                        "subscribee_id": str(clean_tid),
-                        "actor_id": str(page_id),
-                        "client_mutation_id": str(random.randint(1, 9))
-                    },
-                    "scale": 1
-                }
-                gql_res = sess.post(
-                    "https://www.facebook.com/api/graphql/",
-                    headers={"User-Agent": USER_AGENT, "Cookie": pg_ck, "Content-Type": "application/x-www-form-urlencoded"},
-                    data={
-                        "av": str(page_id),
-                        "__user": str(page_id),
-                        "fb_dtsg": dtsg,
-                        "fb_api_req_friendly_name": "CometUserFollowMutation",
-                        "doc_id": "25493589556909544",
-                        "variables": json.dumps(variables_sub)
-                    },
-                    impersonate="chrome120", timeout=10
-                )
-                variables_like_page = {
-                    "input": {
-                        "is_tracking_encrypted": True,
-                        "page_id": str(clean_tid),
-                        "source": "page_profile",
+                        "feedback_id": b64_feedback,
+                        "feedback_reaction": react_code,
                         "actor_id": str(page_id),
                         "client_mutation_id": str(random.randint(1, 9))
                     }
                 }
-                sess.post(
-                    "https://www.facebook.com/api/graphql/",
-                    headers={"User-Agent": USER_AGENT, "Cookie": pg_ck, "Content-Type": "application/x-www-form-urlencoded"},
-                    data={
-                        "av": str(page_id),
-                        "__user": str(page_id),
-                        "fb_dtsg": dtsg,
-                        "fb_api_req_friendly_name": "CometPageLikeMutation",
-                        "doc_id": "6391845690869495",
-                        "variables": json.dumps(variables_like_page)
-                    },
-                    impersonate="chrome120", timeout=10
+                ok, msg = self._call_fb_graphql(
+                    page_id, parent_cookie,
+                    "CometUFIFeedbackReactMutation",
+                    "4769042373179384",
+                    vars_dict
                 )
-                if gql_res.status_code == 200:
-                    return json.dumps({"success": True})
+                if ok:
+                    return True, f"Đã thả {react_type} bài {target_id} (GraphQL)"
 
-        return json.dumps({"error": "Follow/LikePage thất bại"})
-    except Exception as e:
-        return json.dumps({"error": str(e)})
-    finally:
-        if own_sess:
-            try:
-                sess.close()
-            except Exception:
-                pass
+            if page_token:
+                try:
+                    for obj_id in (raw_id, target_id):
+                        url = f"https://graph.facebook.com/v18.0/{obj_id}/likes"
+                        r = requests.post(
+                            url,
+                            data={"access_token": page_token},
+                            proxies=self.proxies,
+                            timeout=15,
+                            verify=False
+                        )
+                        if r.status_code == 200 and "true" in r.text.lower():
+                            return True, f"Đã Like {obj_id} (Graph API)"
+                except Exception:
+                    pass
 
-def fb_page_comment(target_id_or_post, comment_text, page_token, proxy=None, session=None, page_id="", parent_cookie=""):
-    own_sess = session is None
-    sess = session or c_requests.Session()
-    if proxies := format_proxy(proxy):
-        sess.proxies = proxies
+            return False, f"Không thể {react_type} ID {target_id}"
 
-    clean_tid = str(target_id_or_post or "").strip()
-    if "facebook.com/" in clean_tid:
-        m = re.search(r'(?:posts/|videos/|story_fbid=|/)(\d{8,})', clean_tid)
-        if m:
-            clean_tid = m.group(1)
+        # ----------------------------------------------------------------------
+        # NHÓM 2: THEO DÕI (SUB / FOLLOW)
+        # ----------------------------------------------------------------------
+        elif action == "FOLLOW":
+            if parent_cookie:
+                vars_dict = {
+                    "input": {
+                        "subscribe_location": "PROFILE",
+                        "subscribee_id": str(target_id),
+                        "actor_id": str(page_id),
+                        "client_mutation_id": "1"
+                    }
+                }
+                ok, msg = self._call_fb_graphql(
+                    page_id, parent_cookie,
+                    "CometUserFollowMutation",
+                    "4451435638222552",
+                    vars_dict
+                )
+                if ok:
+                    return True, f"Đã Follow UID {target_id} (GraphQL)"
+            return False, f"Follow thất bại UID {target_id}"
 
-    try:
-        if page_token and str(page_token).startswith("EAA") and clean_tid:
-            res = sess.post(
-                f"https://graph.facebook.com/v18.0/{clean_tid}/comments",
-                data={"access_token": page_token, "message": comment_text}, timeout=10
-            )
-            if '"id"' in res.text:
-                return json.dumps({"id": clean_tid, "success": True})
+        # ----------------------------------------------------------------------
+        # NHÓM 3: LIKE FANPAGE
+        # ----------------------------------------------------------------------
+        elif action == "LIKE_PAGE":
+            if parent_cookie:
+                vars_dict = {
+                    "input": {
+                        "is_tracking_encrypted": True,
+                        "page_id": str(target_id),
+                        "source": "page_profile",
+                        "actor_id": str(page_id),
+                        "client_mutation_id": "1"
+                    }
+                }
+                ok, msg = self._call_fb_graphql(
+                    page_id, parent_cookie,
+                    "CometPageLikeMutation",
+                    "4911670272228290",
+                    vars_dict
+                )
+                if ok:
+                    return True, f"Đã Like Fanpage {target_id} (GraphQL)"
+            return False, f"Like Fanpage thất bại ID {target_id}"
 
-        raw_ck = parent_cookie if parent_cookie else (page_token if "c_user=" in str(page_token) else "")
-        if raw_ck and page_id and clean_tid:
-            pg_ck = _build_page_cookie(raw_ck, page_id)
-            dtsg = _get_fb_dtsg(sess, pg_ck, page_id)
-            if dtsg:
-                feedback_b64 = base64.b64encode(f"feedback:{clean_tid}".encode()).decode()
-                variables = {
+        # ----------------------------------------------------------------------
+        # NHÓM 4: BÌNH LUẬN (COMMENT)
+        # ----------------------------------------------------------------------
+        elif action == "COMMENT":
+            cmt_text = "Tuyệt vời quá!"
+            if nd_raw:
+                try:
+                    if str(nd_raw).strip().startswith("["):
+                        arr = json.loads(nd_raw)
+                        if arr:
+                            cmt_text = str(random.choice(arr))
+                    else:
+                        cmt_text = str(nd_raw)
+                except Exception:
+                    cmt_text = str(nd_raw)
+
+            if parent_cookie:
+                b64_feedback = base64.b64encode(f"feedback:{target_id}".encode("utf-8")).decode("utf-8")
+                vars_dict = {
                     "input": {
                         "actor_id": str(page_id),
-                        "feedback_id": feedback_b64,
-                        "message": {"ranges": [], "text": comment_text},
-                        "client_mutation_id": str(random.randint(1, 9))
-                    },
-                    "useDefaultActor": False
+                        "feedback_id": b64_feedback,
+                        "message": {"text": cmt_text},
+                        "client_mutation_id": "1"
+                    }
                 }
-                gql_res = sess.post(
-                    "https://www.facebook.com/api/graphql/",
-                    headers={"User-Agent": USER_AGENT, "Cookie": pg_ck, "Content-Type": "application/x-www-form-urlencoded"},
-                    data={
-                        "av": str(page_id),
-                        "__user": str(page_id),
-                        "fb_dtsg": dtsg,
-                        "fb_api_req_friendly_name": "CometUFICommentCreateMutation",
-                        "doc_id": "6993516810709754",
-                        "variables": json.dumps(variables, ensure_ascii=False)
-                    },
-                    impersonate="chrome120", timeout=10
+                ok, msg = self._call_fb_graphql(
+                    page_id, parent_cookie,
+                    "CometUFICreateCommentMutation",
+                    "4700064693380460",
+                    vars_dict
                 )
-                if gql_res.status_code == 200 and '"errors"' not in gql_res.text:
-                    return json.dumps({"id": clean_tid, "success": True})
+                if ok:
+                    return True, f"Đã Comment: {cmt_text[:25]}"
 
-        return json.dumps({"error": "Comment thất bại"})
-    except Exception as e:
-        return json.dumps({"error": str(e)})
-    finally:
-        if own_sess:
-            try:
-                sess.close()
-            except Exception:
-                pass
+            if page_token:
+                try:
+                    url = f"https://graph.facebook.com/v18.0/{target_id}/comments"
+                    r = requests.post(
+                        url,
+                        data={"message": cmt_text, "access_token": page_token},
+                        proxies=self.proxies,
+                        timeout=15,
+                        verify=False
+                    )
+                    if r.status_code == 200 and '"id"' in r.text:
+                        return True, f"Đã Comment (Graph API): {cmt_text[:25]}"
+                except Exception:
+                    pass
 
-def fb_page_share(target_id_or_url, page_token, proxy=None, session=None, page_id="", parent_cookie=""):
-    """Chia sẻ bài viết lên tường Page"""
-    own_sess = session is None
-    sess = session or c_requests.Session()
-    if proxies := format_proxy(proxy):
-        sess.proxies = proxies
+            return False, f"Comment thất bại bài {target_id}"
 
-    clean_tid = str(target_id_or_url or "").strip()
-    share_link = clean_tid if clean_tid.startswith("http") else f"https://www.facebook.com/{clean_tid}"
+        # ----------------------------------------------------------------------
+        # NHÓM 5: CHIA SẺ BÀI VIẾT (SHARE)
+        # ----------------------------------------------------------------------
+        elif action == "SHARE":
+            share_url = link if link and link.startswith("http") else f"https://www.facebook.com/{target_id}"
+            if parent_cookie:
+                scrape_data = json.dumps({
+                    "share_type": 100,
+                    "share_params": {"urlInfo": {"canonical": share_url}}
+                })
+                vars_dict = {
+                    "input": {
+                        "actor_id": str(page_id),
+                        "attachment": {"share_scrape_data": scrape_data},
+                        "audience": {"privacy": {"base_state": "EVERYONE"}},
+                        "client_mutation_id": "1"
+                    }
+                }
+                ok, msg = self._call_fb_graphql(
+                    page_id, parent_cookie,
+                    "ComposerStoryCreateMutation",
+                    "5136685823015775",
+                    vars_dict
+                )
+                if ok:
+                    return True, f"Đã Share bài {target_id} (GraphQL)"
 
-    try:
-        if page_token and str(page_token).startswith("EAA"):
-            res = sess.post(
-                "https://graph.facebook.com/v18.0/me/feed",
-                data={"access_token": page_token, "link": share_link}, timeout=12
-            )
-            if '"id"' in res.text:
-                return json.dumps({"success": True})
+            if page_token:
+                try:
+                    url = f"https://graph.facebook.com/v18.0/{page_id}/feed"
+                    r = requests.post(
+                        url,
+                        data={"link": share_url, "access_token": page_token},
+                        proxies=self.proxies,
+                        timeout=15,
+                        verify=False
+                    )
+                    if r.status_code == 200 and '"id"' in r.text:
+                        return True, f"Đã Share bài {target_id} (Graph API)"
+                except Exception:
+                    pass
 
-        raw_ck = parent_cookie if parent_cookie else (page_token if "c_user=" in str(page_token) else "")
-        if raw_ck and page_id:
-            pg_ck = _build_page_cookie(raw_ck, page_id)
-            dtsg = _get_fb_dtsg(sess, pg_ck, page_id)
-            if dtsg:
-                return json.dumps({"success": True})
+            return False, f"Share thất bại bài {target_id}"
 
-        return json.dumps({"error": "Share thất bại"})
-    except Exception as e:
-        return json.dumps({"error": str(e)})
-    finally:
-        if own_sess:
-            try:
-                sess.close()
-            except Exception:
-                pass
+        return False, f"Chưa hỗ trợ action {action}"
 # ==============================================================================
-# PHẦN 2: GIAO DIỆN CHÍNH MMOApp (TÁCH RIÊNG TTC 12 CHẾ ĐỘ & XSMM ĐỘC LẬP)
-# (Dán nối tiếp ngay bên dưới Phần 1)
+# PHẦN 2: GIAO DIỆN CHÍNH MMOAPP (ĐẦY ĐỦ 4 TAB & CÁC LUỒNG WORKER TỰ ĐỘNG)
 # ==============================================================================
-
 class MMOApp(ctk.CTk):
     def __init__(self):
         super().__init__()
-        self.title("Enterprise Automation Pro v7 - Tương Tác Chéo (12 Chế Độ Page) & XSMM Độc Lập")
-        self.geometry("1520x900")
-        self.configure(fg_color="#f8fafc")
+        self.title("MMO Automation Suite Pro v6 - Instagram XSMM & Tương Tác Chéo Facebook (MToolv2 Engine)")
+        self.geometry("1440x880")
 
         init_database()
-        self.is_running = False
-        self.total_coins = 0
-        self.success_jobs = 0
-        self.start_time = None
-        self.lock = threading.Lock()
 
-        # Quản lý dữ liệu UI
-        self.acc_rows = {}          # XSMM IG rows
-        self.page_rows = {}         # TTC FB Page rows
-        self.fb_parent_sections = {}
-        self.ttc_accounts = {}      # {ttc_user: dict}
-        self.ttc_rows_ui = {}
-        self.ttc_account_locks = {}
-        self.ttc_clients_cache = {}
-        self.single_running_threads = {}
+        # Quản lý trạng thái chạy đa luồng
+        self.running_ig = {}          # username -> bool
+        self.running_xsmm_pages = {}  # page_id -> bool
+        self.running_ttc_pages = {}   # page_id -> bool
+        self.page_locks = {}          # page_id -> threading.Lock
+        self.ig_locks = {}            # username -> threading.Lock
 
-        # Checkboxes cho 12 chế độ TTC
-        self.ttc_mode_vars = {}
+        # Hàng đợi cập nhật UI an toàn luồng
+        self.ui_queue = queue.Queue()
 
-        # Bộ nhớ đệm cấu hình
-        self.cfg_cache = {
-            "token": "",
-            "global_proxy": "",
-            "delay_min": 8,
-            "delay_max": 12,
-            "delay_coin_min": 3,
-            "delay_coin_max": 5,
-            "threads": 5
-        }
-        self.net_semaphore = threading.BoundedSemaphore(5)
+        # Biến lưu 12 Checkbox chế độ Job TTC
+        self.ttc_job_vars = {}
 
-        self._log_queue = queue.Queue()
-        self._pending_ui_updates = {}
-        self._ui_update_lock = threading.Lock()
-        self._db_queue = queue.Queue()
-        self._balance_dirty = False
+        # Khởi tạo toàn bộ giao diện 4 Tab
+        self.setup_ui()
+        self.refresh_all_tables()
+        self.after(150, self.process_ui_queue)
 
-        threading.Thread(target=self._db_worker_loop, daemon=True).start()
+    # ==========================================================================
+    # KHỞI TẠO CẤU TRÚC 4 TAB CHÍNH
+    # ==========================================================================
+    def setup_ui(self):
+        # Thanh Header Thống kê nhanh
+        self.header_frame = ctk.CTkFrame(self, height=48, corner_radius=8)
+        self.header_frame.pack(fill="x", padx=10, pady=(8, 2))
 
-        self.grid_columnconfigure(0, weight=1)
-        self.grid_rowconfigure(1, weight=1)
-        self.grid_rowconfigure(2, weight=0)
+        self.lbl_stat_ig = ctk.CTkLabel(self.header_frame, text="📸 Nick IG: 0", font=("Arial", 13, "bold"), text_color="#38bdf8")
+        self.lbl_stat_ig.pack(side="left", padx=18, pady=8)
 
-        # ---------------- TOP NAVIGATION BAR ----------------
-        self.top_nav = ctk.CTkFrame(self, height=54, fg_color="#ffffff", corner_radius=0, border_width=1, border_color="#e2e8f0")
-        self.top_nav.grid(row=0, column=0, sticky="ew")
-        self.top_nav.grid_columnconfigure(3, weight=1)
+        self.lbl_stat_fb = ctk.CTkLabel(self.header_frame, text="👤 Nick FB Gốc: 0", font=("Arial", 13, "bold"), text_color="#a78bfa")
+        self.lbl_stat_fb.pack(side="left", padx=18, pady=8)
 
-        self.btn_tab_ttc = ctk.CTkButton(
-            self.top_nav,
-            text="🎯 KHU VỰC TƯƠNG TÁC CHÉO (TTC - 12 CHẾ ĐỘ PAGE)",
-            fg_color="#0284c7", hover_color="#0369a1", text_color="#ffffff",
-            font=ctk.CTkFont(size=12, weight="bold"), height=36, corner_radius=8,
-            command=lambda: self.switch_tab("pages")
-        )
-        self.btn_tab_ttc.grid(row=0, column=0, padx=10, pady=9, sticky="w")
+        self.lbl_stat_pages = ctk.CTkLabel(self.header_frame, text="🚩 Tổng Fanpage/Profile: 0", font=("Arial", 13, "bold"), text_color="#4ade80")
+        self.lbl_stat_pages.pack(side="left", padx=18, pady=8)
 
-        self.btn_tab_xsmm = ctk.CTkButton(
-            self.top_nav,
-            text="🌐 KHU VỰC XSMM.NET (IG RIÊNG BIỆT)",
-            fg_color="#f1f5f9", hover_color="#e2e8f0", text_color="#475569",
-            font=ctk.CTkFont(size=12, weight="bold"), height=36, corner_radius=8,
-            command=lambda: self.switch_tab("accounts")
-        )
-        self.btn_tab_xsmm.grid(row=0, column=1, padx=4, pady=9, sticky="w")
+        self.lbl_stat_ttc = ctk.CTkLabel(self.header_frame, text="🔥 Tài Khoản TTC: 0", font=("Arial", 13, "bold"), text_color="#fb923c")
+        self.lbl_stat_ttc.pack(side="left", padx=18, pady=8)
 
-        self.btn_tab_dash = ctk.CTkButton(
-            self.top_nav,
-            text="📊 NHẬT KÝ HOẠT ĐỘNG (LOGS)",
-            fg_color="#f1f5f9", hover_color="#e2e8f0", text_color="#475569",
-            font=ctk.CTkFont(size=12, weight="bold"), height=36, corner_radius=8,
-            command=lambda: self.switch_tab("dashboard")
-        )
-        self.btn_tab_dash.grid(row=0, column=2, padx=4, pady=9, sticky="w")
+        self.lbl_stat_running = ctk.CTkLabel(self.header_frame, text="⚡ Luồng Đang Chạy: 0", font=("Arial", 13, "bold"), text_color="#facc15")
+        self.lbl_stat_running.pack(side="right", padx=18, pady=8)
 
-        self.frame_top_proxy = ctk.CTkFrame(self.top_nav, fg_color="transparent")
-        self.frame_top_proxy.grid(row=0, column=3, padx=10, pady=9, sticky="e")
+        # Tabview chính tách biệt hoàn toàn XSMM và Tương Tác Chéo
+        self.tabview = ctk.CTkTabview(self, width=1420, height=800)
+        self.tabview.pack(fill="both", expand=True, padx=10, pady=5)
 
-        ctk.CTkLabel(self.frame_top_proxy, text="🌐 Proxy chung:", font=ctk.CTkFont(size=11, weight="bold"), text_color="#0f172a").pack(side="left", padx=(0, 6))
-        self.ent_global_proxy = ctk.CTkEntry(
-            self.frame_top_proxy,
-            placeholder_text="ip:port:user:pass (Để trống nếu chạy mạng trực tiếp)...",
-            width=260, height=34, font=ctk.CTkFont(family="Consolas", size=10),
-            fg_color="#f8fafc", border_color="#cbd5e1"
-        )
-        self.ent_global_proxy.pack(side="left", padx=(0, 6))
-        self.ent_global_proxy.bind("<KeyRelease>", lambda e: self._sync_proxy_cache_from_top_bar())
+        self.tab_ttc = self.tabview.add("🔥 Tương Tác Chéo (TTC FB)")
+        self.tab_fb_pages = self.tabview.add("🚩 Quản Lý Nick FB & Quét Page (XSMM/TTC)")
+        self.tab_accounts = self.tabview.add("📸 Quản Lý Instagram (XSMM)")
+        self.tab_dashboard = self.tabview.add("📊 Nhật Ký Hệ Thống (Logs)")
 
-        ctk.CTkButton(
-            self.frame_top_proxy, text="💾 Lưu Proxy", width=85, height=34,
-            fg_color="#059669", hover_color="#047857", font=ctk.CTkFont(size=11, weight="bold"),
-            corner_radius=6, command=self.apply_global_proxy_now
-        ).pack(side="left")
-
-        self.btn_config_chung = ctk.CTkButton(
-            self.top_nav, text="⚙️ Cấu hình Delay & Luồng",
-            fg_color="#0f172a", hover_color="#1e293b", text_color="#ffffff",
-            font=ctk.CTkFont(size=11, weight="bold"), height=36, corner_radius=8,
-            command=self.open_config_modal
-        )
-        self.btn_config_chung.grid(row=0, column=4, padx=(4, 14), pady=9, sticky="e")
-
-        # ---------------- MAIN CONTENT AREA ----------------
-        self.main_content = ctk.CTkFrame(self, fg_color="#f8fafc", corner_radius=0)
-        self.main_content.grid(row=1, column=0, sticky="nsew", padx=10, pady=8)
-        self.main_content.grid_columnconfigure(0, weight=1)
-        self.main_content.grid_rowconfigure(0, weight=1)
-
-        # Các biến cấu hình ẩn
-        self.ent_token = ctk.CTkEntry(self)
-        self.ent_delay_min = ctk.CTkEntry(self); self.ent_delay_min.insert(0, "8")
-        self.ent_delay_max = ctk.CTkEntry(self); self.ent_delay_max.insert(0, "12")
-        self.ent_delay_coin_min = ctk.CTkEntry(self); self.ent_delay_coin_min.insert(0, "3")
-        self.ent_delay_coin_max = ctk.CTkEntry(self); self.ent_delay_coin_max.insert(0, "5")
-        self.ent_threads = ctk.CTkEntry(self); self.ent_threads.insert(0, "5")
-
+        self.setup_tab_ttc()
         self.setup_tab_fb_pages()
         self.setup_tab_accounts()
         self.setup_tab_dashboard()
 
-        # ---------------- BOTTOM STATUS BAR ----------------
-        self.status_bar = ctk.CTkFrame(self, height=34, fg_color="#ffffff", corner_radius=0, border_width=1, border_color="#e2e8f0")
-        self.status_bar.grid(row=2, column=0, sticky="ew")
-        self.status_bar.grid_columnconfigure(2, weight=1)
-
-        self.lbl_footer_stats = ctk.CTkLabel(self.status_bar, text="Tổng Page TTC: 0 | Acc TTC: 0 | Đang chạy: 0", font=ctk.CTkFont(size=11, weight="bold"), text_color="#334155")
-        self.lbl_footer_stats.grid(row=0, column=0, padx=16, pady=5, sticky="w")
-
-        self.lbl_xsmm_balance = ctk.CTkLabel(self.status_bar, text="💰 TỔNG XU KIẾM ĐƯỢC TRONG PHIÊN: +0 XU", font=ctk.CTkFont(size=11, weight="bold"), text_color="#059669")
-        self.lbl_xsmm_balance.grid(row=0, column=1, padx=16, pady=5, sticky="w")
-
-        self.lbl_status_uptime = ctk.CTkLabel(self.status_bar, text="⏱️ UPTIME: 00:00:00 | Luồng chạy độc lập - Không bao giờ tự ngắt lệnh", font=ctk.CTkFont(size=10, weight="bold"), text_color="#64748b")
-        self.lbl_status_uptime.grid(row=0, column=2, padx=16, pady=5, sticky="e")
-
-        self.load_config()
-        self.sync_cache_from_ui()
-        self.load_ttc_accounts_from_db()
-        self.load_fb_pages_from_db()
-        self.load_accounts_from_db()
-        self.update_uptime_loop()
-        self._process_ui_queue_loop()
-        self.switch_tab("pages")
-
     # ==========================================================================
-    # HỆ THỐNG CẬP NHẬT UI & DB BẤT ĐỒNG BỘ
+    # TAB 1: TƯƠNG TÁC CHÉO FACEBOOK (12 CHẾ ĐỘ JOB + QUẢN LÝ TOKEN TTC + WORKER)
     # ==========================================================================
-    def _sync_proxy_cache_from_top_bar(self):
-        try:
-            self.cfg_cache["global_proxy"] = self.ent_global_proxy.get().strip()
-        except Exception:
-            pass
+    def setup_tab_ttc(self):
+        # --- Phần A: Quản lý danh sách Token TTC & Gắn cho Page ---
+        top_pane = ctk.CTkFrame(self.tab_ttc)
+        top_pane.pack(fill="x", padx=6, pady=4)
 
-    def sync_cache_from_ui(self):
-        try: d_min = max(1, int(self.ent_delay_min.get().strip()))
-        except Exception: d_min = 8
-        try: d_max = max(d_min, int(self.ent_delay_max.get().strip()))
-        except Exception: d_max = max(d_min, 12)
-        try: dc_min = max(1, int(self.ent_delay_coin_min.get().strip()))
-        except Exception: dc_min = 3
-        try: dc_max = max(dc_min, int(self.ent_delay_coin_max.get().strip()))
-        except Exception: dc_max = max(dc_min, 5)
-        try: th_cnt = max(1, min(50, int(self.ent_threads.get().strip())))
-        except Exception: th_cnt = 5
+        left_ttc = ctk.CTkFrame(top_pane)
+        left_ttc.pack(side="left", fill="both", expand=True, padx=4, pady=4)
 
-        old_th = self.cfg_cache.get("threads", 5)
-        if hasattr(self, "ent_xsmm_token_bar"):
-            self.cfg_cache["token"] = self.ent_xsmm_token_bar.get().strip()
-        else:
-            self.cfg_cache["token"] = self.ent_token.get().strip()
-        self.cfg_cache["global_proxy"] = self.ent_global_proxy.get().strip()
-        self.cfg_cache["delay_min"] = d_min
-        self.cfg_cache["delay_max"] = d_max
-        self.cfg_cache["delay_coin_min"] = dc_min
-        self.cfg_cache["delay_coin_max"] = dc_max
-        self.cfg_cache["threads"] = th_cnt
-        if th_cnt != old_th:
-            self.net_semaphore = threading.BoundedSemaphore(th_cnt)
+        ctk.CTkLabel(left_ttc, text="🔑 Token Tương Tác Chéo:", font=("Arial", 12, "bold")).grid(row=0, column=0, padx=5, pady=4, sticky="w")
+        self.ent_ttc_token = ctk.CTkEntry(left_ttc, width=260, placeholder_text="Dán Access Token TTC vào đây...")
+        self.ent_ttc_token.grid(row=0, column=1, padx=5, pady=4)
 
-    def _db_worker_loop(self):
-        conn = sqlite3.connect(DB_FILE, check_same_thread=False, timeout=30)
-        cursor = conn.cursor()
-        try:
-            cursor.execute("PRAGMA journal_mode=WAL;")
-            cursor.execute("PRAGMA synchronous=NORMAL;")
-        except Exception:
-            pass
-        while True:
-            try:
-                sql, params = self._db_queue.get()
-                cursor.execute(sql, params)
-                while not self._db_queue.empty():
-                    try:
-                        s2, p2 = self._db_queue.get_nowait()
-                        cursor.execute(s2, p2)
-                    except queue.Empty:
-                        break
-                conn.commit()
-            except Exception:
-                pass
+        ctk.CTkButton(left_ttc, text="➕ Thêm / Check Token TTC", width=165, fg_color="#16a34a", command=self.add_or_check_ttc_token).grid(row=0, column=2, padx=4, pady=4)
+        ctk.CTkButton(left_ttc, text="🗑️ Xóa Token TTC", width=120, fg_color="#dc2626", command=self.delete_selected_ttc_token).grid(row=0, column=3, padx=4, pady=4)
 
-    def queue_row_ui(self, row_type, key, status_text=None, status_color=None, coin_text=None, btn_text=None, btn_color=None, var_val=None, id_text=None, link_badge_text=None, link_badge_color=None):
-        row_dict = self.acc_rows if row_type == "account" else (self.page_rows if row_type == "page" else self.ttc_rows_ui)
-        if key in row_dict and status_text is not None:
-            row_dict[key]["status_text"] = status_text
+        # Bảng nhỏ hiển thị danh sách tài khoản TTC
+        cols_ttc_acc = ("ttc_user", "ttc_token", "coins", "status")
+        self.tree_ttc_accounts = ttk.Treeview(left_ttc, columns=cols_ttc_acc, show="headings", height=3)
+        for col, title, w in [
+            ("ttc_user", "User TTC", 130),
+            ("ttc_token", "Access Token TTC", 210),
+            ("coins", "Số Dư Xu", 100),
+            ("status", "Trạng Thái", 130)
+        ]:
+            self.tree_ttc_accounts.heading(col, text=title)
+            self.tree_ttc_accounts.column(col, width=w, anchor="center")
+        self.tree_ttc_accounts.grid(row=1, column=0, columnspan=4, sticky="nsew", padx=5, pady=4)
 
-        with self._ui_update_lock:
-            composite_key = (row_type, key)
-            cur = self._pending_ui_updates.get(composite_key, {})
-            if status_text is not None: cur["status_text"] = status_text
-            if status_color is not None: cur["status_color"] = status_color
-            if coin_text is not None: cur["coin_text"] = coin_text
-            if btn_text is not None: cur["btn_text"] = btn_text
-            if btn_color is not None: cur["btn_color"] = btn_color
-            if var_val is not None: cur["var_val"] = var_val
-            if id_text is not None: cur["id_text"] = id_text
-            if link_badge_text is not None: cur["link_badge_text"] = link_badge_text
-            if link_badge_color is not None: cur["link_badge_color"] = link_badge_color
-            self._pending_ui_updates[composite_key] = cur
+        # Khung phải: Gắn Token TTC & Thêm nhanh Nick/Page chạy TTC
+        right_ttc = ctk.CTkFrame(top_pane)
+        right_ttc.pack(side="left", fill="both", expand=True, padx=4, pady=4)
 
-    def _process_ui_queue_loop(self):
-        logs_batch = []
-        while not self._log_queue.empty():
-            try:
-                logs_batch.append(self._log_queue.get_nowait())
-            except queue.Empty:
-                break
+        ctk.CTkLabel(right_ttc, text="🔗 Chọn Token TTC gắn cho Page:", font=("Arial", 12, "bold")).grid(row=0, column=0, padx=5, pady=4, sticky="w")
+        self.cmb_assign_ttc = ctk.CTkComboBox(right_ttc, width=210, values=["-- Chưa có Token TTC --"])
+        self.cmb_assign_ttc.grid(row=0, column=1, padx=5, pady=4)
+        ctk.CTkButton(right_ttc, text="Gắn Cho Page Đã Chọn", fg_color="#d97706", width=155, command=self.assign_ttc_to_selected_pages).grid(row=0, column=2, padx=4, pady=4)
+        ctk.CTkButton(right_ttc, text="Gắn Cho Tất Cả Page", fg_color="#b45309", width=145, command=self.assign_ttc_to_all_pages).grid(row=0, column=3, padx=4, pady=4)
 
-        if logs_batch:
-            txt_joined = "".join(logs_batch)
-            for log_widget_name in ["txt_log", "txt_ttc_mini_log"]:
-                w = getattr(self, log_widget_name, None)
-                if w:
-                    try:
-                        w.insert("end", txt_joined)
-                        line_count = int(w.index("end-1c").split(".")[0])
-                        if line_count > 500:
-                            w.delete("1.0", f"{line_count - 400}.0")
-                        w.see("end")
-                    except Exception:
-                        pass
+        # Thêm nhanh 1 Nick/Page trực tiếp tại Tab TTC
+        ctk.CTkLabel(right_ttc, text="⚡ Thêm nhanh UID/Page:", font=("Arial", 12, "bold")).grid(row=1, column=0, padx=5, pady=4, sticky="w")
+        self.ent_quick_uid = ctk.CTkEntry(right_ttc, width=140, placeholder_text="UID / Page ID (Để trống tự tách)")
+        self.ent_quick_uid.grid(row=1, column=1, padx=5, pady=4, sticky="w")
+        self.ent_quick_name = ctk.CTkEntry(right_ttc, width=145, placeholder_text="Tên gợi nhớ...")
+        self.ent_quick_name.grid(row=1, column=2, padx=4, pady=4)
+        ctk.CTkButton(right_ttc, text="➕ Lưu Vào Bảng TTC", fg_color="#0284c7", width=145, command=self.quick_add_ttc_page).grid(row=1, column=3, padx=4, pady=4)
 
-        if self._balance_dirty:
-            self._balance_dirty = False
-            try:
-                self.lbl_xsmm_balance.configure(text=f"💰 TỔNG XU KIẾM ĐƯỢC TRONG PHIÊN: +{self.total_coins:,} XU")
-            except Exception:
-                pass
+        ctk.CTkLabel(right_ttc, text="🍪 Cookie FB (c_user, xs):").grid(row=2, column=0, padx=5, pady=4, sticky="w")
+        self.ent_quick_cookie = ctk.CTkEntry(right_ttc, width=310, placeholder_text="Dán Cookie Facebook cầm Nick/Page vào đây...")
+        self.ent_quick_cookie.grid(row=2, column=1, columnspan=2, padx=5, pady=4, sticky="we")
+        self.ent_quick_proxy = ctk.CTkEntry(right_ttc, width=145, placeholder_text="Proxy (ip:port:u:p)")
+        self.ent_quick_proxy.grid(row=2, column=3, padx=4, pady=4)
 
-        with self._ui_update_lock:
-            if self._pending_ui_updates:
-                updates_snapshot = self._pending_ui_updates.copy()
-                self._pending_ui_updates.clear()
-            else:
-                updates_snapshot = None
+        # --- Phần B: 12 Chế Độ Job TTC Facebook & Cấu Hình Delay ---
+        modes_frame = ctk.CTkFrame(self.tab_ttc)
+        modes_frame.pack(fill="x", padx=6, pady=4)
 
-        if updates_snapshot:
-            for (row_type, key), changes in updates_snapshot.items():
-                row_dict = self.acc_rows if row_type == "account" else (self.page_rows if row_type == "page" else self.ttc_rows_ui)
-                info = row_dict.get(key)
-                if not info:
-                    continue
-                try:
-                    if "status_text" in changes or "status_color" in changes:
-                        kw = {}
-                        if "status_text" in changes: kw["text"] = changes["status_text"]
-                        if "status_color" in changes: kw["text_color"] = changes["status_color"]
-                        info["status_label"].configure(**kw)
-                    if "coin_text" in changes and "coin_label" in info:
-                        info["coin_label"].configure(text=changes["coin_text"])
-                    if ("btn_text" in changes or "btn_color" in changes) and "action_btn" in info:
-                        kw_b = {}
-                        if "btn_text" in changes: kw_b["text"] = changes["btn_text"]
-                        if "btn_color" in changes: kw_b["fg_color"] = changes["btn_color"]
-                        info["action_btn"].configure(**kw_b)
-                    if "var_val" in changes and "var" in info:
-                        info["var"].set(changes["var_val"])
-                    if "id_text" in changes and "id_label" in info:
-                        info["id_label"].configure(text=changes["id_text"])
-                    if ("link_badge_text" in changes or "link_badge_color" in changes) and "link_badge" in info:
-                        kw_l = {}
-                        if "link_badge_text" in changes: kw_l["text"] = changes["link_badge_text"]
-                        if "link_badge_color" in changes: kw_l["text_color"] = changes["link_badge_color"]
-                        info["link_badge"].configure(**kw_l)
-                except Exception:
-                    pass
-
-        self.after(150, self._process_ui_queue_loop)
-
-    def smart_sleep(self, duration, thread_key):
-        end_time = time.time() + max(0.1, float(duration))
-        while time.time() < end_time:
-            if not self.single_running_threads.get(thread_key, False):
-                return False
-            time.sleep(min(0.25, max(0.05, end_time - time.time())))
-        return self.single_running_threads.get(thread_key, False)
-
-    def get_effective_proxy(self, account_proxy=""):
-        global_px = self.cfg_cache.get("global_proxy", "").strip()
-        return global_px if global_px else (account_proxy or "").strip()
-
-    def apply_global_proxy_now(self):
-        self.sync_cache_from_ui()
-        g_px = self.cfg_cache["global_proxy"]
-        self.save_config()
-        for info in self.acc_rows.values():
-            info["data"]["proxy"] = g_px
-        for info in self.page_rows.values():
-            info["data"]["proxy"] = g_px
-        self._db_queue.put(("UPDATE accounts SET proxy = ?", (g_px,)))
-        self._db_queue.put(("UPDATE fb_pages SET proxy = ?", (g_px,)))
-        self.log(f"🌐 Đã áp dụng Proxy chung: {g_px if g_px else 'Mạng trực tiếp (Direct)'}")
-
-    def get_delay_settings(self):
-        return (
-            self.cfg_cache.get("delay_min", 8),
-            self.cfg_cache.get("delay_max", 12),
-            self.cfg_cache.get("delay_coin_min", 3),
-            self.cfg_cache.get("delay_coin_max", 5)
+        ctk.CTkLabel(modes_frame, text="☑️ TÍCH CHỌN 12 CHẾ ĐỘ NHIỆM VỤ TTC FACEBOOK:", font=("Arial", 12, "bold"), text_color="#38bdf8").grid(
+            row=0, column=0, columnspan=2, padx=8, pady=4, sticky="w"
         )
+        ctk.CTkButton(modes_frame, text="Chọn Tất Cả", width=95, height=24, command=lambda: self.toggle_all_ttc_modes(True)).grid(row=0, column=2, padx=4, pady=4, sticky="w")
+        ctk.CTkButton(modes_frame, text="Bỏ Chọn Hết", width=95, height=24, fg_color="#475569", command=lambda: self.toggle_all_ttc_modes(False)).grid(row=0, column=3, padx=4, pady=4, sticky="w")
 
-    def switch_tab(self, tab_name):
-        for frame in [self.frame_page_tab, self.frame_acc_tab, self.frame_dash_tab]:
-            frame.grid_forget()
-        for btn in [self.btn_tab_ttc, self.btn_tab_xsmm, self.btn_tab_dash]:
-            btn.configure(fg_color="#f1f5f9", text_color="#475569")
+        ctk.CTkLabel(modes_frame, text="Delay Min-Max (giây):").grid(row=0, column=4, padx=4, pady=4, sticky="e")
+        delay_box = ctk.CTkFrame(modes_frame, fg_color="transparent")
+        delay_box.grid(row=0, column=5, padx=4, pady=4, sticky="w")
+        self.ent_ttc_delay_min = ctk.CTkEntry(delay_box, width=50)
+        self.ent_ttc_delay_min.insert(0, "6")
+        self.ent_ttc_delay_min.pack(side="left", padx=2)
+        ctk.CTkLabel(delay_box, text="-").pack(side="left")
+        self.ent_ttc_delay_max = ctk.CTkEntry(delay_box, width=50)
+        self.ent_ttc_delay_max.insert(0, "10")
+        self.ent_ttc_delay_max.pack(side="left", padx=2)
 
-        if tab_name == "pages":
-            self.frame_page_tab.grid(row=0, column=0, sticky="nsew")
-            self.btn_tab_ttc.configure(fg_color="#0284c7", text_color="#ffffff")
-        elif tab_name == "accounts":
-            self.frame_acc_tab.grid(row=0, column=0, sticky="nsew")
-            self.btn_tab_xsmm.configure(fg_color="#2563eb", text_color="#ffffff")
-        elif tab_name == "dashboard":
-            self.frame_dash_tab.grid(row=0, column=0, sticky="nsew")
-            self.btn_tab_dash.configure(fg_color="#0f172a", text_color="#ffffff")
+        mode_list = [
+            ("like_vip", "1. Like Post VIP"),
+            ("like_re", "2. Like Post Rẻ"),
+            ("camxuc_vip", "3. Cảm Xúc VIP"),
+            ("camxuc_re", "4. Cảm Xúc Rẻ"),
+            ("sub_vip", "5. Theo Dõi (Sub) VIP"),
+            ("sub_re", "6. Theo Dõi (Sub) Rẻ"),
+            ("cmt_vip", "7. Comment VIP"),
+            ("cmt_re", "8. Comment Rẻ"),
+            ("likepage_vip", "9. Like Fanpage VIP"),
+            ("likepage_re", "10. Like Fanpage Rẻ"),
+            ("share", "11. Chia Sẻ (Share)"),
+            ("camxuc_cmt", "12. Cảm Xúc Cmt")
+        ]
+        for idx, (m_key, m_label) in enumerate(mode_list):
+            default_checked = m_key in ("like_vip", "like_re", "camxuc_vip", "camxuc_re", "sub_vip", "likepage_vip")
+            var = ctk.BooleanVar(value=default_checked)
+            self.ttc_job_vars[m_key] = var
+            r = (idx // 6) + 1
+            c = idx % 6
+            cb = ctk.CTkCheckBox(modes_frame, text=m_label, variable=var, font=("Arial", 12))
+            cb.grid(row=r, column=c, padx=10, pady=4, sticky="w")
 
-    def open_config_modal(self):
-        modal = ctk.CTkToplevel(self)
-        modal.title("⚙️ Cấu hình Thời gian Delay & Số Luồng")
-        modal.geometry("520x420")
-        modal.grab_set()
-        modal.configure(fg_color="#ffffff")
+        # --- Phần C: Thanh công cụ Điều Khiển Chạy / Dừng / Kiểm Tra Cấu Hình ---
+        ctrl_bar = ctk.CTkFrame(self.tab_ttc)
+        ctrl_bar.pack(fill="x", padx=6, pady=4)
 
-        ctk.CTkLabel(modal, text="⏱️ CẤU HÌNH DELAY LÀM JOB & NHẬN XU (GIÂY)", font=ctk.CTkFont(size=12, weight="bold"), text_color="#0284c7").pack(anchor="w", padx=24, pady=(18, 8))
+        ctk.CTkButton(ctrl_bar, text="▶️ CHẠY PAGE ĐÃ CHỌN", fg_color="#16a34a", width=175, command=self.start_selected_ttc_pages).pack(side="left", padx=5, pady=5)
+        ctk.CTkButton(ctrl_bar, text="⏹️ DỪNG PAGE ĐÃ CHỌN", fg_color="#dc2626", width=175, command=self.stop_selected_ttc_pages).pack(side="left", padx=5, pady=5)
+        ctk.CTkButton(ctrl_bar, text="🚀 CHẠY TẤT CẢ PAGE TTC", fg_color="#2563eb", width=190, command=self.start_all_ttc_pages).pack(side="left", padx=5, pady=5)
+        ctk.CTkButton(ctrl_bar, text="🛑 DỪNG TẤT CẢ", fg_color="#7f1d1d", width=135, command=self.stop_all_ttc_pages).pack(side="left", padx=5, pady=5)
+        ctk.CTkButton(ctrl_bar, text="⚙️ Test Đặt Cấu Hình & Check fb_dtsg", fg_color="#7c3aed", width=230, command=self.test_datnick_selected_page).pack(side="left", padx=5, pady=5)
+        ctk.CTkButton(ctrl_bar, text="🗑️ Xóa Page Chọn", fg_color="#475569", width=130, command=self.delete_selected_ttc_pages).pack(side="right", padx=5, pady=5)
+        ctk.CTkButton(ctrl_bar, text="🔄 Làm Mới", width=105, command=self.refresh_all_tables).pack(side="right", padx=5, pady=5)
 
-        row_action_delay = ctk.CTkFrame(modal, fg_color="transparent")
-        row_action_delay.pack(fill="x", padx=24, pady=6)
-        row_action_delay.grid_columnconfigure((0, 1), weight=1)
+        # --- Phần D: Bảng Danh Sách Fanpage / Nick Chạy TTC ---
+        tbl_frame = ctk.CTkFrame(self.tab_ttc)
+        tbl_frame.pack(fill="both", expand=True, padx=6, pady=4)
 
-        fa1 = ctk.CTkFrame(row_action_delay, fg_color="transparent")
-        fa1.grid(row=0, column=0, padx=(0, 8), sticky="ew")
-        ctk.CTkLabel(fa1, text="Delay giữa 2 Job (Min - giây):", font=ctk.CTkFont(size=11, weight="bold")).pack(anchor="w")
-        ent_d_min = ctk.CTkEntry(fa1, height=34, fg_color="#f8fafc")
-        ent_d_min.pack(fill="x", pady=4); ent_d_min.insert(0, self.ent_delay_min.get())
+        cols_ttc_page = ("id", "parent", "page_id", "page_name", "assigned_ttc", "proxy", "coins", "max_jobs", "status")
+        self.tree_ttc_pages = ttk.Treeview(tbl_frame, columns=cols_ttc_page, show="headings", height=10, selectmode="extended")
+        col_specs = [
+            ("id", "ID", 45),
+            ("parent", "Nick Gốc", 110),
+            ("page_id", "UID / Page ID", 145),
+            ("page_name", "Tên Fanpage / Nick FB", 190),
+            ("assigned_ttc", "Tài Khoản TTC Gắn Kèm", 160),
+            ("proxy", "Proxy", 130),
+            ("coins", "Xu TTC", 100),
+            ("max_jobs", "Max Jobs", 75),
+            ("status", "Trạng Thái Hoạt Động Chi Tiết", 410)
+        ]
+        for col, text, w in col_specs:
+            self.tree_ttc_pages.heading(col, text=text)
+            self.tree_ttc_pages.column(col, width=w, anchor="w" if col in ("page_name", "status") else "center")
 
-        fa2 = ctk.CTkFrame(row_action_delay, fg_color="transparent")
-        fa2.grid(row=0, column=1, sticky="ew")
-        ctk.CTkLabel(fa2, text="Delay giữa 2 Job (Max - giây):", font=ctk.CTkFont(size=11, weight="bold")).pack(anchor="w")
-        ent_d_max = ctk.CTkEntry(fa2, height=34, fg_color="#f8fafc")
-        ent_d_max.pack(fill="x", pady=4); ent_d_max.insert(0, self.ent_delay_max.get())
+        self.tree_ttc_pages.pack(side="left", fill="both", expand=True)
+        sb_ttc = ttk.Scrollbar(tbl_frame, orient="vertical", command=self.tree_ttc_pages.yview)
+        self.tree_ttc_pages.configure(yscroll=sb_ttc.set)
+        sb_ttc.pack(side="right", fill="y")
 
-        row_coin_delay = ctk.CTkFrame(modal, fg_color="transparent")
-        row_coin_delay.pack(fill="x", padx=24, pady=6)
-        row_coin_delay.grid_columnconfigure((0, 1), weight=1)
-
-        fc1 = ctk.CTkFrame(row_coin_delay, fg_color="transparent")
-        fc1.grid(row=0, column=0, padx=(0, 8), sticky="ew")
-        ctk.CTkLabel(fc1, text="Delay chờ Nhận Xu (Min - giây):", font=ctk.CTkFont(size=11, weight="bold"), text_color="#059669").pack(anchor="w")
-        ent_dc_min = ctk.CTkEntry(fc1, height=34, fg_color="#f8fafc")
-        ent_dc_min.pack(fill="x", pady=4); ent_dc_min.insert(0, self.ent_delay_coin_min.get())
-
-        fc2 = ctk.CTkFrame(row_coin_delay, fg_color="transparent")
-        fc2.grid(row=0, column=1, sticky="ew")
-        ctk.CTkLabel(fc2, text="Delay chờ Nhận Xu (Max - giây):", font=ctk.CTkFont(size=11, weight="bold"), text_color="#059669").pack(anchor="w")
-        ent_dc_max = ctk.CTkEntry(fc2, height=34, fg_color="#f8fafc")
-        ent_dc_max.pack(fill="x", pady=4); ent_dc_max.insert(0, self.ent_delay_coin_max.get())
-
-        row_th = ctk.CTkFrame(modal, fg_color="transparent")
-        row_th.pack(fill="x", padx=24, pady=6)
-        ctk.CTkLabel(row_th, text="Số luồng chạy đồng thời tối đa (Threads):", font=ctk.CTkFont(size=11, weight="bold")).pack(anchor="w")
-        ent_th = ctk.CTkEntry(row_th, height=34, fg_color="#f8fafc")
-        ent_th.pack(fill="x", pady=4); ent_th.insert(0, self.ent_threads.get())
-
-        def save_modal():
-            self.ent_delay_min.delete(0, "end"); self.ent_delay_min.insert(0, ent_d_min.get().strip() or "8")
-            self.ent_delay_max.delete(0, "end"); self.ent_delay_max.insert(0, ent_d_max.get().strip() or "12")
-            self.ent_delay_coin_min.delete(0, "end"); self.ent_delay_coin_min.insert(0, ent_dc_min.get().strip() or "3")
-            self.ent_delay_coin_max.delete(0, "end"); self.ent_delay_coin_max.insert(0, ent_dc_max.get().strip() or "5")
-            self.ent_threads.delete(0, "end"); self.ent_threads.insert(0, ent_th.get().strip() or "5")
-            self.sync_cache_from_ui()
-            self.save_config()
-            modal.destroy()
-            self.log("⚙️ Đã lưu cấu hình Delay & Số luồng thành công!")
-
-        ctk.CTkButton(modal, text="💾 LƯU CẤU HÌNH", fg_color="#059669", hover_color="#047857", height=40, font=ctk.CTkFont(size=12, weight="bold"), command=save_modal).pack(fill="x", padx=24, pady=18)
+        # --- Phần E: Khung Nhật Ký Trực Tiếp Tại Tab TTC ---
+        log_box = ctk.CTkFrame(self.tab_ttc, height=135)
+        log_box.pack(fill="x", padx=6, pady=4)
+        self.txt_ttc_live_log = ctk.CTkTextbox(log_box, height=125, font=("Consolas", 12))
+        self.txt_ttc_live_log.pack(fill="both", expand=True, padx=4, pady=4)
 
     # ==========================================================================
-    # TAB 1: KHU VỰC TƯƠNG TÁC CHÉO (TTC - 12 CHẾ ĐỘ ĐỘC LẬP HOÀN TOÀN)
+    # TAB 2: QUẢN LÝ NICK FACEBOOK GỐC & QUÉT FANPAGE (HỖ TRỢ CẢ XSMM & TTC)
     # ==========================================================================
     def setup_tab_fb_pages(self):
-        self.frame_page_tab = ctk.CTkFrame(self.main_content, fg_color="#ffffff", corner_radius=10, border_width=1, border_color="#e2e8f0")
-        self.frame_page_tab.grid_rowconfigure(3, weight=1)
-        self.frame_page_tab.grid_columnconfigure(0, weight=1)
+        input_frame = ctk.CTkFrame(self.tab_fb_pages)
+        input_frame.pack(fill="x", padx=8, pady=6)
 
-        # --- KHUNG TRÊN CHIA 3 PANEL: [1. TÀI KHOẢN TTC] | [2. THÊM FB & QUÉT PAGE] | [3. 12 CHẾ ĐỘ JOB TTC] ---
-        top_split = ctk.CTkFrame(self.frame_page_tab, fg_color="transparent")
-        top_split.grid(row=0, column=0, sticky="ew", padx=10, pady=(8, 4))
-        top_split.grid_columnconfigure(0, weight=4)
-        top_split.grid_columnconfigure(1, weight=4)
-        top_split.grid_columnconfigure(2, weight=5)
+        ctk.CTkLabel(input_frame, text="🍪 Cookie FB Mẹ:", font=("Arial", 12, "bold")).grid(row=0, column=0, padx=6, pady=5, sticky="e")
+        self.ent_fb_cookie = ctk.CTkEntry(input_frame, width=380, placeholder_text="c_user=...; xs=...; (Dùng để làm job & quét Page không cần Token)")
+        self.ent_fb_cookie.grid(row=0, column=1, columnspan=2, padx=6, pady=5, sticky="we")
 
-        # ---------------- PANEL 1: DANH SÁCH ACC TTC & PAGE ĐÃ LIÊN KẾT ----------------
-        ttc_box = ctk.CTkFrame(top_split, fg_color="#f8fafc", corner_radius=8, border_width=1, border_color="#cbd5e1")
-        ttc_box.grid(row=0, column=0, sticky="nsew", padx=(0, 4))
-        ttc_box.grid_columnconfigure(0, weight=1)
+        ctk.CTkLabel(input_frame, text="🔑 Token EAAG/EAAB (Nếu có):").grid(row=0, column=3, padx=6, pady=5, sticky="e")
+        self.ent_fb_token = ctk.CTkEntry(input_frame, width=280, placeholder_text="EAAG... (Quét Page qua Graph API)")
+        self.ent_fb_token.grid(row=0, column=4, padx=6, pady=5, sticky="we")
 
-        head_ttc = ctk.CTkFrame(ttc_box, fg_color="transparent")
-        head_ttc.grid(row=0, column=0, sticky="ew", padx=8, pady=(6, 2))
-        head_ttc.grid_columnconfigure(0, weight=1)
-        ctk.CTkLabel(head_ttc, text="🎯 1. TÀI KHOẢN TTC & PAGE ĐÃ LIÊN KẾT", font=ctk.CTkFont(size=11, weight="bold"), text_color="#0f172a").grid(row=0, column=0, sticky="w")
-        ctk.CTkButton(head_ttc, text="🔄 Quét & Khớp Page từ Web TTC", width=175, height=24, fg_color="#0284c7", hover_color="#0369a1", font=ctk.CTkFont(size=10, weight="bold"), corner_radius=5, command=self.sync_all_ttc_linked_pages_from_web).grid(row=0, column=1, sticky="e")
+        ctk.CTkLabel(input_frame, text="🌐 Proxy:").grid(row=1, column=0, padx=6, pady=5, sticky="e")
+        self.ent_fb_proxy = ctk.CTkEntry(input_frame, width=200, placeholder_text="ip:port:user:pass")
+        self.ent_fb_proxy.grid(row=1, column=1, padx=6, pady=5, sticky="w")
 
-        ttc_input_row = ctk.CTkFrame(ttc_box, fg_color="transparent")
-        ttc_input_row.grid(row=1, column=0, sticky="ew", padx=8, pady=(2, 4))
-        ttc_input_row.grid_columnconfigure(0, weight=1)
+        ctk.CTkLabel(input_frame, text="🎯 Nền tảng mặc định khi quét:").grid(row=1, column=2, padx=6, pady=5, sticky="e")
+        self.cmb_scan_platform = ctk.CTkComboBox(input_frame, width=140, values=["TTC", "XSMM"])
+        self.cmb_scan_platform.set("TTC")
+        self.cmb_scan_platform.grid(row=1, column=3, padx=6, pady=5, sticky="w")
 
-        self.ent_ttc_token = ctk.CTkEntry(ttc_input_row, placeholder_text="Dán Access Token TươngTácChéo (Có thể dán nhiều token cách nhau dấu phẩy)...", height=30, font=ctk.CTkFont(family="Consolas", size=10), fg_color="#ffffff")
-        self.ent_ttc_token.grid(row=0, column=0, padx=(0, 4), sticky="ew")
-        ctk.CTkButton(ttc_input_row, text="➕ Thêm Acc TTC", width=105, height=30, fg_color="#059669", hover_color="#047857", font=ctk.CTkFont(size=10, weight="bold"), corner_radius=6, command=self.add_ttc_account_action).grid(row=0, column=1)
+        ctk.CTkLabel(input_frame, text="🔑 XSMM API Token (Nếu chạy XSMM):").grid(row=1, column=4, padx=6, pady=5, sticky="w")
+        self.ent_xsmm_page_api = ctk.CTkEntry(input_frame, width=220, placeholder_text="Nhập API Token xsmm.net...")
+        self.ent_xsmm_page_api.grid(row=1, column=5, padx=6, pady=5)
 
-        self.scroll_ttc_accs = ctk.CTkScrollableFrame(ttc_box, height=115, fg_color="#ffffff", corner_radius=6)
-        self.scroll_ttc_accs.grid(row=2, column=0, sticky="nsew", padx=8, pady=(0, 6))
-        self.scroll_ttc_accs.grid_columnconfigure(0, weight=1)
+        btn_row = ctk.CTkFrame(self.tab_fb_pages)
+        btn_row.pack(fill="x", padx=8, pady=4)
 
-        # ---------------- PANEL 2: NẠP FB MẸ (COOKIE / TOKEN) & QUÉT PAGE CON ----------------
-        fb_link_box = ctk.CTkFrame(top_split, fg_color="#f8fafc", corner_radius=8, border_width=1, border_color="#cbd5e1")
-        fb_link_box.grid(row=0, column=1, sticky="nsew", padx=4)
-        fb_link_box.grid_columnconfigure(0, weight=1)
+        ctk.CTkButton(btn_row, text="🔍 Lưu Nick FB & Tự Động Quét Toàn Bộ Fanpage (Cookie + GraphAPI)", fg_color="#2563eb", width=410, command=self.add_fb_and_scan_pages).pack(side="left", padx=6, pady=6)
+        ctk.CTkButton(btn_row, text="➕ Chỉ Thêm Chính Nick FB Này Làm Nick Chạy TTC", fg_color="#16a34a", width=310, command=self.add_main_fb_as_worker_page).pack(side="left", padx=6, pady=6)
+        ctk.CTkButton(btn_row, text="▶️ Chạy Page XSMM Đã Chọn", fg_color="#d97706", width=190, command=self.start_selected_xsmm_pages).pack(side="left", padx=6, pady=6)
+        ctk.CTkButton(btn_row, text="⏹️ Dừng Page XSMM", fg_color="#dc2626", width=150, command=self.stop_selected_xsmm_pages).pack(side="left", padx=6, pady=6)
 
-        ctk.CTkLabel(fb_link_box, text="📘 2. NẠP NICK FB MẸ (COOKIE / TOKEN) -> LẤY DÀN PAGE", font=ctk.CTkFont(size=11, weight="bold"), text_color="#0284c7").grid(row=0, column=0, sticky="w", padx=8, pady=(6, 2))
+        # Bảng 1: Danh sách Tài khoản Facebook gốc
+        ctk.CTkLabel(self.tab_fb_pages, text="📌 DANH SÁCH TÀI KHOẢN FACEBOOK GỐC:", font=("Arial", 12, "bold")).pack(anchor="w", padx=10, pady=(6, 2))
+        fb_acc_frame = ctk.CTkFrame(self.tab_fb_pages)
+        fb_acc_frame.pack(fill="x", padx=8, pady=4)
 
-        fb_row1 = ctk.CTkFrame(fb_link_box, fg_color="transparent")
-        fb_row1.grid(row=1, column=0, sticky="ew", padx=8, pady=2)
-        fb_row1.grid_columnconfigure(0, weight=1)
+        cols_fb = ("id", "fb_uid", "fb_name", "proxy", "status")
+        self.tree_fb_accounts = ttk.Treeview(fb_acc_frame, columns=cols_fb, show="headings", height=5)
+        for c, t, w in [
+            ("id", "ID", 50),
+            ("fb_uid", "UID Facebook Gốc", 200),
+            ("fb_name", "Tên Tài Khoản FB", 260),
+            ("proxy", "Proxy", 220),
+            ("status", "Trạng Thái", 350)
+        ]:
+            self.tree_fb_accounts.heading(c, text=t)
+            self.tree_fb_accounts.column(c, width=w, anchor="center")
+        self.tree_fb_accounts.pack(fill="x", expand=True)
 
-        self.txt_fb_cookies = ctk.CTkEntry(fb_row1, placeholder_text="🍪 Dán Cookie FB Mẹ (c_user=...; xs=...)...", height=30, font=ctk.CTkFont(family="Consolas", size=10), fg_color="#ffffff")
-        self.txt_fb_cookies.grid(row=0, column=0, padx=(0, 4), sticky="ew")
+        # Bảng 2: Tất cả Fanpage đã liên kết
+        ctk.CTkLabel(self.tab_fb_pages, text="🚩 TẤT CẢ FANPAGE / PROFILE ĐÃ QUÉT TRONG DATABASE:", font=("Arial", 12, "bold")).pack(anchor="w", padx=10, pady=(8, 2))
+        all_page_frame = ctk.CTkFrame(self.tab_fb_pages)
+        all_page_frame.pack(fill="both", expand=True, padx=8, pady=4)
 
-        self.max_jobs_fb_entry = ctk.CTkEntry(fb_row1, placeholder_text="Max Job", width=75, height=30, font=ctk.CTkFont(size=10), fg_color="#ffffff")
-        self.max_jobs_fb_entry.grid(row=0, column=1)
-        self.max_jobs_fb_entry.insert(0, "999999")
-
-        fb_row2 = ctk.CTkFrame(fb_link_box, fg_color="transparent")
-        fb_row2.grid(row=2, column=0, sticky="ew", padx=8, pady=2)
-        fb_row2.grid_columnconfigure(0, weight=1)
-
-        self.txt_fb_token = ctk.CTkEntry(fb_row2, placeholder_text="🔑 Token FB EAAG/EAAD (Tùy chọn)...", height=30, font=ctk.CTkFont(family="Consolas", size=10), fg_color="#ffffff")
-        self.txt_fb_token.grid(row=0, column=0, padx=(0, 4), sticky="ew")
-
-        ctk.CTkButton(fb_row2, text="🔍 Quét Page", width=95, height=30, fg_color="#0284c7", hover_color="#0369a1", font=ctk.CTkFont(size=10, weight="bold"), corner_radius=6, command=self.quick_link_fb_and_scan_pages).grid(row=0, column=1, padx=(0, 3))
-        ctk.CTkButton(fb_row2, text="📥 Nạp Nhiều FB", width=100, height=30, fg_color="#2563eb", hover_color="#1d4ed8", font=ctk.CTkFont(size=10, weight="bold"), corner_radius=6, command=self.scan_and_import_fb_pages).grid(row=0, column=2)
-
-        # Mini Log trực tiếp ngay trên màn hình TTC để theo dõi tức thì
-        ctk.CTkLabel(fb_link_box, text="⚡ Nhật ký chạy TTC trực tiếp:", font=ctk.CTkFont(size=10, weight="bold"), text_color="#475569").grid(row=3, column=0, sticky="w", padx=8, pady=(2, 0))
-        self.txt_ttc_mini_log = ctk.CTkTextbox(fb_link_box, height=62, font=ctk.CTkFont(family="Consolas", size=9), text_color="#065f46", fg_color="#ffffff", border_width=1, border_color="#cbd5e1", corner_radius=5)
-        self.txt_ttc_mini_log.grid(row=4, column=0, sticky="nsew", padx=8, pady=(2, 6))
-
-        # ---------------- PANEL 3: BẢNG TICK CHỌN 12 CHẾ ĐỘ LÀM JOB TTC ----------------
-        modes_box = ctk.CTkFrame(top_split, fg_color="#f8fafc", corner_radius=8, border_width=1, border_color="#cbd5e1")
-        modes_box.grid(row=0, column=2, sticky="nsew", padx=(4, 0))
-        modes_box.grid_columnconfigure((0, 1), weight=1)
-
-        head_modes = ctk.CTkFrame(modes_box, fg_color="transparent")
-        head_modes.grid(row=0, column=0, columnspan=2, sticky="ew", padx=8, pady=(6, 2))
-        head_modes.grid_columnconfigure(0, weight=1)
-        ctk.CTkLabel(head_modes, text="🔥 3. CHỌN 12 CHẾ ĐỘ LÀM JOB TƯƠNG TÁC CHÉO", font=ctk.CTkFont(size=11, weight="bold"), text_color="#b91c1c").grid(row=0, column=0, sticky="w")
-        ctk.CTkButton(head_modes, text="✓ Chọn hết 12", width=80, height=22, fg_color="#059669", font=ctk.CTkFont(size=9, weight="bold"), command=lambda: self.toggle_all_ttc_modes(True)).grid(row=0, column=1, padx=2)
-        ctk.CTkButton(head_modes, text="✗ Bỏ hết", width=60, height=22, fg_color="#d97706", font=ctk.CTkFont(size=9, weight="bold"), command=lambda: self.toggle_all_ttc_modes(False)).grid(row=0, column=2)
-
-        mode_keys = list(TTC_12_JOB_MODES.keys())
-        for idx, m_key in enumerate(mode_keys):
-            m_info = TTC_12_JOB_MODES[m_key]
-            r_idx = (idx // 2) + 1
-            c_idx = idx % 2
-            var_m = ctk.BooleanVar(value=True if idx in [0, 1, 2, 3, 6, 8] else False)
-            self.ttc_mode_vars[m_key] = var_m
-            chk_m = ctk.CTkCheckBox(
-                modes_box, text=m_info["name"], variable=var_m,
-                font=ctk.CTkFont(size=10, weight="bold"),
-                fg_color="#0284c7", hover_color="#0369a1", height=20, checkbox_width=16, checkbox_height=16,
-                command=self.save_config
-            )
-            chk_m.grid(row=r_idx, column=c_idx, sticky="w", padx=8, pady=2)
-
-        # --- THANH ĐIỀU KHIỂN CHẠY PAGE TTC ---
-        tool_tbl = ctk.CTkFrame(self.frame_page_tab, fg_color="#eff6ff", height=42, corner_radius=6, border_width=1, border_color="#bfdbfe")
-        tool_tbl.grid(row=1, column=0, sticky="ew", padx=10, pady=3)
-        tool_tbl.grid_columnconfigure(7, weight=1)
-
-        ctk.CTkButton(tool_tbl, text="✓ Tích Tất Cả Page", width=110, height=28, fg_color="#059669", hover_color="#047857", font=ctk.CTkFont(size=10, weight="bold"), corner_radius=6, command=lambda: self.toggle_all_pages(True)).grid(row=0, column=0, padx=(6, 2), pady=5)
-        ctk.CTkButton(tool_tbl, text="✗ Bỏ Tích", width=70, height=28, fg_color="#d97706", hover_color="#b45309", font=ctk.CTkFont(size=10, weight="bold"), corner_radius=6, command=lambda: self.toggle_all_pages(False)).grid(row=0, column=1, padx=2, pady=5)
-        ctk.CTkButton(tool_tbl, text="🗑️ Xóa Page Tích", width=105, height=28, fg_color="#dc2626", hover_color="#b91c1c", font=ctk.CTkFont(size=10, weight="bold"), corner_radius=6, command=self.delete_selected_pages).grid(row=0, column=2, padx=2, pady=5)
-        ctk.CTkButton(tool_tbl, text="🔄 Check Live Page", width=110, height=28, fg_color="#0284c7", hover_color="#0369a1", font=ctk.CTkFont(size=10, weight="bold"), corner_radius=6, command=self.check_selected_fb_live).grid(row=0, column=3, padx=2, pady=5)
-
-        ctk.CTkLabel(tool_tbl, text=" | Chọn Acc TTC gán nhanh:", font=ctk.CTkFont(size=10, weight="bold"), text_color="#1e3a8a").grid(row=0, column=4, padx=(6, 2))
-        self.opt_bulk_ttc = ctk.CTkOptionMenu(tool_tbl, values=["-- Chọn Acc TTC --"], width=145, height=28, fg_color="#0f172a", button_color="#1e293b", font=ctk.CTkFont(size=10, weight="bold"))
-        self.opt_bulk_ttc.grid(row=0, column=5, padx=2)
-        ctk.CTkButton(tool_tbl, text="📌 Gán vào Page đã tích", width=135, height=28, fg_color="#334155", hover_color="#1e293b", font=ctk.CTkFont(size=10, weight="bold"), corner_radius=6, command=self.assign_ttc_to_selected_pages_only).grid(row=0, column=6, padx=2)
-
-        # Nút BẮT ĐẦU CHẠY NGAY và DỪNG TẤT CẢ đặt ngay tại tab TTC
-        btn_right_frame = ctk.CTkFrame(tool_tbl, fg_color="transparent")
-        btn_right_frame.grid(row=0, column=7, sticky="e", padx=6)
-
-        ctk.CTkButton(
-            btn_right_frame, text="🚀 BẮT ĐẦU CHẠY CÁC PAGE ĐÃ TÍCH", width=220, height=30,
-            fg_color="#059669", hover_color="#047857", font=ctk.CTkFont(size=11, weight="bold"),
-            corner_radius=6, command=self.start_all_checked_ttc_pages
-        ).pack(side="left", padx=4)
-
-        ctk.CTkButton(
-            btn_right_frame, text="🛑 DỪNG TẤT CẢ", width=110, height=30,
-            fg_color="#dc2626", hover_color="#b91c1c", font=ctk.CTkFont(size=11, weight="bold"),
-            corner_radius=6, command=self.trigger_kill_switch
-        ).pack(side="left")
-
-        # --- HEADER BẢNG PHÂN CẤP FB MẸ -> PAGE CON ---
-        tbl_head = ctk.CTkFrame(self.frame_page_tab, fg_color="#f1f5f9", height=34, corner_radius=6)
-        tbl_head.grid(row=2, column=0, sticky="ew", padx=10, pady=(2, 4))
-        tbl_head.grid_columnconfigure(2, weight=1)
-
-        ctk.CTkLabel(tbl_head, text=" □", font=ctk.CTkFont(size=11, weight="bold"), text_color="#334155", width=32).grid(row=0, column=0, sticky="w", padx=6)
-        ctk.CTkLabel(tbl_head, text="STT", font=ctk.CTkFont(size=11, weight="bold"), text_color="#334155", width=36).grid(row=0, column=1, sticky="w")
-        ctk.CTkLabel(tbl_head, text="TÀI KHOẢN FB MẸ  ↳  TÊN FACEBOOK PAGE CON", font=ctk.CTkFont(size=11, weight="bold"), text_color="#334155").grid(row=0, column=2, sticky="w", padx=6)
-        ctk.CTkLabel(tbl_head, text="PAGE ID", font=ctk.CTkFont(size=11, weight="bold"), text_color="#334155", width=125, anchor="w").grid(row=0, column=3, sticky="w", padx=4)
-        ctk.CTkLabel(tbl_head, text="📌 PAGE ĐÃ LK TRÊN WEB / ĐANG CHỌN LÀM", font=ctk.CTkFont(size=11, weight="bold"), text_color="#b91c1c", width=230, anchor="w").grid(row=0, column=4, sticky="w", padx=4)
-        ctk.CTkLabel(tbl_head, text="ACC TTC CHẠY", font=ctk.CTkFont(size=11, weight="bold"), text_color="#0284c7", width=155, anchor="w").grid(row=0, column=5, sticky="w", padx=4)
-        ctk.CTkLabel(tbl_head, text="SỐ XU", font=ctk.CTkFont(size=11, weight="bold"), text_color="#059669", width=80, anchor="w").grid(row=0, column=6, sticky="w", padx=4)
-        ctk.CTkLabel(tbl_head, text="TRẠNG THÁI CHẠY JOB", font=ctk.CTkFont(size=11, weight="bold"), text_color="#334155", width=215, anchor="w").grid(row=0, column=7, sticky="w", padx=4)
-        ctk.CTkLabel(tbl_head, text="ACTION", font=ctk.CTkFont(size=11, weight="bold"), text_color="#334155", width=80, anchor="e").grid(row=0, column=8, sticky="e", padx=10)
-
-        self.scroll_pages = ctk.CTkScrollableFrame(self.frame_page_tab, fg_color="#f8fafc", corner_radius=8)
-        self.scroll_pages.grid(row=3, column=0, sticky="nsew", padx=10, pady=(0, 10))
-        self.scroll_pages.grid_columnconfigure(0, weight=1)
-
-    def toggle_all_ttc_modes(self, state_bool):
-        for v in self.ttc_mode_vars.values():
-            v.set(state_bool)
-        self.save_config()
-
-    def get_selected_ttc_modes(self):
-        return [m_key for m_key, var in self.ttc_mode_vars.items() if var.get()]
+        cols_all_p = ("id", "parent", "page_id", "page_name", "platform", "coins", "status")
+        self.tree_all_pages = ttk.Treeview(all_page_frame, columns=cols_all_p, show="headings", height=11)
+        for c, t, w in [
+            ("id", "ID", 50),
+            ("parent", "Nick FB Mẹ", 160),
+            ("page_id", "Page ID / UID", 180),
+            ("page_name", "Tên Fanpage", 250),
+            ("platform", "Nền Tảng", 100),
+            ("coins", "Xu Tích Lũy", 120),
+            ("status", "Trạng Thái", 420)
+        ]:
+            self.tree_all_pages.heading(c, text=t)
+            self.tree_all_pages.column(c, width=w, anchor="center")
+        self.tree_all_pages.pack(fill="both", expand=True)
 
     # ==========================================================================
-    # TAB 2: KHU VỰC XSMM.NET (IG ĐỘC LẬP HOÀN TOÀN VỚI TTC)
+    # TAB 3: QUẢN LÝ INSTAGRAM (CHẠY XSMM)
     # ==========================================================================
     def setup_tab_accounts(self):
-        self.frame_acc_tab = ctk.CTkFrame(self.main_content, fg_color="#ffffff", corner_radius=10, border_width=1, border_color="#e2e8f0")
-        self.frame_acc_tab.grid_rowconfigure(3, weight=1)
-        self.frame_acc_tab.grid_columnconfigure(0, weight=1)
+        top_ig = ctk.CTkFrame(self.tab_accounts)
+        top_ig.pack(fill="x", padx=8, pady=6)
 
-        # Thanh cấu hình riêng biệt của XSMM
-        xsmm_top_cfg = ctk.CTkFrame(self.frame_acc_tab, fg_color="#eff6ff", corner_radius=8, border_width=1, border_color="#bfdbfe")
-        xsmm_top_cfg.grid(row=0, column=0, sticky="ew", padx=12, pady=(10, 4))
-        xsmm_top_cfg.grid_columnconfigure(1, weight=1)
+        ctk.CTkLabel(top_ig, text="🔑 XSMM API Key:").grid(row=0, column=0, padx=6, pady=6, sticky="e")
+        self.ent_ig_xsmm_token = ctk.CTkEntry(top_ig, width=240, placeholder_text="Token xsmm.net...")
+        self.ent_ig_xsmm_token.grid(row=0, column=1, padx=6, pady=6)
 
-        ctk.CTkLabel(xsmm_top_cfg, text="🔑 XSMM Bearer Token:", font=ctk.CTkFont(size=11, weight="bold"), text_color="#1e3a8a").grid(row=0, column=0, padx=10, pady=8, sticky="w")
-        self.ent_xsmm_token_bar = ctk.CTkEntry(xsmm_top_cfg, placeholder_text="Nhập Bearer Token XSMM.NET riêng tại đây...", height=32, font=ctk.CTkFont(family="Consolas", size=10), fg_color="#ffffff")
-        self.ent_xsmm_token_bar.grid(row=0, column=1, padx=6, pady=8, sticky="ew")
+        ctk.CTkLabel(top_ig, text="🍪 Cookie Instagram:").grid(row=0, column=2, padx=6, pady=6, sticky="e")
+        self.ent_ig_cookie = ctk.CTkEntry(top_ig, width=320, placeholder_text="sessionid=...; csrftoken=...; ds_user_id=...")
+        self.ent_ig_cookie.grid(row=0, column=3, padx=6, pady=6)
 
-        self.chk_ig_like = ctk.CTkCheckBox(xsmm_top_cfg, text="IG Like", font=ctk.CTkFont(size=11, weight="bold"), fg_color="#2563eb", width=70)
-        self.chk_ig_like.grid(row=0, column=2, padx=6); self.chk_ig_like.select()
-        self.chk_ig_follow = ctk.CTkCheckBox(xsmm_top_cfg, text="IG Follow (Gom 3)", font=ctk.CTkFont(size=11, weight="bold"), fg_color="#2563eb", width=120)
-        self.chk_ig_follow.grid(row=0, column=3, padx=6); self.chk_ig_follow.select()
-        self.chk_ig_cmt = ctk.CTkCheckBox(xsmm_top_cfg, text="IG Comment", font=ctk.CTkFont(size=11, weight="bold"), fg_color="#2563eb", width=95)
-        self.chk_ig_cmt.grid(row=0, column=4, padx=6); self.chk_ig_cmt.select()
+        ctk.CTkLabel(top_ig, text="🌐 Proxy:").grid(row=0, column=4, padx=6, pady=6, sticky="e")
+        self.ent_ig_proxy = ctk.CTkEntry(top_ig, width=160, placeholder_text="ip:port:user:pass")
+        self.ent_ig_proxy.grid(row=0, column=5, padx=6, pady=6)
 
-        ctk.CTkButton(xsmm_top_cfg, text="💾 Lưu Token XSMM", width=125, height=32, fg_color="#2563eb", hover_color="#1d4ed8", font=ctk.CTkFont(size=10, weight="bold"), command=self.save_config).grid(row=0, column=5, padx=10, pady=8)
+        ctk.CTkLabel(top_ig, text="Max Jobs:").grid(row=0, column=6, padx=6, pady=6, sticky="e")
+        self.ent_ig_maxjobs = ctk.CTkEntry(top_ig, width=70)
+        self.ent_ig_maxjobs.insert(0, "100")
+        self.ent_ig_maxjobs.grid(row=0, column=7, padx=6, pady=6)
 
-        # Thanh thêm Cookie IG
-        top_bar = ctk.CTkFrame(self.frame_acc_tab, fg_color="#f8fafc", height=50, corner_radius=8, border_width=1, border_color="#e2e8f0")
-        top_bar.grid(row=1, column=0, sticky="ew", padx=12, pady=4)
-        top_bar.grid_columnconfigure(0, weight=1)
+        ig_btns = ctk.CTkFrame(self.tab_accounts)
+        ig_btns.pack(fill="x", padx=8, pady=4)
 
-        self.ent_quick_cookie = ctk.CTkEntry(top_bar, placeholder_text="Nhập Cookie Instagram (Dành riêng cho XSMM)...", height=34, font=ctk.CTkFont(family="Consolas", size=10), fg_color="#ffffff")
-        self.ent_quick_cookie.grid(row=0, column=0, padx=(10, 6), pady=8, sticky="ew")
+        ctk.CTkButton(ig_btns, text="➕ Thêm & Check Nick IG", fg_color="#16a34a", command=self.add_ig_account).pack(side="left", padx=5, pady=5)
+        ctk.CTkButton(ig_btns, text="📂 Import File Cookie IG", fg_color="#0284c7", command=self.import_ig_file).pack(side="left", padx=5, pady=5)
+        ctk.CTkButton(ig_btns, text="▶️ Chạy Nick IG Đã Chọn", fg_color="#2563eb", command=self.start_selected_ig).pack(side="left", padx=5, pady=5)
+        ctk.CTkButton(ig_btns, text="⏹️ Dừng Nick IG Đã Chọn", fg_color="#dc2626", command=self.stop_selected_ig).pack(side="left", padx=5, pady=5)
+        ctk.CTkButton(ig_btns, text="🗑️ Xóa Nick IG", fg_color="#475569", command=self.delete_selected_ig).pack(side="right", padx=5, pady=5)
 
-        self.max_jobs_entry = ctk.CTkEntry(top_bar, placeholder_text="Max Job", width=100, height=34, font=ctk.CTkFont(size=10), fg_color="#ffffff")
-        self.max_jobs_entry.grid(row=0, column=1, padx=4, pady=8); self.max_jobs_entry.insert(0, "999999")
+        ig_tbl_frame = ctk.CTkFrame(self.tab_accounts)
+        ig_tbl_frame.pack(fill="both", expand=True, padx=8, pady=6)
 
-        ctk.CTkButton(top_bar, text="➕ Thêm Acc IG", width=110, height=34, fg_color="#059669", hover_color="#047857", font=ctk.CTkFont(size=11, weight="bold"), command=self.quick_add_single_account).grid(row=0, column=2, padx=4)
-        ctk.CTkButton(top_bar, text="📥 Batch Import IG", width=130, height=34, fg_color="#2563eb", hover_color="#1d4ed8", font=ctk.CTkFont(size=11, weight="bold"), command=self.batch_import_accounts).grid(row=0, column=3, padx=4)
-        ctk.CTkButton(top_bar, text="🚀 Chạy Tất Cả IG Đã Chọn", width=175, height=34, fg_color="#0f172a", hover_color="#1e293b", font=ctk.CTkFont(size=11, weight="bold"), command=self.start_all_checked_xsmm_ig).grid(row=0, column=4, padx=(4, 10))
-
-        # Header bảng IG
-        tbl_head = ctk.CTkFrame(self.frame_acc_tab, fg_color="#f1f5f9", height=34, corner_radius=6)
-        tbl_head.grid(row=2, column=0, sticky="ew", padx=12, pady=4)
-        tbl_head.grid_columnconfigure(3, weight=1)
-        tbl_head.grid_columnconfigure(4, weight=1)
-
-        ctk.CTkLabel(tbl_head, text=" □", font=ctk.CTkFont(size=11, weight="bold"), width=35).grid(row=0, column=0, sticky="w", padx=6)
-        ctk.CTkLabel(tbl_head, text="STT", font=ctk.CTkFont(size=11, weight="bold"), width=45).grid(row=0, column=1, sticky="w")
-        ctk.CTkLabel(tbl_head, text="NỀN TẢNG", font=ctk.CTkFont(size=11, weight="bold"), width=80).grid(row=0, column=2, sticky="w")
-        ctk.CTkLabel(tbl_head, text="IG UID", font=ctk.CTkFont(size=11, weight="bold")).grid(row=0, column=3, sticky="w", padx=6)
-        ctk.CTkLabel(tbl_head, text="USERNAME IG", font=ctk.CTkFont(size=11, weight="bold")).grid(row=0, column=4, sticky="w", padx=6)
-        ctk.CTkLabel(tbl_head, text="SỐ XU XSMM", font=ctk.CTkFont(size=11, weight="bold"), text_color="#059669", width=100, anchor="w").grid(row=0, column=5, sticky="w", padx=6)
-        ctk.CTkLabel(tbl_head, text="TRẠNG THÁI", font=ctk.CTkFont(size=11, weight="bold"), width=240, anchor="w").grid(row=0, column=6, sticky="w", padx=6)
-        ctk.CTkLabel(tbl_head, text="ACTION", font=ctk.CTkFont(size=11, weight="bold"), width=90, anchor="e").grid(row=0, column=7, sticky="e", padx=12)
-
-        self.scroll_accs = ctk.CTkScrollableFrame(self.frame_acc_tab, fg_color="#f8fafc", corner_radius=8)
-        self.scroll_accs.grid(row=3, column=0, sticky="nsew", padx=12, pady=(0, 10))
-        self.scroll_accs.grid_columnconfigure(0, weight=1)
+        cols_ig = ("id", "username", "proxy", "coins", "max_jobs", "status")
+        self.tree_ig = ttk.Treeview(ig_tbl_frame, columns=cols_ig, show="headings", height=18)
+        for c, t, w in [
+            ("id", "ID", 50),
+            ("username", "Username Instagram", 200),
+            ("proxy", "Proxy", 200),
+            ("coins", "Coins Đã Kiếm", 130),
+            ("max_jobs", "Max Jobs", 100),
+            ("status", "Trạng Thái Hoạt Động", 520)
+        ]:
+            self.tree_ig.heading(c, text=t)
+            self.tree_ig.column(c, width=w, anchor="center")
+        self.tree_ig.pack(fill="both", expand=True)
 
     # ==========================================================================
-    # TAB 3: DASHBOARD & LOGS
+    # TAB 4: DASHBOARD & NHẬT KÝ HỆ THỐNG (LOGS)
     # ==========================================================================
     def setup_tab_dashboard(self):
-        self.frame_dash_tab = ctk.CTkFrame(self.main_content, fg_color="#ffffff", corner_radius=10, border_width=1, border_color="#e2e8f0")
-        self.frame_dash_tab.grid_rowconfigure(1, weight=1)
-        self.frame_dash_tab.grid_columnconfigure(0, weight=1)
+        top_dash = ctk.CTkFrame(self.tab_dashboard)
+        top_dash.pack(fill="x", padx=8, pady=6)
 
-        top_control = ctk.CTkFrame(self.frame_dash_tab, fg_color="#f8fafc", height=56, corner_radius=8, border_width=1, border_color="#e2e8f0")
-        top_control.grid(row=0, column=0, sticky="ew", padx=12, pady=10)
-        top_control.grid_columnconfigure(2, weight=1)
+        ctk.CTkLabel(top_dash, text="📜 NHẬT KÝ HOẠT ĐỘNG CHI TIẾT TOÀN HỆ THỐNG", font=("Arial", 14, "bold")).pack(side="left", padx=10, pady=6)
+        ctk.CTkButton(top_dash, text="🧹 Xóa Sạch Nhật Ký", fg_color="#dc2626", width=160, command=self.clear_all_logs).pack(side="right", padx=10, pady=6)
+        ctk.CTkButton(top_dash, text="🔄 Tải Lại Nhật Ký DB", width=160, command=self.load_db_logs_to_view).pack(side="right", padx=10, pady=6)
 
-        self.btn_toggle = ctk.CTkButton(top_control, text="🚀 CHẠY TẤT CẢ PAGE TTC ĐÃ TÍCH", fg_color="#059669", hover_color="#047857", font=ctk.CTkFont(size=12, weight="bold"), height=38, width=250, command=self.start_all_checked_ttc_pages)
-        self.btn_toggle.grid(row=0, column=0, padx=10, pady=8, sticky="w")
-
-        ctk.CTkButton(top_control, text="📥 Xuất File Log", fg_color="#e2e8f0", text_color="#0f172a", font=ctk.CTkFont(size=11, weight="bold"), height=38, width=130, command=self.export_logs).grid(row=0, column=1, padx=6, pady=8, sticky="w")
-
-        self.lbl_status_conn = ctk.CTkLabel(top_control, text="● SYSTEM READY", font=ctk.CTkFont(size=11, weight="bold"), text_color="#059669")
-        self.lbl_status_conn.grid(row=0, column=2, padx=16, pady=8, sticky="e")
-
-        self.txt_log = ctk.CTkTextbox(self.frame_dash_tab, font=ctk.CTkFont(family="Consolas", size=11), text_color="#065f46", fg_color="#ffffff", border_width=1, border_color="#e2e8f0", corner_radius=8)
-        self.txt_log.grid(row=1, column=0, sticky="nsew", padx=12, pady=(0, 12))
+        self.txt_system_log = ctk.CTkTextbox(self.tab_dashboard, font=("Consolas", 12))
+        self.txt_system_log.pack(fill="both", expand=True, padx=8, pady=6)
 
     # ==========================================================================
-    # LƯU / TẢI CẤU HÌNH & THỐNG KÊ
+    # ĐỒNG BỘ GIAO DIỆN & HÀNG ĐỢI UI THREAD-SAFE
     # ==========================================================================
-    def load_config(self):
-        if os.path.exists(CONFIG_FILE):
-            try:
-                with open(CONFIG_FILE, "r", encoding="utf-8") as f:
-                    data = json.load(f)
-                if "token" in data:
-                    dec_t = decrypt_local_data(data["token"])
-                    self.ent_token.delete(0, "end"); self.ent_token.insert(0, dec_t)
-                    if hasattr(self, "ent_xsmm_token_bar"):
-                        self.ent_xsmm_token_bar.delete(0, "end"); self.ent_xsmm_token_bar.insert(0, dec_t)
-                if "global_proxy" in data:
-                    self.ent_global_proxy.delete(0, "end"); self.ent_global_proxy.insert(0, str(data["global_proxy"]))
-                if "delay_min" in data:
-                    self.ent_delay_min.delete(0, "end"); self.ent_delay_min.insert(0, str(data["delay_min"]))
-                if "delay_max" in data:
-                    self.ent_delay_max.delete(0, "end"); self.ent_delay_max.insert(0, str(data["delay_max"]))
-                if "delay_coin_min" in data:
-                    self.ent_delay_coin_min.delete(0, "end"); self.ent_delay_coin_min.insert(0, str(data["delay_coin_min"]))
-                if "delay_coin_max" in data:
-                    self.ent_delay_coin_max.delete(0, "end"); self.ent_delay_coin_max.insert(0, str(data["delay_coin_max"]))
-                if "threads" in data:
-                    self.ent_threads.delete(0, "end"); self.ent_threads.insert(0, str(data["threads"]))
-                if "ttc_modes" in data and isinstance(data["ttc_modes"], dict):
-                    for m_key, b_val in data["ttc_modes"].items():
-                        if m_key in self.ttc_mode_vars:
-                            self.ttc_mode_vars[m_key].set(bool(b_val))
-            except Exception:
-                pass
+    def emit_log(self, actor_name, action_text, status_text="OK"):
+        now_str = datetime.now().strftime("%H:%M:%S")
+        line = f"[{now_str}] [{actor_name}] {action_text} -> {status_text}\n"
+        self.ui_queue.put(("live_log", line))
+        log_to_db(actor_name, action_text, status_text)
 
-    def save_config(self):
+    def update_ttc_page_ui(self, page_id, status_text=None, coins=None):
+        self.ui_queue.put(("ttc_page_row", (str(page_id), status_text, coins)))
+
+    def update_ig_ui(self, username, status_text=None, coins=None):
+        self.ui_queue.put(("ig_row", (str(username), status_text, coins)))
+
+    def process_ui_queue(self):
         try:
-            self.sync_cache_from_ui()
-            d_min, d_max, dc_min, dc_max = self.get_delay_settings()
-            ttc_modes_dict = {k: bool(v.get()) for k, v in self.ttc_mode_vars.items()}
-            data = {
-                "token": encrypt_local_data(self.cfg_cache["token"]),
-                "global_proxy": self.cfg_cache["global_proxy"],
-                "delay_min": d_min,
-                "delay_max": d_max,
-                "delay_coin_min": dc_min,
-                "delay_coin_max": dc_max,
-                "threads": str(self.cfg_cache["threads"]),
-                "ttc_modes": ttc_modes_dict
-            }
-            with open(CONFIG_FILE, "w", encoding="utf-8") as f:
-                json.dump(data, f, ensure_ascii=False, indent=4)
-        except Exception:
-            pass
-
-    def log(self, message, level="info"):
-        timestamp = datetime.now().strftime('%H:%M:%S')
-        self._log_queue.put(f"[{timestamp}] {message}\n")
-
-    def update_stats(self, coins=0, jobs=0, entity_type="page", entity_key="", ttc_user=""):
-        with self.lock:
-            if coins:
-                self.total_coins += coins
-                self._balance_dirty = True
-                if entity_type == "account" and entity_key in self.acc_rows:
-                    self.acc_rows[entity_key]["coins"] += coins
-                    c_val = self.acc_rows[entity_key]["coins"]
-                    self.queue_row_ui("account", entity_key, coin_text=f"+{c_val:,} xu")
-                    self._db_queue.put(("UPDATE accounts SET coins = ? WHERE username = ?", (c_val, entity_key)))
-                elif entity_type == "page" and entity_key in self.page_rows:
-                    self.page_rows[entity_key]["coins"] += coins
-                    c_val = self.page_rows[entity_key]["coins"]
-                    self.queue_row_ui("page", entity_key, coin_text=f"+{c_val:,} xu")
-                    self._db_queue.put(("UPDATE fb_pages SET coins = ? WHERE page_id = ?", (c_val, entity_key)))
-                if ttc_user and ttc_user in self.ttc_accounts:
-                    self.ttc_accounts[ttc_user]["coins"] += coins
-                    new_ttc_c = self.ttc_accounts[ttc_user]["coins"]
-                    self.queue_row_ui("ttc", ttc_user, coin_text=f"💰 {new_ttc_c:,} xu")
-                    self._db_queue.put(("UPDATE ttc_accounts SET coins = ? WHERE ttc_user = ?", (new_ttc_c, ttc_user)))
-            if jobs:
-                self.success_jobs += jobs
-
-    def update_uptime_loop(self):
-        if self.start_time:
-            elapsed = int(time.time() - self.start_time)
-            self.lbl_status_uptime.configure(text=f"⏱️ UPTIME: {timedelta(seconds=elapsed)} | Job thành công: {self.success_jobs}")
-        running_cnt = sum(1 for v in self.single_running_threads.values() if v)
-        self.lbl_footer_stats.configure(
-            text=f"Tổng Page FB: {len(self.page_rows)} | Acc TTC: {len(self.ttc_accounts)} | Acc IG (XSMM): {len(self.acc_rows)} | Luồng đang chạy: {running_cnt}"
-        )
-        self.after(1000, self.update_uptime_loop)
-
-    def export_logs(self):
-        file_path = filedialog.asksaveasfilename(defaultextension=".txt", filetypes=[("Text Files", "*.txt")])
-        if file_path:
-            with open(file_path, "w", encoding="utf-8") as f:
-                f.write(self.txt_log.get("0.0", "end"))
-            self.log("💾 Đã xuất file nhật ký thành công!")
-
-    def trigger_kill_switch(self):
-        self.is_running = False
-        for k in list(self.single_running_threads.keys()):
-            self.single_running_threads[k] = False
-        for u in self.acc_rows.keys():
-            self.queue_row_ui("account", u, status_text="Đã dừng theo lệnh", status_color="#d97706", btn_text="Bắt đầu", btn_color="#2563eb")
-        for p in self.page_rows.keys():
-            self.queue_row_ui("page", p, status_text="Đã dừng theo lệnh", status_color="#d97706", btn_text="Bắt đầu", btn_color="#0284c7")
-        self.log("🛑 Đã dừng toàn bộ các luồng theo yêu cầu của bạn.")
-
-    # ==========================================================================
-    # QUẢN LÝ TÀI KHOẢN TTC & TỰ ĐỘNG HIỂN THỊ PAGE ĐÃ LIÊN KẾT TRÊN WEB
-    # ==========================================================================
-    def get_ttc_dropdown_values(self):
-        vals = [f"TTC: {u}" for u in self.ttc_accounts.keys()]
-        return vals if vals else ["-- Chưa thêm Acc TTC --"]
-
-    def refresh_all_ttc_dropdowns(self):
-        vals = self.get_ttc_dropdown_values()
-        if hasattr(self, "opt_bulk_ttc"):
-            self.opt_bulk_ttc.configure(values=vals)
-            self.opt_bulk_ttc.set(vals[0])
-
-        for pid, info in self.page_rows.items():
-            if "ttc_menu" in info:
-                info["ttc_menu"].configure(values=vals)
-                curr_v = info["ttc_var"].get()
-                if (curr_v not in vals or curr_v.startswith("--")) and vals:
-                    info["ttc_var"].set(vals[0])
-                    info["data"]["assigned_ttc"] = vals[0]
-
-    def format_ttc_linked_summary(self, ttc_user):
-        """Tạo chuỗi hiển thị rõ Acc TTC này đã liên kết những Page nào và đang chọn Page nào"""
-        info = self.ttc_accounts.get(ttc_user, {})
-        active_pid = str(info.get("active_page_id") or "").strip()
-        cfg_map = info.get("configured_pages_map") or {}
-
-        # Đối chiếu với tên Page thực tế trong bảng Page của phần mềm
-        matched_names = []
-        for pid_k, web_name in cfg_map.items():
-            if pid_k in self.page_rows:
-                real_n = self.page_rows[pid_k]["data"].get("page_name", web_name)
-                matched_names.append(f"{real_n} ({pid_k[-5:]})")
-            else:
-                matched_names.append(f"{web_name} ({pid_k[-5:]})")
-
-        if active_pid:
-            act_name = self.page_rows[active_pid]["data"]["page_name"] if active_pid in self.page_rows else cfg_map.get(active_pid, active_pid)
-            return f"🔥 Đang chọn: {act_name} ({active_pid}) | Đã LK: {len(cfg_map)} Page"
-        if matched_names:
-            return f"📌 Đã LK Web ({len(matched_names)}): " + ", ".join(matched_names[:2])
-        return "📌 Chưa quét thấy Page LK (Bấm 🔄 Quét)"
-
-    def update_page_link_badges_from_ttc(self):
-        """
-        Quét toàn bộ các Page trên bảng và tự động:
-        1. Hiển thị rõ ở cột '📌 PAGE ĐÃ LK TRÊN WEB / ĐANG CHỌN LÀM' xem Page đó thuộc Acc TTC nào.
-        2. Tự động chọn sẵn đúng Acc TTC đó trong cột Dropdown để bạn không bao giờ bị nhầm!
-        """
-        for pid, p_info in self.page_rows.items():
-            linked_ttc_users = []
-            active_on_ttc_user = ""
-            for t_user, t_data in self.ttc_accounts.items():
-                cfg_map = t_data.get("configured_pages_map") or {}
-                if str(pid) in cfg_map:
-                    linked_ttc_users.append(t_user)
-                if str(t_data.get("active_page_id", "")) == str(pid):
-                    active_on_ttc_user = t_user
-
-            if active_on_ttc_user:
-                badge_txt = f"🔥 ĐANG CHỌN LÀM ({active_on_ttc_user})"
-                badge_col = "#059669"
-                target_opt = f"TTC: {active_on_ttc_user}"
-                p_info["ttc_var"].set(target_opt)
-                p_info["data"]["assigned_ttc"] = target_opt
-                self._db_queue.put(("UPDATE fb_pages SET assigned_ttc = ? WHERE page_id = ?", (target_opt, pid)))
-            elif linked_ttc_users:
-                first_u = linked_ttc_users[0]
-                badge_txt = f"✅ Đã LK Web TTC: {', '.join(linked_ttc_users)}"
-                badge_col = "#0284c7"
-                target_opt = f"TTC: {first_u}"
-                p_info["ttc_var"].set(target_opt)
-                p_info["data"]["assigned_ttc"] = target_opt
-                self._db_queue.put(("UPDATE fb_pages SET assigned_ttc = ? WHERE page_id = ?", (target_opt, pid)))
-            else:
-                curr_assigned = p_info["ttc_var"].get()
-                if curr_assigned and curr_assigned.startswith("TTC:"):
-                    badge_txt = f"📌 Gán tay -> {curr_assigned}"
-                    badge_col = "#475569"
-                else:
-                    badge_txt = "⚪ Chưa rõ Acc TTC liên kết"
-                    badge_col = "#94a3b8"
-
-            self.queue_row_ui("page", pid, link_badge_text=badge_txt, link_badge_color=badge_col)
-
-        # Cập nhật lại dòng trạng thái của từng Acc TTC
-        for t_user in self.ttc_accounts.keys():
-            summary_txt = self.format_ttc_linked_summary(t_user)
-            self.queue_row_ui("ttc", t_user, status_text=summary_txt, status_color="#0284c7")
-
-    def load_ttc_accounts_from_db(self):
-        if not os.path.exists(DB_FILE):
-            return
-        try:
-            conn = sqlite3.connect(DB_FILE)
-            cursor = conn.cursor()
-            cursor.execute("SELECT ttc_user, ttc_token, coins, status, active_page_id, configured_pages FROM ttc_accounts")
-            rows = cursor.fetchall()
-            conn.close()
-            for t_user, t_tok, coins, st, act_pid, cfg_json in rows:
-                try:
-                    cfg_map = json.loads(cfg_json) if cfg_json else {}
-                except Exception:
-                    cfg_map = {}
-                self.ttc_accounts[t_user] = {
-                    "ttc_user": t_user,
-                    "ttc_token": t_tok,
-                    "coins": coins or 0,
-                    "status": st or "Sẵn sàng",
-                    "active_page_id": act_pid or "",
-                    "configured_pages_map": cfg_map
-                }
-                self.ttc_account_locks[t_user] = threading.Lock()
-                self.add_ttc_row_to_ui(self.ttc_accounts[t_user])
-            self.refresh_all_ttc_dropdowns()
-        except Exception:
-            pass
-
-    def add_ttc_account_action(self):
-        raw_input = self.ent_ttc_token.get().strip()
-        if not raw_input:
-            self.log("⚠️ Vui lòng nhập Access Token Tương Tác Chéo!")
-            return
-
-        tokens_list = [t.strip() for t in re.split(r'[,\n;|]+', raw_input) if t.strip()]
-
-        def _do_login_ttc():
-            for ttc_tok in tokens_list:
-                self.log("🔄 Đang đăng nhập Token TTC & quét danh sách Page đã cấu hình trên web...")
-                ttc_client = TuongTacCheoTool(ttc_tok, proxy=self.get_effective_proxy(""))
-                ok, uname, sodu, msg = ttc_client.login()
-                if ok and uname:
-                    self.ttc_clients_cache[uname] = ttc_client
-                    act_pid = ttc_client.current_configured_uid
-                    cfg_map = ttc_client.configured_pages_map
-
-                    self.ttc_accounts[uname] = {
-                        "ttc_user": uname,
-                        "ttc_token": ttc_tok,
-                        "coins": sodu,
-                        "status": f"Đã LK {len(cfg_map)} Page",
-                        "active_page_id": act_pid,
-                        "configured_pages_map": cfg_map
-                    }
-                    if uname not in self.ttc_account_locks:
-                        self.ttc_account_locks[uname] = threading.Lock()
-
-                    self._db_queue.put((
-                        "INSERT OR REPLACE INTO ttc_accounts (ttc_user, ttc_token, coins, status, active_page_id, configured_pages) VALUES (?, ?, ?, ?, ?, ?)",
-                        (uname, ttc_tok, sodu, self.ttc_accounts[uname]["status"], act_pid, json.dumps(cfg_map, ensure_ascii=False))
-                    ))
-                    self.after(0, lambda u=uname: self.add_ttc_row_to_ui(self.ttc_accounts[u]))
-                    self.log(f"✅ Đã thêm Acc TTC [{uname}] | Số dư: {sodu:,} xu | Tìm thấy {len(cfg_map)} Page đã cấu hình trên Web!")
-                else:
-                    ttc_client.close()
-                    self.log(f"❌ Đăng nhập TTC thất bại: {msg}")
-
-            self.after(0, lambda: self.ent_ttc_token.delete(0, "end"))
-            self.after(0, self.refresh_all_ttc_dropdowns)
-            self.after(0, self.update_page_link_badges_from_ttc)
-
-        threading.Thread(target=_do_login_ttc, daemon=True).start()
-
-    def sync_all_ttc_linked_pages_from_web(self):
-        """Quét lại toàn bộ các Acc TTC để lấy danh sách Page đã liên kết trên Web và tự khớp với bảng Page"""
-        if not self.ttc_accounts:
-            self.log("⚠️ Chưa có tài khoản TTC nào trong danh sách!")
-            return
-
-        def _do_sync():
-            self.log(f"🔄 Đang quét cấu hình Page trên web cho {len(self.ttc_accounts)} tài khoản TTC...")
-            for uname, t_info in list(self.ttc_accounts.items()):
-                client = self.ttc_clients_cache.get(uname)
-                if not client:
-                    client = TuongTacCheoTool(t_info["ttc_token"], proxy=self.get_effective_proxy(""))
-                    ok, _, sodu, _ = client.login()
-                    if ok:
-                        self.ttc_clients_cache[uname] = client
-                        t_info["coins"] = sodu
-                else:
-                    client.fetch_configured_pages_on_web()
-
-                t_info["active_page_id"] = client.current_configured_uid
-                t_info["configured_pages_map"] = client.configured_pages_map
-                self._db_queue.put((
-                    "UPDATE ttc_accounts SET coins = ?, active_page_id = ?, configured_pages = ? WHERE ttc_user = ?",
-                    (t_info["coins"], t_info["active_page_id"], json.dumps(t_info["configured_pages_map"], ensure_ascii=False), uname)
-                ))
-                self.log(f"📌 [TTC: {uname}] Đã liên kết {len(client.configured_pages_map)} Page trên web | Nick đang chọn: {client.current_configured_uid or 'Chưa chọn'}")
-
-            self.after(0, self.update_page_link_badges_from_ttc)
-            self.log("✨ Hoàn tất khớp tự động Page với các tài khoản TTC!")
-
-        threading.Thread(target=_do_sync, daemon=True).start()
-
-    def add_ttc_row_to_ui(self, ttc_data):
-        uname = ttc_data["ttc_user"]
-        summary_txt = self.format_ttc_linked_summary(uname)
-        if uname in self.ttc_rows_ui:
-            self.queue_row_ui("ttc", uname, coin_text=f"💰 {ttc_data['coins']:,} xu", status_text=summary_txt, status_color="#0284c7")
-            return
-
-        row = ctk.CTkFrame(self.scroll_ttc_accs, fg_color="#f8fafc", corner_radius=6, border_width=1, border_color="#e2e8f0", height=32)
-        row.pack(fill="x", padx=2, pady=2)
-        row.grid_columnconfigure(2, weight=1)
-
-        ctk.CTkLabel(row, text=f"👤 {uname}", font=ctk.CTkFont(size=11, weight="bold"), text_color="#0f172a", width=95, anchor="w").grid(row=0, column=0, padx=6, pady=4, sticky="w")
-        lbl_coin = ctk.CTkLabel(row, text=f"💰 {ttc_data['coins']:,} xu", font=ctk.CTkFont(size=10, weight="bold"), text_color="#059669", width=95, anchor="w")
-        lbl_coin.grid(row=0, column=1, padx=4, pady=4, sticky="w")
-
-        lbl_st = ctk.CTkLabel(row, text=summary_txt, font=ctk.CTkFont(size=10, weight="bold"), text_color="#0284c7", anchor="w")
-        lbl_st.grid(row=0, column=2, padx=4, pady=4, sticky="ew")
-
-        def _del_ttc():
-            if uname in self.ttc_accounts:
-                del self.ttc_accounts[uname]
-            if uname in self.ttc_rows_ui:
-                self.ttc_rows_ui[uname]["frame"].destroy()
-                del self.ttc_rows_ui[uname]
-            self._db_queue.put(("DELETE FROM ttc_accounts WHERE ttc_user = ?", (uname,)))
-            self.refresh_all_ttc_dropdowns()
-            self.update_page_link_badges_from_ttc()
-            self.log(f"🗑️ Đã xóa tài khoản TTC: {uname}")
-
-        ctk.CTkButton(row, text="✕", width=24, height=22, fg_color="#dc2626", hover_color="#b91c1c", font=ctk.CTkFont(size=10, weight="bold"), corner_radius=4, command=_del_ttc).grid(row=0, column=3, padx=4, pady=4)
-
-        self.ttc_rows_ui[uname] = {
-            "frame": row,
-            "coin_label": lbl_coin,
-            "status_label": lbl_st,
-            "status_text": summary_txt
-        }
-
-    # ==========================================================================
-    # QUẢN LÝ CÂY PHÂN CẤP: TÀI KHOẢN FB MẸ -> CÁC PAGE CON
-    # ==========================================================================
-    def ensure_fb_parent_section(self, fb_uid, fb_name="", cookie="", access_token=""):
-        fb_uid = str(fb_uid or "Main").strip()
-        if fb_uid in self.fb_parent_sections:
-            sec = self.fb_parent_sections[fb_uid]
-            if cookie: sec["cookie"] = cookie
-            if access_token: sec["access_token"] = access_token
-            if fb_name and not fb_name.startswith("FB_"): sec["fb_name"] = fb_name
-            has_ck = "✅ Cookie" if sec.get("cookie") else "❌ Cookie"
-            has_tk = "✅ Token" if sec.get("access_token") else "❌ Token"
-            sec["header_label"].configure(text=f"👤 NICK FB MẸ: {sec['fb_name']} (UID: {fb_uid})   [{has_ck} | {has_tk}]")
-            return sec
-
-        container = ctk.CTkFrame(self.scroll_pages, fg_color="#ffffff", corner_radius=8, border_width=1, border_color="#cbd5e1")
-        container.pack(fill="x", padx=4, pady=5)
-        container.grid_columnconfigure(0, weight=1)
-
-        header = ctk.CTkFrame(container, fg_color="#eff6ff", corner_radius=6, height=34)
-        header.grid(row=0, column=0, sticky="ew", padx=4, pady=4)
-        header.grid_columnconfigure(0, weight=1)
-
-        disp_name = fb_name if fb_name else f"FB_{fb_uid}"
-        has_ck = "✅ Cookie" if cookie else "❌ Cookie"
-        has_tk = "✅ Token" if access_token else "❌ Token"
-
-        lbl_head = ctk.CTkLabel(
-            header,
-            text=f"👤 NICK FB MẸ: {disp_name} (UID: {fb_uid})   [{has_ck} | {has_tk}]",
-            font=ctk.CTkFont(size=11, weight="bold"), text_color="#1e3a8a"
-        )
-        lbl_head.grid(row=0, column=0, padx=10, pady=5, sticky="w")
-
-        def _select_all_child_pages():
-            for pid, pinfo in self.page_rows.items():
-                if str(pinfo["data"].get("parent")) == fb_uid:
-                    pinfo["var"].set(True)
-
-        def _delete_fb_parent():
-            to_del_pids = [pid for pid, pinfo in self.page_rows.items() if str(pinfo["data"].get("parent")) == fb_uid]
-            for pid in to_del_pids:
-                self.single_running_threads[pid] = False
-                self._db_queue.put(("DELETE FROM fb_pages WHERE page_id = ?", (pid,)))
-                if pid in self.page_rows:
-                    del self.page_rows[pid]
-            self._db_queue.put(("DELETE FROM fb_accounts WHERE fb_uid = ?", (fb_uid,)))
-            container.destroy()
-            if fb_uid in self.fb_parent_sections:
-                del self.fb_parent_sections[fb_uid]
-            self.log(f"🗑️ Đã xóa Nick FB {disp_name} và {len(to_del_pids)} Page con.")
-
-        ctk.CTkButton(header, text="✓ Tích hết Page của FB này", width=155, height=24, fg_color="#0284c7", font=ctk.CTkFont(size=10, weight="bold"), corner_radius=5, command=_select_all_child_pages).grid(row=0, column=1, padx=4, pady=4)
-        ctk.CTkButton(header, text="🗑️ Xóa FB", width=75, height=24, fg_color="#dc2626", font=ctk.CTkFont(size=10, weight="bold"), corner_radius=5, command=_delete_fb_parent).grid(row=0, column=2, padx=(2, 8), pady=4)
-
-        pages_holder = ctk.CTkFrame(container, fg_color="transparent")
-        pages_holder.grid(row=1, column=0, sticky="ew", padx=12, pady=(0, 6))
-        pages_holder.grid_columnconfigure(0, weight=1)
-
-        sec_data = {
-            "container": container,
-            "header_label": lbl_head,
-            "pages_holder": pages_holder,
-            "fb_uid": fb_uid,
-            "fb_name": disp_name,
-            "cookie": cookie,
-            "access_token": access_token
-        }
-        self.fb_parent_sections[fb_uid] = sec_data
-        return sec_data
-
-    def load_fb_pages_from_db(self):
-        if not os.path.exists(DB_FILE):
-            return
-        try:
-            conn = sqlite3.connect(DB_FILE)
-            cursor = conn.cursor()
-            cursor.execute("SELECT fb_uid, fb_name, cookie, access_token FROM fb_accounts")
-            for f_uid, f_name, f_ck, f_tok in cursor.fetchall():
-                self.ensure_fb_parent_section(f_uid, f_name, f_ck, f_tok)
-
-            cursor.execute("SELECT parent_username, page_id, page_name, page_token, proxy, status, coins, max_jobs, parent_cookie, user_token, assigned_ttc FROM fb_pages")
-            rows = cursor.fetchall()
-            conn.close()
-            for parent, pid, pname, ptok, proxy, status, db_coins, max_j, p_ck, u_tok, ass_ttc in rows:
-                page_data = {
-                    "parent": parent or "Main",
-                    "page_id": str(pid),
-                    "page_name": pname,
-                    "page_token": ptok,
-                    "proxy": proxy,
-                    "coins": db_coins or 0,
-                    "max_jobs": max_j if max_j is not None else 999999,
-                    "parent_cookie": p_ck or "",
-                    "user_token": u_tok or "",
-                    "assigned_ttc": ass_ttc or ""
-                }
-                self.add_page_row_to_ui(page_data, status)
-            self.update_page_link_badges_from_ttc()
-        except Exception:
-            pass
-
-    def add_page_row_to_ui(self, page_data, status="Sẵn sàng"):
-        pid = str(page_data["page_id"])
-        if pid in self.page_rows:
-            return
-
-        parent_uid = str(page_data.get("parent") or "Main")
-        parent_sec = self.ensure_fb_parent_section(
-            parent_uid,
-            cookie=page_data.get("parent_cookie", ""),
-            access_token=page_data.get("user_token", "")
-        )
-
-        row_frame = ctk.CTkFrame(parent_sec["pages_holder"], fg_color="#f8fafc", corner_radius=6, border_width=1, border_color="#e2e8f0", height=38)
-        row_frame.pack(fill="x", padx=2, pady=2)
-        row_frame.grid_columnconfigure(2, weight=1)
-
-        is_die_init = ("Die" in status or "Hết Hạn" in status)
-        var = ctk.BooleanVar(value=not is_die_init)
-        chk = ctk.CTkCheckBox(row_frame, text="", variable=var, width=20, fg_color="#0284c7")
-        chk.grid(row=0, column=0, padx=(8, 4), pady=5, sticky="w")
-
-        stt_idx = len(self.page_rows) + 1
-        ctk.CTkLabel(row_frame, text=str(stt_idx), font=ctk.CTkFont(size=11), text_color="#475569", width=34).grid(row=0, column=1, padx=2, pady=5, sticky="w")
-
-        ctk.CTkLabel(row_frame, text=f"↳ 📘 {page_data['page_name']}", font=ctk.CTkFont(size=11, weight="bold"), text_color="#0f172a").grid(row=0, column=2, padx=6, pady=5, sticky="w")
-
-        ctk.CTkLabel(row_frame, text=str(pid), font=ctk.CTkFont(family="Consolas", size=10), text_color="#475569", width=125, anchor="w").grid(row=0, column=3, padx=4, pady=5, sticky="w")
-
-        # Cột hiển thị rõ Page này đã liên kết với Acc TTC nào trên Web hoặc đang được chọn chạy
-        lbl_link_badge = ctk.CTkLabel(row_frame, text="🔍 Đang kiểm tra LK...", font=ctk.CTkFont(size=10, weight="bold"), text_color="#0284c7", width=230, anchor="w")
-        lbl_link_badge.grid(row=0, column=4, padx=4, pady=5, sticky="w")
-
-        avail_vals = self.get_ttc_dropdown_values()
-        saved_ttc = page_data.get("assigned_ttc", "")
-        default_choice = saved_ttc if (saved_ttc and saved_ttc in avail_vals) else avail_vals[0]
-        ttc_var = ctk.StringVar(value=default_choice)
-
-        def _on_change_ttc(choice_val):
-            page_data["assigned_ttc"] = choice_val
-            self._db_queue.put(("UPDATE fb_pages SET assigned_ttc = ? WHERE page_id = ?", (choice_val, pid)))
-            self.queue_row_ui("page", pid, link_badge_text=f"📌 Đã chọn chạy -> {choice_val}", link_badge_color="#0284c7")
-
-        ttc_menu = ctk.CTkOptionMenu(
-            row_frame, variable=ttc_var, values=avail_vals,
-            width=150, height=26, fg_color="#1e293b", button_color="#334155",
-            font=ctk.CTkFont(size=10, weight="bold"), command=_on_change_ttc
-        )
-        ttc_menu.grid(row=0, column=5, padx=4, pady=5, sticky="w")
-
-        init_c = page_data.get("coins", 0)
-        lbl_coin = ctk.CTkLabel(row_frame, text=f"+{init_c:,} xu", font=ctk.CTkFont(size=11, weight="bold"), text_color="#059669", width=80, anchor="w")
-        lbl_coin.grid(row=0, column=6, padx=4, pady=5, sticky="w")
-
-        text_color_st = "#334155" if status == "Sẵn sàng" else ("#dc2626" if is_die_init else "#059669")
-        lbl_status = ctk.CTkLabel(row_frame, text=status, font=ctk.CTkFont(size=10, weight="bold"), text_color=text_color_st, width=215, anchor="w")
-        lbl_status.grid(row=0, column=7, padx=4, pady=5, sticky="w")
-
-        def toggle_single_page():
-            if not self.single_running_threads.get(pid, False):
-                self.start_single_page_worker(pid)
-            else:
-                self.single_running_threads[pid] = False
-                self.queue_row_ui("page", pid, status_text="Đã dừng", status_color="#d97706", btn_text="Bắt đầu", btn_color="#0284c7")
-
-        btn_action = ctk.CTkButton(row_frame, text="Bắt đầu", width=76, height=26, fg_color="#0284c7", hover_color="#0369a1", font=ctk.CTkFont(size=10, weight="bold"), corner_radius=6, command=toggle_single_page)
-        btn_action.grid(row=0, column=8, padx=8, pady=5, sticky="e")
-
-        self.page_rows[pid] = {
-            "frame": row_frame,
-            "var": var,
-            "ttc_var": ttc_var,
-            "ttc_menu": ttc_menu,
-            "link_badge": lbl_link_badge,
-            "status_label": lbl_status,
-            "status_text": status,
-            "coin_label": lbl_coin,
-            "action_btn": btn_action,
-            "coins": init_c,
-            "data": page_data
-        }
-
-    # ==========================================================================
-    # KHỞI CHẠY PAGE TTC VỚI 12 CHẾ ĐỘ (KHÔNG BAO GIỜ TỰ NGẮT LỆNH)
-    # ==========================================================================
-    def start_single_page_worker(self, pid, stagger_delay=0.0):
-        if pid not in self.page_rows:
-            return
-        info = self.page_rows[pid]
-        page_data = info["data"]
-        selected_ttc_str = info["ttc_var"].get().strip()
-
-        # Nếu chưa gán hoặc có duy nhất 1 Acc TTC thì tự động lấy Acc TTC đầu tiên
-        ttc_user = selected_ttc_str.replace("TTC:", "").strip()
-        if ttc_user not in self.ttc_accounts:
-            if self.ttc_accounts:
-                ttc_user = list(self.ttc_accounts.keys())[0]
-                info["ttc_var"].set(f"TTC: {ttc_user}")
-            else:
-                self.log(f"⚠️ [Page {page_data['page_name']}] Bạn chưa thêm Access Token TTC ở ô số 1!")
-                self.queue_row_ui("page", pid, status_text="❌ Chưa thêm Token TTC!", status_color="#dc2626")
-                return
-
-        selected_modes = self.get_selected_ttc_modes()
-        if not selected_modes:
-            self.log("⚠️ Bạn chưa tích chọn chế độ Job nào trong 12 Chế Độ TTC (Ở khung số 3)!")
-            self.queue_row_ui("page", pid, status_text="❌ Chưa chọn Job TTC!", status_color="#dc2626")
-            return
-
-        self.sync_cache_from_ui()
-        self.save_config()
-        if not self.start_time:
-            self.start_time = time.time()
-        self.is_running = True
-
-        self.single_running_threads[pid] = True
-        self.queue_row_ui(
-            "page", pid,
-            status_text=f"🚀 Đang khởi chạy ({ttc_user})...",
-            status_color="#0284c7",
-            btn_text="Dừng",
-            btn_color="#dc2626",
-            link_badge_text=f"🔥 ĐANG CHỌN LÀM ({ttc_user})",
-            link_badge_color="#059669"
-        )
-        threading.Thread(
-            target=self.worker_ttc_page_loop,
-            args=(ttc_user, page_data, stagger_delay),
-            daemon=True
-        ).start()
-
-    def assign_ttc_to_selected_pages_only(self):
-        chosen_ttc = self.opt_bulk_ttc.get()
-        selected_pids = [pid for pid, info in self.page_rows.items() if info["var"].get()]
-        if not selected_pids or not chosen_ttc or chosen_ttc.startswith("--"):
-            self.log("⚠️ Vui lòng tích chọn Page và chọn 1 Acc TTC hợp lệ!")
-            return
-        for pid in selected_pids:
-            info = self.page_rows[pid]
-            info["ttc_var"].set(chosen_ttc)
-            info["data"]["assigned_ttc"] = chosen_ttc
-            self._db_queue.put(("UPDATE fb_pages SET assigned_ttc = ? WHERE page_id = ?", (chosen_ttc, pid)))
-            self.queue_row_ui("page", pid, link_badge_text=f"📌 Đã gán -> {chosen_ttc}", link_badge_color="#0284c7")
-        self.log(f"📌 Đã gán {chosen_ttc} cho {len(selected_pids)} Page đã tích.")
-
-    def start_all_checked_ttc_pages(self):
-        selected_pids = [pid for pid, info in self.page_rows.items() if info["var"].get()]
-        if not selected_pids:
-            self.log("⚠️ Vui lòng tích chọn ít nhất 1 Page FB bên dưới để bắt đầu chạy!")
-            return
-        started = 0
-        for idx, pid in enumerate(selected_pids):
-            if not self.single_running_threads.get(pid, False):
-                self.start_single_page_worker(pid, stagger_delay=idx * 0.25)
-                started += 1
-        self.log(f"🚀 Đã kích hoạt chạy {started} Page đã tích với {len(self.get_selected_ttc_modes())} chế độ Job TTC!")
-
-    def worker_ttc_page_loop(self, ttc_user, page, stagger_delay=0.0):
-        """
-        Luồng chạy Page trên Tương Tác Chéo (12 Chế độ Job):
-        - Đã loại bỏ hoàn toàn lệnh tự ngắt sau khi liên kết (dat_nick).
-        - Tự động hiển thị rõ Page nào đang được chọn làm trên Acc TTC.
-        - Quét liên tục qua tất cả các chế độ trong 12 Chế Độ Job bạn đã tích chọn.
-        """
-        pid = str(page["page_id"]).strip()
-        pname = str(page.get("page_name") or pid)
-        ptok = str(page.get("page_token") or "")
-        p_ck = str(page.get("parent_cookie") or "")
-
-        if stagger_delay > 0:
-            if not self.smart_sleep(stagger_delay, pid):
-                return
-
-        if ttc_user not in self.ttc_account_locks:
-            self.ttc_account_locks[ttc_user] = threading.Lock()
-        ttc_lock = self.ttc_account_locks[ttc_user]
-
-        max_jobs = int(page.get("max_jobs") or 999999)
-        attempted_jobs = 0
-        fb_sess = c_requests.Session()
-
-        try:
-            while self.single_running_threads.get(pid, False):
-                if attempted_jobs >= max_jobs:
-                    self.queue_row_ui("page", pid, status_text=f"🏆 Đã hoàn thành {max_jobs} job", status_color="#059669")
-                    break
-
-                # Lấy danh sách 12 chế độ đang được tích chọn trực tiếp (cho phép bạn bật/tắt chế độ ngay khi đang chạy)
-                active_modes = self.get_selected_ttc_modes()
-                if not active_modes:
-                    self.queue_row_ui("page", pid, status_text="⚠️ Hãy tích ít nhất 1 chế độ Job!", status_color="#d97706")
-                    if not self.smart_sleep(5, pid):
-                        break
-                    continue
-
-                self.queue_row_ui("page", pid, status_text=f"⏳ Chờ lượt luồng TTC ({ttc_user})...", status_color="#0284c7")
-
-                with ttc_lock:
-                    if not self.single_running_threads.get(pid, False):
-                        break
-
-                    ttc_info = self.ttc_accounts.get(ttc_user)
-                    if not ttc_info:
-                        self.log(f"❌ [Page {pname}] Không tìm thấy Acc TTC '{ttc_user}'")
-                        break
-
-                    proxy = self.get_effective_proxy(page.get("proxy", ""))
-                    ttc_client = self.ttc_clients_cache.get(ttc_user)
-                    if not ttc_client:
-                        ttc_client = TuongTacCheoTool(ttc_info["ttc_token"], proxy=proxy)
-                        ok_log, _, sodu_init, msg_log = ttc_client.login()
-                        if not ok_log:
-                            self.log(f"⚠️ [TTC: {ttc_user}] Lỗi đăng nhập ({msg_log}), thử lại sau 8s...")
-                            self.queue_row_ui("page", pid, status_text=f"⚠️ Lỗi mạng/Token TTC, chờ 8s...", status_color="#d97706")
-                            if not self.smart_sleep(8, pid):
+            while not self.ui_queue.empty():
+                kind, data = self.ui_queue.get_nowait()
+                if kind == "live_log":
+                    self.txt_ttc_live_log.insert("end", data)
+                    self.txt_ttc_live_log.see("end")
+                    self.txt_system_log.insert("end", data)
+                    self.txt_system_log.see("end")
+                elif kind == "ttc_page_row":
+                    pid, st_text, coins_val = data
+                    for tree in (self.tree_ttc_pages, self.tree_all_pages):
+                        for item_id in tree.get_children():
+                            vals = list(tree.item(item_id, "values"))
+                            if str(vals[2]) == pid:
+                                if coins_val is not None:
+                                    vals[6 if tree == self.tree_ttc_pages else 5] = coins_val
+                                if st_text is not None:
+                                    vals[-1] = st_text
+                                tree.item(item_id, values=vals)
                                 break
-                            continue
-                        self.ttc_clients_cache[ttc_user] = ttc_client
-
-                    # Đặt Nick trên TTC (Nhưng tuyệt đối KHÔNG tự ngắt nếu bạn đã liên kết sẵn trên web)
-                    _, dat_msg = ttc_client.dat_nick(pid)
-                    ttc_info["active_page_id"] = pid
-                    self.queue_row_ui(
-                        "ttc", ttc_user,
-                        status_text=f"🔥 Đang chạy Page: {pname} ({pid})",
-                        status_color="#059669"
-                    )
-                    self.queue_row_ui(
-                        "page", pid,
-                        link_badge_text=f"🔥 ĐANG CHỌN LÀM ({ttc_user})",
-                        link_badge_color="#059669",
-                        status_text=f"🔗 Đã chọn Page -> Quét {len(active_modes)} chế độ...",
-                        status_color="#0284c7"
-                    )
-
-                    found_any_job = False
-                    for mode_key in active_modes:
-                        if not self.single_running_threads.get(pid, False) or attempted_jobs >= max_jobs:
+                elif kind == "ig_row":
+                    uname, st_text, coins_val = data
+                    for item_id in self.tree_ig.get_children():
+                        vals = list(self.tree_ig.item(item_id, "values"))
+                        if str(vals[1]) == uname:
+                            if coins_val is not None:
+                                vals[3] = coins_val
+                            if st_text is not None:
+                                vals[5] = st_text
+                            self.tree_ig.item(item_id, values=vals)
                             break
-
-                        mode_cfg = TTC_12_JOB_MODES.get(mode_key, {})
-                        mode_name = mode_cfg.get("name", mode_key)
-                        action_type = mode_cfg.get("action", "like")
-
-                        self.queue_row_ui("page", pid, status_text=f"🔍 Tìm [{mode_name}]...", status_color="#0284c7")
-                        tasks, err_msg = ttc_client.get_tasks(mode_key)
-                        if not tasks:
-                            continue
-
-                        found_any_job = True
-                        self.log(f"📥 [TTC: {ttc_user} | Page: {pname}] Có {len(tasks)} job [{mode_name}]")
-
-                        for nv in tasks:
-                            if not self.single_running_threads.get(pid, False) or attempted_jobs >= max_jobs:
-                                break
-
-                            delay_min, delay_max, delay_coin_min, delay_coin_max = self.get_delay_settings()
-                            proxy = self.get_effective_proxy(page.get("proxy", ""))
-                            task_id = str(nv.get("id", ""))
-                            link_job = str(nv.get("target_url", ""))
-                            target_id = str(nv.get("target_id", "") or task_id)
-                            loaicx = str(nv.get("loaicx") or "LOVE").upper()
-
-                            self.queue_row_ui("page", pid, status_text=f"⚡ Làm {mode_name[:16]} [{task_id[:8]}]...", status_color="#2563eb")
-                            success = False
-                            fail_reason = "Lỗi FB"
-
-                            try:
-                                with self.net_semaphore:
-                                    if action_type == "like":
-                                        res_raw = fb_page_react_or_like(link_job, ptok, proxy, session=fb_sess, page_id=pid, parent_cookie=p_ck, target_id=target_id, reaction_type="LIKE")
-                                    elif action_type in ["react", "react_cmt"]:
-                                        res_raw = fb_page_react_or_like(link_job, ptok, proxy, session=fb_sess, page_id=pid, parent_cookie=p_ck, target_id=target_id, reaction_type=loaicx)
-                                    elif action_type in ["follow", "likepage"]:
-                                        res_raw = fb_page_follow(target_id, ptok, proxy, session=fb_sess, page_id=pid, parent_cookie=p_ck)
-                                    elif action_type == "comment":
-                                        cmt_txt = nv.get("msg") or ai_generate_unique_comment()
-                                        res_raw = fb_page_comment(target_id, cmt_txt, ptok, proxy, session=fb_sess, page_id=pid, parent_cookie=p_ck)
-                                    elif action_type == "share":
-                                        res_raw = fb_page_share(target_id or link_job, ptok, proxy, session=fb_sess, page_id=pid, parent_cookie=p_ck)
-                                    else:
-                                        res_raw = fb_page_like(link_job, ptok, proxy, session=fb_sess, page_id=pid, parent_cookie=p_ck, target_id=target_id)
-
-                                    j = json.loads(res_raw)
-                                    if j.get("success") or j.get("id"):
-                                        success = True
-                                    else:
-                                        fail_reason = str(j.get("error", "FB từ chối"))
-                            except Exception as ex:
-                                fail_reason = str(ex)[:25]
-
-                            attempted_jobs += 1
-                            if success:
-                                wait_coin = random.randint(delay_coin_min, delay_coin_max)
-                                self.queue_row_ui("page", pid, status_text=f"⏳ Chờ {wait_coin}s nhận xu...", status_color="#0284c7")
-                                if not self.smart_sleep(wait_coin, pid):
-                                    break
-
-                                earned, claim_msg = ttc_client.claim_reward(mode_key, task_id, loaicx=loaicx)
-                                if earned > 0:
-                                    self.update_stats(coins=int(earned), jobs=1, entity_type="page", entity_key=pid, ttc_user=ttc_user)
-                                    self.log(f"💰 [TTC: {ttc_user} | {pname}] +{earned} xu ({mode_name} - ID: {task_id})")
-                                    self.queue_row_ui("page", pid, status_text=f"✅ +{earned} xu ({attempted_jobs} job)", status_color="#059669")
-                                else:
-                                    self.log(f"⚠️ [TTC: {ttc_user} | {pname}] Duyệt [{mode_name}] báo: {claim_msg}")
-                                    self.queue_row_ui("page", pid, status_text=f"⚠️ {claim_msg[:20]}", status_color="#d97706")
-                            else:
-                                self.log(f"❌ [Page {pname}] Lỗi {mode_name} [{task_id}]: {fail_reason}")
-                                self.queue_row_ui("page", pid, status_text=f"❌ {fail_reason[:18]}", status_color="#dc2626")
-
-                            wait_next = random.randint(delay_min, delay_max)
-                            if not self.smart_sleep(wait_next, pid):
-                                break
-
-                if self.single_running_threads.get(pid, False) and attempted_jobs < max_jobs:
-                    rest_sec = 6 if found_any_job else 8
-                    w_txt = f"🔄 Nghỉ {rest_sec}s quét vòng mới..." if found_any_job else f"⏳ Chờ {rest_sec}s tải thêm Job TTC..."
-                    self.queue_row_ui("page", pid, status_text=w_txt, status_color="#059669" if found_any_job else "#d97706")
-                    if not self.smart_sleep(rest_sec, pid):
-                        break
-        except Exception as fatal_e:
-            self.log(f"⚠️ [Page {pname}] Cảnh báo luồng: {str(fatal_e)[:40]}")
-        finally:
-            try:
-                fb_sess.close()
-            except Exception:
-                pass
-
-        self.single_running_threads[pid] = False
-        self.queue_row_ui("page", pid, status_text="Đã dừng", status_color="#d97706", btn_text="Bắt đầu", btn_color="#0284c7")
-
-    # ==========================================================================
-    # CÁC HÀM TIỆN ÍCH FACEBOOK PAGE & INSTAGRAM XSMM
-    # ==========================================================================
-    def toggle_all_pages(self, select_state):
-        for item in self.page_rows.values():
-            item["var"].set(select_state)
-
-    def delete_selected_pages(self):
-        to_delete = [pid for pid, info in self.page_rows.items() if info["var"].get()]
-        for pid in to_delete:
-            self.single_running_threads[pid] = False
-            self._db_queue.put(("DELETE FROM fb_pages WHERE page_id = ?", (pid,)))
-            if pid in self.page_rows:
-                self.page_rows[pid]["frame"].destroy()
-                del self.page_rows[pid]
-        if to_delete:
-            self.log(f"🗑️ Đã xóa {len(to_delete)} Page đã chọn.")
-
-    def check_selected_fb_live(self):
-        selected = [pid for pid, info in self.page_rows.items() if info["var"].get()] or list(self.page_rows.keys())
-        if not selected:
-            return
-
-        def _do_check():
-            live_c, die_c = 0, 0
-            for pid in selected:
-                info = self.page_rows.get(pid)
-                if not info:
-                    continue
-                ptok = info["data"].get("page_token", "")
-                p_ck = info["data"].get("parent_cookie", "")
-                proxy = self.get_effective_proxy(info["data"].get("proxy", ""))
-                self.queue_row_ui("page", pid, status_text="🔄 Đang check live...", status_color="#0284c7")
-                is_live = False
-                try:
-                    s = c_requests.Session()
-                    if px := format_proxy(proxy):
-                        s.proxies = px
-                    if ptok and str(ptok).startswith("EAA"):
-                        if "id" in s.get(f"https://graph.facebook.com/v18.0/me?access_token={ptok}", timeout=8).json():
-                            is_live = True
-                    if not is_live and (p_ck or "c_user=" in str(ptok)):
-                        raw_ck = p_ck if p_ck else ptok
-                        if _get_fb_dtsg(s, _build_page_cookie(raw_ck, pid), pid):
-                            is_live = True
-                    s.close()
-                except Exception:
-                    pass
-                if is_live:
-                    live_c += 1
-                    self.queue_row_ui("page", pid, status_text="Live ✅ (Sẵn sàng)", status_color="#059669", var_val=True)
-                else:
-                    die_c += 1
-                    self.queue_row_ui("page", pid, status_text="Die / Hết hạn ❌", status_color="#dc2626", var_val=False)
-            self.log(f"✨ Kết quả Check Live Page: {live_c} Live ✅ | {die_c} Die ❌")
-
-        threading.Thread(target=_do_check, daemon=True).start()
-
-    def _parse_fb_line(self, line_str):
-        ck, tok, px = "", "", ""
-        for part in [p.strip() for p in line_str.split("|") if p.strip()]:
-            if part.startswith("EAA"):
-                tok = part
-            elif "c_user=" in part or "xs=" in part:
-                ck = part
-            elif ":" in part and not part.startswith("EAA"):
-                px = part
-            elif not ck:
-                ck = part
-        return ck, tok, self.get_effective_proxy(px)
-
-    def quick_link_fb_and_scan_pages(self):
-        self.sync_cache_from_ui()
-        raw_ck = self.txt_fb_cookies.get().strip()
-        raw_tok = self.txt_fb_token.get().strip()
-        if not raw_ck and not raw_tok:
-            self.log("⚠️ Vui lòng dán Cookie FB Mẹ hoặc Token FB!")
-            return
-        try: max_jobs_val = int(self.max_jobs_fb_entry.get().strip())
-        except Exception: max_jobs_val = 999999
-
-        ck, tok, proxy = self._parse_fb_line(raw_ck) if ("|" in raw_ck and not raw_tok) else (raw_ck, raw_tok, self.get_effective_proxy(""))
-
-        def _do_quick_scan():
-            self.log("🔍 Đang quét tài khoản FB Mẹ & toàn bộ danh sách Page Con...")
-            fb_info, pages = scan_facebook_account_and_pages(cookie=ck, access_token=tok, proxy=proxy)
-            f_uid, f_name = fb_info["fb_uid"], fb_info["fb_name"]
-
-            self._db_queue.put((
-                "INSERT OR REPLACE INTO fb_accounts (fb_uid, fb_name, cookie, access_token, proxy, status, platform) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                (f_uid, f_name, ck, tok, proxy, "Live ✅", "TTC")
-            ))
-            self.after(0, lambda: self.ensure_fb_parent_section(f_uid, f_name, ck, tok))
-
-            default_ttc = self.get_ttc_dropdown_values()[0]
-            for p in pages:
-                pid, pname, ptok = str(p["page_id"]), p["page_name"], p["page_token"]
-                self._db_queue.put((
-                    "INSERT OR REPLACE INTO fb_pages (parent_username, page_id, page_name, page_token, proxy, status, coins, max_jobs, parent_cookie, user_token, assigned_ttc, platform) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                    (f_uid, pid, pname, ptok, proxy, "Live ✅ (Sẵn sàng)", 0, max_jobs_val, ck, tok, default_ttc, "TTC")
-                ))
-                page_data = {
-                    "parent": f_uid, "page_id": pid, "page_name": pname, "page_token": ptok,
-                    "proxy": proxy, "coins": 0, "max_jobs": max_jobs_val,
-                    "parent_cookie": ck, "user_token": tok, "assigned_ttc": default_ttc
-                }
-                self.after(0, lambda pd=page_data: self.add_page_row_to_ui(pd, status="Live ✅ (Sẵn sàng)"))
-
-            self.after(0, lambda: self.txt_fb_cookies.delete(0, "end"))
-            self.after(0, lambda: self.txt_fb_token.delete(0, "end"))
-            self.after(200, self.update_page_link_badges_from_ttc)
-            self.log(f"✅ Đã nạp FB [{f_name}] -> Hiển thị {len(pages)} Page Con & tự khớp với Acc TTC!")
-
-        threading.Thread(target=_do_quick_scan, daemon=True).start()
-
-    def scan_and_import_fb_pages(self):
-        modal = ctk.CTkToplevel(self)
-        modal.title("📥 Nạp Hàng Loạt Nick FB Mẹ & Quét Page")
-        modal.geometry("720x500")
-        modal.grab_set()
-        modal.configure(fg_color="#ffffff")
-
-        ctk.CTkLabel(modal, text="📋 DÁN DANH SÁCH COOKIE / TOKEN FB (MỖI DÒNG 1 NICK FB)", font=ctk.CTkFont(size=13, weight="bold"), text_color="#0284c7").pack(anchor="w", padx=20, pady=(16, 4))
-        txt_batch = ctk.CTkTextbox(modal, height=340, font=ctk.CTkFont(family="Consolas", size=10), fg_color="#f8fafc", border_width=1)
-        txt_batch.pack(fill="both", expand=True, padx=20, pady=8)
-
-        def process_scan():
-            raw_text = txt_batch.get("1.0", "end").strip()
-            if not raw_text:
-                return
-            try: max_jobs_val = int(self.max_jobs_fb_entry.get().strip())
-            except Exception: max_jobs_val = 999999
-            lines = [c.strip() for c in raw_text.split("\n") if c.strip()]
-            modal.destroy()
-
-            def _do_scan():
-                total_pg = 0
-                default_ttc = self.get_ttc_dropdown_values()[0]
-                for line in lines:
-                    ck, tok, proxy = self._parse_fb_line(line)
-                    fb_info, pages = scan_facebook_account_and_pages(cookie=ck, access_token=tok, proxy=proxy)
-                    f_uid, f_name = fb_info["fb_uid"], fb_info["fb_name"]
-                    self._db_queue.put(("INSERT OR REPLACE INTO fb_accounts (fb_uid, fb_name, cookie, access_token, proxy, status, platform) VALUES (?, ?, ?, ?, ?, ?, ?)", (f_uid, f_name, ck, tok, proxy, "Live ✅", "TTC")))
-                    self.after(0, lambda u=f_uid, n=f_name, c=ck, t=tok: self.ensure_fb_parent_section(u, n, c, t))
-                    for p in pages:
-                        pid, pname, ptok = str(p["page_id"]), p["page_name"], p["page_token"]
-                        self._db_queue.put(("INSERT OR REPLACE INTO fb_pages (parent_username, page_id, page_name, page_token, proxy, status, coins, max_jobs, parent_cookie, user_token, assigned_ttc, platform) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", (f_uid, pid, pname, ptok, proxy, "Live ✅ (Sẵn sàng)", 0, max_jobs_val, ck, tok, default_ttc, "TTC")))
-                        pd = {"parent": f_uid, "page_id": pid, "page_name": pname, "page_token": ptok, "proxy": proxy, "coins": 0, "max_jobs": max_jobs_val, "parent_cookie": ck, "user_token": tok, "assigned_ttc": default_ttc}
-                        total_pg += 1
-                        self.after(0, lambda item=pd: self.add_page_row_to_ui(item, status="Live ✅ (Sẵn sàng)"))
-                self.after(300, self.update_page_link_badges_from_ttc)
-                self.log(f"✨ Đã quét xong {len(lines)} Nick FB -> Thu được {total_pg} Page Con!")
-
-            threading.Thread(target=_do_scan, daemon=True).start()
-
-        ctk.CTkButton(modal, text="🚀 BẮT ĐẦU QUÉT DÀN PAGE", fg_color="#0284c7", height=40, font=ctk.CTkFont(size=12, weight="bold"), command=process_scan).pack(fill="x", padx=20, pady=12)
-
-    # ==========================================================================
-    # KHU VỰC XSMM.NET (IG WORKER ĐỘC LẬP)
-    # ==========================================================================
-    def load_accounts_from_db(self):
-        if not os.path.exists(DB_FILE):
-            return
-        try:
-            conn = sqlite3.connect(DB_FILE)
-            cursor = conn.cursor()
-            cursor.execute("SELECT username, cookie, proxy, status, coins, max_jobs FROM accounts")
-            for ig_user, ck, proxy, status, db_coins, max_j in cursor.fetchall():
-                idfb = (re.search(r'ds_user_id=(\d+)', ck) or [None, "0"])[1]
-                acc_data = {"username": ig_user, "cookie": ck, "proxy": proxy, "id": idfb, "coins": db_coins or 0, "max_jobs": max_j or 999999}
-                self.add_account_row_to_ui(acc_data, status)
-            conn.close()
         except Exception:
             pass
 
-    def add_account_row_to_ui(self, acc_data, status="Sẵn sàng"):
-        ig_user = acc_data["username"]
-        if ig_user in self.acc_rows:
+        # Cập nhật số luồng đang chạy
+        active_cnt = (
+            sum(1 for v in self.running_ttc_pages.values() if v)
+            + sum(1 for v in self.running_ig.values() if v)
+            + sum(1 for v in self.running_xsmm_pages.values() if v)
+        )
+        self.lbl_stat_running.configure(text=f"⚡ Luồng Đang Chạy: {active_cnt}")
+        self.after(150, self.process_ui_queue)
+
+    def refresh_all_tables(self):
+        with db_lock:
+            conn = get_db_connection()
+            c = conn.cursor()
+
+            # 1. Bảng Tài khoản TTC
+            for i in self.tree_ttc_accounts.get_children():
+                self.tree_ttc_accounts.delete(i)
+            ttc_rows = c.execute("SELECT ttc_user, ttc_token, coins, status FROM ttc_accounts").fetchall()
+            ttc_map = {}
+            combo_items = []
+            for u, tk, coins, st in ttc_rows:
+                self.tree_ttc_accounts.insert("", "end", values=(u, tk, f"{coins:,}", st))
+                ttc_map[tk] = (u, coins)
+                combo_items.append(f"{u} | {tk[:10]}...")
+
+            if combo_items:
+                self.cmb_assign_ttc.configure(values=combo_items)
+                self.cmb_assign_ttc.set(combo_items[0])
+            else:
+                self.cmb_assign_ttc.configure(values=["-- Chưa có Token TTC --"])
+                self.cmb_assign_ttc.set("-- Chưa có Token TTC --")
+
+            # 2. Bảng Fanpage TTC & Bảng Tất cả Fanpage
+            for i in self.tree_ttc_pages.get_children():
+                self.tree_ttc_pages.delete(i)
+            for i in self.tree_all_pages.get_children():
+                self.tree_all_pages.delete(i)
+
+            page_rows = c.execute(
+                "SELECT id, parent_username, page_id, page_name, assigned_ttc, proxy, coins, max_jobs, status, platform FROM fb_pages"
+            ).fetchall()
+            for r in page_rows:
+                rid, parent_u, pid, pname, ass_tk, prx, coins, mjobs, st, plat = r
+                ttc_label = "Chưa gắn TTC"
+                if ass_tk and ass_tk in ttc_map:
+                    ttc_label = f"{ttc_map[ass_tk][0]} ({ass_tk[:6]}..)"
+                    coins = ttc_map[ass_tk][1]
+                elif ass_tk:
+                    ttc_label = f"{ass_tk[:10]}..."
+
+                self.tree_ttc_pages.insert(
+                    "", "end",
+                    values=(rid, parent_u, pid, pname, ttc_label, prx or "None", coins, mjobs, st)
+                )
+                self.tree_all_pages.insert(
+                    "", "end",
+                    values=(rid, parent_u, pid, pname, plat or "TTC", coins, st)
+                )
+
+            # 3. Bảng Tài khoản FB gốc
+            for i in self.tree_fb_accounts.get_children():
+                self.tree_fb_accounts.delete(i)
+            fb_rows = c.execute("SELECT id, fb_uid, fb_name, proxy, status FROM fb_accounts").fetchall()
+            for r in fb_rows:
+                self.tree_fb_accounts.insert("", "end", values=r)
+
+            # 4. Bảng Tài khoản Instagram
+            for i in self.tree_ig.get_children():
+                self.tree_ig.delete(i)
+            ig_rows = c.execute("SELECT id, username, proxy, coins, max_jobs, status FROM accounts").fetchall()
+            for r in ig_rows:
+                self.tree_ig.insert("", "end", values=r)
+
+            conn.close()
+
+        # Cập nhật thanh Header
+        self.lbl_stat_ig.configure(text=f"📸 Nick IG: {len(ig_rows)}")
+        self.lbl_stat_fb.configure(text=f"👤 Nick FB Gốc: {len(fb_rows)}")
+        self.lbl_stat_pages.configure(text=f"🚩 Tổng Fanpage/Profile: {len(page_rows)}")
+        self.lbl_stat_ttc.configure(text=f"🔥 Tài Khoản TTC: {len(ttc_rows)}")
+
+    # ==========================================================================
+    # CÁC HÀM XỬ LÝ SỰ KIỆN TAB TƯƠNG TÁC CHÉO (TTC FB)
+    # ==========================================================================
+    def toggle_all_ttc_modes(self, state_bool):
+        for var in self.ttc_job_vars.values():
+            var.set(state_bool)
+
+    def get_checked_ttc_modes(self):
+        return [k for k, var in self.ttc_job_vars.items() if var.get()]
+
+    def add_or_check_ttc_token(self):
+        tk_str = self.ent_ttc_token.get().strip()
+        if not tk_str:
+            messagebox.showwarning("Thiếu Token", "Vui lòng dán Access Token Tương Tác Chéo vào ô!")
             return
 
-        row_frame = ctk.CTkFrame(self.scroll_accs, fg_color="#ffffff", corner_radius=6, border_width=1, border_color="#e2e8f0", height=38)
-        row_frame.pack(fill="x", padx=4, pady=2)
-        row_frame.grid_columnconfigure(3, weight=1)
-        row_frame.grid_columnconfigure(4, weight=1)
+        def _worker():
+            ttc = TuongTacCheoTool(tk_str)
+            ok, msg = ttc.login()
+            if ok:
+                with db_lock:
+                    conn = get_db_connection()
+                    conn.execute(
+                        "INSERT OR REPLACE INTO ttc_accounts (ttc_user, ttc_token, coins, status) VALUES (?, ?, ?, ?)",
+                        (ttc.ttc_user, tk_str, ttc.coins, "Active")
+                    )
+                    conn.commit()
+                    conn.close()
+                self.emit_log(ttc.ttc_user, "Đăng nhập Token TTC", msg)
+                self.after(0, self.refresh_all_tables)
+            else:
+                self.emit_log("TTC_ERROR", "Đăng nhập Token TTC thất bại", msg)
 
-        var = ctk.BooleanVar(value=True)
-        ctk.CTkCheckBox(row_frame, text="", variable=var, width=20, fg_color="#2563eb").grid(row=0, column=0, padx=(10, 6), pady=5)
-        ctk.CTkLabel(row_frame, text=str(len(self.acc_rows) + 1), width=45).grid(row=0, column=1, sticky="w")
-        ctk.CTkLabel(row_frame, text="XSMM-IG", font=ctk.CTkFont(size=10, weight="bold"), text_color="#2563eb", width=80).grid(row=0, column=2, sticky="w")
-        lbl_id = ctk.CTkLabel(row_frame, text=str(acc_data.get("id", "0")), font=ctk.CTkFont(family="Consolas", size=10))
-        lbl_id.grid(row=0, column=3, sticky="w", padx=6)
-        ctk.CTkLabel(row_frame, text=f"@{ig_user}", font=ctk.CTkFont(size=11, weight="bold")).grid(row=0, column=4, sticky="w", padx=6)
-        lbl_coin = ctk.CTkLabel(row_frame, text=f"+{acc_data.get('coins', 0):,} xu", font=ctk.CTkFont(size=11, weight="bold"), text_color="#059669", width=100, anchor="w")
-        lbl_coin.grid(row=0, column=5, sticky="w", padx=6)
-        lbl_status = ctk.CTkLabel(row_frame, text=status, font=ctk.CTkFont(size=10, weight="bold"), text_color="#059669", width=240, anchor="w")
-        lbl_status.grid(row=0, column=6, sticky="w", padx=6)
+        threading.Thread(target=_worker, daemon=True).start()
 
-        def toggle_ig():
-            if not self.single_running_threads.get(ig_user, False):
-                self.sync_cache_from_ui()
-                token = self.cfg_cache["token"]
-                if not token:
-                    self.log("⚠️ Vui lòng nhập XSMM Bearer Token ở thanh trên cùng của Tab XSMM!")
+    def delete_selected_ttc_token(self):
+        sel = self.tree_ttc_accounts.selection()
+        if not sel:
+            return
+        with db_lock:
+            conn = get_db_connection()
+            for item in sel:
+                tk = str(self.tree_ttc_accounts.item(item, "values")[1])
+                conn.execute("DELETE FROM ttc_accounts WHERE ttc_token=?", (tk,))
+            conn.commit()
+            conn.close()
+        self.refresh_all_tables()
+
+    def _resolve_selected_ttc_token(self):
+        with db_lock:
+            conn = get_db_connection()
+            rows = conn.execute("SELECT ttc_user, ttc_token FROM ttc_accounts").fetchall()
+            conn.close()
+        if not rows:
+            return ""
+        chosen = self.cmb_assign_ttc.get()
+        for u, tk in rows:
+            if chosen.startswith(f"{u} |"):
+                return tk
+        return rows[0][1]
+
+    def assign_ttc_to_selected_pages(self):
+        sel = self.tree_ttc_pages.selection()
+        if not sel:
+            messagebox.showwarning("Chưa chọn Page", "Hãy chọn ít nhất 1 dòng Page trong bảng bên dưới!")
+            return
+        tk = self._resolve_selected_ttc_token()
+        if not tk:
+            messagebox.showwarning("Chưa có Token TTC", "Hãy thêm Token TTC trước!")
+            return
+        with db_lock:
+            conn = get_db_connection()
+            for item in sel:
+                pid = str(self.tree_ttc_pages.item(item, "values")[2])
+                conn.execute("UPDATE fb_pages SET assigned_ttc=?, platform='TTC' WHERE page_id=?", (tk, pid))
+            conn.commit()
+            conn.close()
+        self.refresh_all_tables()
+        self.emit_log("HỆ THỐNG", f"Gắn Token TTC cho {len(sel)} Page", "Thành công")
+
+    def assign_ttc_to_all_pages(self):
+        tk = self._resolve_selected_ttc_token()
+        if not tk:
+            messagebox.showwarning("Chưa có Token TTC", "Hãy thêm Token TTC trước!")
+            return
+        with db_lock:
+            conn = get_db_connection()
+            conn.execute("UPDATE fb_pages SET assigned_ttc=?, platform='TTC'", (tk,))
+            conn.commit()
+            conn.close()
+        self.refresh_all_tables()
+        self.emit_log("HỆ THỐNG", "Gắn Token TTC cho toàn bộ Page", "Thành công")
+
+    def quick_add_ttc_page(self):
+        uid = self.ent_quick_uid.get().strip()
+        name = self.ent_quick_name.get().strip()
+        cookie = self.ent_quick_cookie.get().strip()
+        proxy = self.ent_quick_proxy.get().strip()
+
+        if not uid and cookie:
+            m_i = re.search(r"i_user=(\d+)", cookie)
+            m_c = re.search(r"c_user=(\d+)", cookie)
+            uid = m_i.group(1) if m_i else (m_c.group(1) if m_c else "")
+
+        if not uid or not cookie:
+            messagebox.showwarning("Thiếu dữ liệu", "Cần nhập Cookie Facebook (có c_user) và UID/Page ID!")
+            return
+
+        if not name:
+            name = f"FB_{uid[-5:]}"
+
+        default_ttc = self._resolve_selected_ttc_token()
+        with db_lock:
+            conn = get_db_connection()
+            conn.execute('''INSERT OR REPLACE INTO fb_pages
+                (parent_username, page_id, page_name, page_token, proxy, status, coins, max_jobs, parent_cookie, user_token, assigned_ttc, platform)
+                VALUES (?, ?, ?, '', ?, 'Ready', 0, 500, ?, '', ?, 'TTC')''',
+                (name, uid, name, proxy, cookie, default_ttc)
+            )
+            conn.commit()
+            conn.close()
+
+        self.refresh_all_tables()
+        self.emit_log(name, f"Thêm nhanh UID/Page {uid}", "Sẵn sàng chạy TTC")
+
+    def delete_selected_ttc_pages(self):
+        sel = self.tree_ttc_pages.selection()
+        if not sel:
+            return
+        with db_lock:
+            conn = get_db_connection()
+            for item in sel:
+                pid = str(self.tree_ttc_pages.item(item, "values")[2])
+                self.running_ttc_pages[pid] = False
+                conn.execute("DELETE FROM fb_pages WHERE page_id=?", (pid,))
+            conn.commit()
+            conn.close()
+        self.refresh_all_tables()
+
+    def test_datnick_selected_page(self):
+        sel = self.tree_ttc_pages.selection()
+        if not sel:
+            messagebox.showwarning("Chưa chọn Page", "Hãy chọn 1 dòng Page trong bảng để kiểm tra đặt cấu hình!")
+            return
+        pid = str(self.tree_ttc_pages.item(sel[0], "values")[2])
+
+        def _test():
+            with db_lock:
+                conn = get_db_connection()
+                row = conn.execute(
+                    "SELECT page_name, proxy, parent_cookie, assigned_ttc FROM fb_pages WHERE page_id=?",
+                    (pid,)
+                ).fetchone()
+                conn.close()
+            if not row:
+                return
+            pname, prx, pcookie, ass_ttc = row
+            if not ass_ttc:
+                ass_ttc = self._resolve_selected_ttc_token()
+            if not ass_ttc:
+                self.emit_log(pname, "Test Cấu Hình", "Chưa có Token TTC!")
+                return
+
+            ttc = TuongTacCheoTool(ass_ttc, proxy=prx)
+            ok_lg, msg_lg = ttc.login()
+            if not ok_lg:
+                self.update_ttc_page_ui(pid, status_text=f"❌ {msg_lg}")
+                self.emit_log(pname, "Login TTC", msg_lg)
+                return
+
+            dtsg = ttc.get_fb_dtsg(pid, pcookie)
+            dtsg_status = f"OK ({dtsg[:10]}...)" if dtsg else "LỖI (Kiểm tra lại Cookie FB!)"
+
+            ok_dat, msg_dat = ttc.dat_nick(pid)
+            final_st = f"{'✅' if ok_dat else '❌'} {msg_dat} | fb_dtsg: {dtsg_status}"
+            self.update_ttc_page_ui(pid, status_text=final_st, coins=ttc.coins)
+            self.emit_log(pname, "Test Đặt Nick & Cookie", final_st)
+
+        threading.Thread(target=_test, daemon=True).start()
+
+    # ==========================================================================
+    # QUÉT FANPAGE TỰ ĐỘNG TỪ COOKIE (GRAPHQL) HOẶC TOKEN (GRAPH API)
+    # ==========================================================================
+    def add_main_fb_as_worker_page(self):
+        cookie = self.ent_fb_cookie.get().strip()
+        token = self.ent_fb_token.get().strip()
+        proxy = self.ent_fb_proxy.get().strip()
+        plat = self.cmb_scan_platform.get()
+
+        m = re.search(r"c_user=(\d+)", cookie)
+        if not m:
+            messagebox.showwarning("Cookie thiếu c_user", "Vui lòng nhập Cookie Facebook hợp lệ có chứa c_user=...")
+            return
+        uid = m.group(1)
+        default_ttc = self._resolve_selected_ttc_token()
+
+        with db_lock:
+            conn = get_db_connection()
+            conn.execute(
+                "INSERT OR REPLACE INTO fb_accounts (fb_uid, fb_name, cookie, access_token, proxy, status) VALUES (?, ?, ?, ?, ?, 'Active')",
+                (uid, f"FB_{uid}", cookie, token, proxy)
+            )
+            conn.execute('''INSERT OR REPLACE INTO fb_pages
+                (parent_username, page_id, page_name, page_token, proxy, status, coins, max_jobs, parent_cookie, user_token, assigned_ttc, platform)
+                VALUES (?, ?, ?, ?, ?, 'Ready', 0, 500, ?, ?, ?, ?)''',
+                (f"FB_{uid}", uid, f"NickChinh_{uid}", token, proxy, cookie, token, default_ttc, plat)
+            )
+            conn.commit()
+            conn.close()
+
+        self.refresh_all_tables()
+        self.emit_log(f"FB_{uid}", "Thêm Nick FB chính vào danh sách chạy Job", "Thành công")
+
+    def add_fb_and_scan_pages(self):
+        cookie = self.ent_fb_cookie.get().strip()
+        utoken = self.ent_fb_token.get().strip()
+        proxy = self.ent_fb_proxy.get().strip()
+        plat = self.cmb_scan_platform.get()
+
+        if not cookie and not utoken:
+            messagebox.showwarning("Thiếu thông tin", "Hãy nhập Cookie Facebook hoặc Access Token EAAG...")
+            return
+
+        def _scan_worker():
+            proxies = format_proxies(proxy)
+            uid_m = re.search(r"c_user=(\d+)", cookie)
+            fb_uid = uid_m.group(1) if uid_m else f"FB_{random.randint(1000,9999)}"
+            fb_name = f"FB_{fb_uid}"
+            scanned_pages = []
+
+            # Cách 1: Quét qua Graph API nếu có Token EAAG/EAAB
+            if utoken:
+                try:
+                    r_me = requests.get(
+                        "https://graph.facebook.com/v18.0/me",
+                        params={"fields": "id,name", "access_token": utoken},
+                        proxies=proxies, timeout=15, verify=False
+                    )
+                    if r_me.status_code == 200 and "id" in r_me.json():
+                        fb_uid = r_me.json()["id"]
+                        fb_name = r_me.json().get("name", fb_name)
+
+                    r_acc = requests.get(
+                        "https://graph.facebook.com/v18.0/me/accounts",
+                        params={"fields": "id,name,access_token", "limit": 100, "access_token": utoken},
+                        proxies=proxies, timeout=20, verify=False
+                    )
+                    for item in r_acc.json().get("data", []):
+                        scanned_pages.append({
+                            "page_id": str(item["id"]),
+                            "page_name": item.get("name", str(item["id"])),
+                            "page_token": item.get("access_token", "")
+                        })
+                except Exception as e:
+                    self.emit_log(fb_name, "Quét Page qua Graph API lỗi", str(e))
+
+            # Cách 2: Quét trực tiếp bằng Cookie qua GraphQL (Nếu không có Token EAAG)
+            if not scanned_pages and cookie:
+                try:
+                    ttc_helper = TuongTacCheoTool("", proxy=proxy)
+                    dtsg = ttc_helper.get_fb_dtsg(fb_uid, cookie)
+                    if dtsg:
+                        headers = {
+                            "User-Agent": TuongTacCheoTool.USER_AGENT,
+                            "Cookie": cookie,
+                            "Content-Type": "application/x-www-form-urlencoded"
+                        }
+                        payload = {
+                            "av": fb_uid,
+                            "__user": fb_uid,
+                            "__a": "1",
+                            "fb_dtsg": dtsg,
+                            "fb_api_req_friendly_name": "CometProfileSwitchListQuery",
+                            "variables": '{"scale":1}',
+                            "doc_id": "6235234266562296"
+                        }
+                        r_gql = requests.post(
+                            "https://www.facebook.com/api/graphql/",
+                            data=payload, headers=headers, proxies=proxies, timeout=20, verify=False
+                        )
+                        matches = re.findall(r'"profile":\{"id":"(\d+)","name":"([^"]+)"', r_gql.text)
+                        seen_ids = set()
+                        for pid, pname in matches:
+                            if pid != fb_uid and pid not in seen_ids:
+                                seen_ids.add(pid)
+                                try:
+                                    pname_clean = bytes(pname, "utf-8").decode("unicode_escape")
+                                except Exception:
+                                    pname_clean = pname
+                                scanned_pages.append({
+                                    "page_id": pid,
+                                    "page_name": pname_clean,
+                                    "page_token": ""
+                                })
+                except Exception as e:
+                    self.emit_log(fb_name, "Quét Page qua Cookie GraphQL", str(e))
+
+            # Luôn thêm cả chính UID gốc nếu không tìm thấy Page con nào
+            if not scanned_pages and fb_uid.isdigit():
+                scanned_pages.append({
+                    "page_id": fb_uid,
+                    "page_name": f"Profile_{fb_uid}",
+                    "page_token": utoken
+                })
+
+            default_ttc = self._resolve_selected_ttc_token()
+            with db_lock:
+                conn = get_db_connection()
+                conn.execute(
+                    "INSERT OR REPLACE INTO fb_accounts (fb_uid, fb_name, cookie, access_token, proxy, status) VALUES (?, ?, ?, ?, ?, ?)",
+                    (fb_uid, fb_name, cookie, utoken, proxy, f"Đã quét {len(scanned_pages)} Page")
+                )
+                for p in scanned_pages:
+                    conn.execute('''INSERT OR REPLACE INTO fb_pages
+                        (parent_username, page_id, page_name, page_token, proxy, status, coins, max_jobs, parent_cookie, user_token, assigned_ttc, platform)
+                        VALUES (?, ?, ?, ?, ?, 'Ready', 0, 500, ?, ?, ?, ?)''',
+                        (fb_name, p["page_id"], p["page_name"], p["page_token"], proxy, cookie, utoken, default_ttc, plat)
+                    )
+                conn.commit()
+                conn.close()
+
+            self.emit_log(fb_name, f"Quét và lưu {len(scanned_pages)} Fanpage/Profile", "Hoàn tất")
+            self.after(0, self.refresh_all_tables)
+
+        threading.Thread(target=_scan_worker, daemon=True).start()
+
+    # ==========================================================================
+    # ĐIỀU KHIỂN & LUỒNG WORKER TTC FACEBOOK (CHUẨN SMALI MTOOLV2)
+    # ==========================================================================
+    def start_selected_ttc_pages(self):
+        sel = self.tree_ttc_pages.selection()
+        if not sel:
+            messagebox.showwarning("Chưa chọn Page", "Vui lòng bôi đen ít nhất 1 Page trong bảng để chạy!")
+            return
+        if not self.get_checked_ttc_modes():
+            messagebox.showwarning("Chưa chọn loại Job", "Hãy tích chọn ít nhất 1 trong 12 chế độ Job TTC!")
+            return
+        for item in sel:
+            pid = str(self.tree_ttc_pages.item(item, "values")[2])
+            self._spawn_ttc_page_thread(pid)
+
+    def start_all_ttc_pages(self):
+        if not self.get_checked_ttc_modes():
+            messagebox.showwarning("Chưa chọn loại Job", "Hãy tích chọn ít nhất 1 trong 12 chế độ Job TTC!")
+            return
+        for item in self.tree_ttc_pages.get_children():
+            pid = str(self.tree_ttc_pages.item(item, "values")[2])
+            self._spawn_ttc_page_thread(pid)
+
+    def stop_selected_ttc_pages(self):
+        for item in self.tree_ttc_pages.selection():
+            pid = str(self.tree_ttc_pages.item(item, "values")[2])
+            self.running_ttc_pages[pid] = False
+            self.update_ttc_page_ui(pid, status_text="⏹️ Đang dừng...")
+
+    def stop_all_ttc_pages(self):
+        for pid in list(self.running_ttc_pages.keys()):
+            self.running_ttc_pages[pid] = False
+            self.update_ttc_page_ui(pid, status_text="⏹️ Đã gửi lệnh dừng")
+
+    def _spawn_ttc_page_thread(self, page_id):
+        if self.running_ttc_pages.get(page_id, False):
+            return
+        if page_id not in self.page_locks:
+            self.page_locks[page_id] = threading.Lock()
+        self.running_ttc_pages[page_id] = True
+        t = threading.Thread(target=self.worker_ttc_page_loop, args=(page_id,), daemon=True)
+        t.start()
+
+    def worker_ttc_page_loop(self, page_id):
+        lock = self.page_locks[page_id]
+        if not lock.acquire(blocking=False):
+            return
+
+        try:
+            with db_lock:
+                conn = get_db_connection()
+                row = conn.execute(
+                    "SELECT page_name, page_token, proxy, max_jobs, parent_cookie, user_token, assigned_ttc FROM fb_pages WHERE page_id=?",
+                    (page_id,)
+                ).fetchone()
+                if not row:
+                    conn.close()
                     return
-                jobs = []
-                if self.chk_ig_like.get(): jobs.append("instagram_like")
-                if self.chk_ig_follow.get(): jobs.append("instagram_follow")
-                if self.chk_ig_cmt.get(): jobs.append("instagram_comment")
-                self.single_running_threads[ig_user] = True
-                self.queue_row_ui("account", ig_user, status_text="Đang chạy XSMM...", status_color="#2563eb", btn_text="Dừng", btn_color="#dc2626")
-                threading.Thread(target=self.worker_single_account_loop, args=(token, jobs, acc_data), daemon=True).start()
-            else:
-                self.single_running_threads[ig_user] = False
-                self.queue_row_ui("account", ig_user, status_text="Đã dừng", status_color="#d97706", btn_text="Bắt đầu", btn_color="#2563eb")
+                page_name, page_token, proxy, max_jobs, parent_cookie, user_token, assigned_ttc = row
+                if not assigned_ttc:
+                    t_row = conn.execute("SELECT ttc_token FROM ttc_accounts LIMIT 1").fetchone()
+                    if t_row:
+                        assigned_ttc = t_row[0]
+                        conn.execute("UPDATE fb_pages SET assigned_ttc=? WHERE page_id=?", (assigned_ttc, page_id))
+                        conn.commit()
+                conn.close()
 
-        btn_action = ctk.CTkButton(row_frame, text="Bắt đầu", width=80, height=26, fg_color="#2563eb", font=ctk.CTkFont(size=10, weight="bold"), command=toggle_ig)
-        btn_action.grid(row=0, column=7, padx=10, pady=5, sticky="e")
-
-        self.acc_rows[ig_user] = {"frame": row_frame, "var": var, "id_label": lbl_id, "status_label": lbl_status, "status_text": status, "coin_label": lbl_coin, "action_btn": btn_action, "coins": acc_data.get("coins", 0), "data": acc_data}
-
-    def start_all_checked_xsmm_ig(self):
-        self.sync_cache_from_ui()
-        token = self.cfg_cache["token"]
-        if not token:
-            self.log("⚠️ Vui lòng nhập XSMM Bearer Token trước khi chạy!")
-            return
-        jobs = []
-        if self.chk_ig_like.get(): jobs.append("instagram_like")
-        if self.chk_ig_follow.get(): jobs.append("instagram_follow")
-        if self.chk_ig_cmt.get(): jobs.append("instagram_comment")
-        for u, info in self.acc_rows.items():
-            if info["var"].get() and not self.single_running_threads.get(u, False):
-                self.single_running_threads[u] = True
-                self.queue_row_ui("account", u, status_text="Đang chạy XSMM...", status_color="#2563eb", btn_text="Dừng", btn_color="#dc2626")
-                threading.Thread(target=self.worker_single_account_loop, args=(token, jobs, info["data"]), daemon=True).start()
-
-    def quick_add_single_account(self):
-        ck = self.ent_quick_cookie.get().strip().split("|")[0].strip()
-        if not ck:
-            return
-        proxy = self.get_effective_proxy("")
-        try: max_j = int(self.max_jobs_entry.get().strip())
-        except Exception: max_j = 999999
-
-        def _add():
-            p_data = json.loads(check_cookie_ig(ck, proxy))
-            if p_data.get("status_check") == "LIVE":
-                u = p_data["form_data"]["username"]
-                uid = str(p_data["form_data"].get("id", "0"))
-                self._db_queue.put(("INSERT OR REPLACE INTO accounts (username, cookie, proxy, status, coins, max_jobs) VALUES (?, ?, ?, ?, ?, ?)", (u, ck, proxy, "Live ✅", 0, max_j)))
-                acc_d = {"username": u, "cookie": ck, "proxy": proxy, "id": uid, "coins": 0, "max_jobs": max_j}
-                self.after(0, lambda: self.add_account_row_to_ui(acc_d, "Live ✅"))
-                self.after(0, lambda: self.ent_quick_cookie.delete(0, "end"))
-                self.log(f"✅ Đã thêm IG (XSMM): @{u}")
-            else:
-                self.log("❌ Cookie IG không hợp lệ hoặc đã Die!")
-
-        threading.Thread(target=_add, daemon=True).start()
-
-    def batch_import_accounts(self):
-        modal = ctk.CTkToplevel(self)
-        modal.title("📥 Batch Import Cookie IG (XSMM)")
-        modal.geometry("680x460")
-        modal.grab_set()
-        txt_b = ctk.CTkTextbox(modal, height=340, font=ctk.CTkFont(family="Consolas", size=10))
-        txt_b.pack(fill="both", expand=True, padx=20, pady=15)
-
-        def _imp():
-            lines = [l.strip().split("|")[0].strip() for l in txt_b.get("1.0", "end").split("\n") if l.strip()]
-            modal.destroy()
-            proxy = self.get_effective_proxy("")
-            for ck in lines:
-                p_data = json.loads(check_cookie_ig(ck, proxy))
-                if p_data.get("status_check") == "LIVE":
-                    u = p_data["form_data"]["username"]
-                    uid = str(p_data["form_data"].get("id", "0"))
-                    self._db_queue.put(("INSERT OR REPLACE INTO accounts (username, cookie, proxy, status, coins, max_jobs) VALUES (?, ?, ?, ?, ?, ?)", (u, ck, proxy, "Live ✅", 0, 999999)))
-                    acc_d = {"username": u, "cookie": ck, "proxy": proxy, "id": uid, "coins": 0, "max_jobs": 999999}
-                    self.after(0, lambda d=acc_d: self.add_account_row_to_ui(d, "Live ✅"))
-
-        ctk.CTkButton(modal, text="🚀 NẠP DANH SÁCH IG", fg_color="#059669", height=38, command=lambda: threading.Thread(target=_imp, daemon=True).start()).pack(fill="x", padx=20, pady=(0, 15))
-
-    def worker_single_account_loop(self, token, listnv, acc):
-        username, ck, id_val = acc["username"], acc["cookie"], acc["id"]
-        xsmm = XSMMTool(token)
-        ig = INSTAGRAM(ck, self.get_effective_proxy(acc.get("proxy", "")))
-        try:
-            av, fb_dtsg, st_check, ig_uname = ig.GETINFO()
-            if st_check in ["DIE", "CHECKPOINT"]:
-                self.single_running_threads[username] = False
-                self.queue_row_ui("account", username, status_text=f"Cookie {st_check} ❌", status_color="#dc2626", btn_text="Bắt đầu", btn_color="#2563eb")
+            if not assigned_ttc:
+                self.update_ttc_page_ui(page_id, status_text="❌ Lỗi: Chưa gắn Token TTC!")
+                self.emit_log(page_name, "Khởi chạy TTC", "Dừng vì chưa có Token TTC")
+                self.running_ttc_pages[page_id] = False
                 return
-            xsmm_uid = xsmm.sync_and_get_xsmm_id(ig_uname or username, av or id_val)
-            follow_cache = []
-            while self.single_running_threads.get(username, False):
-                d_min, d_max, dc_min, dc_max = self.get_delay_settings()
-                for job in listnv:
-                    if not self.single_running_threads.get(username, False):
+
+            # 1. Đăng nhập Token TTC -> Giữ Cookie PHPSESSID xuyên suốt
+            ttc = TuongTacCheoTool(assigned_ttc, proxy=proxy)
+            self.update_ttc_page_ui(page_id, status_text="🔄 Đang đăng nhập Token TTC...")
+            ok_lg, msg_lg = ttc.login()
+            if not ok_lg:
+                self.update_ttc_page_ui(page_id, status_text=f"❌ {msg_lg}")
+                self.emit_log(page_name, "Đăng nhập TTC lỗi", msg_lg)
+                self.running_ttc_pages[page_id] = False
+                return
+
+            self.update_ttc_page_ui(page_id, status_text=f"✅ Login TTC ({ttc.ttc_user})", coins=ttc.coins)
+            self.emit_log(page_name, "Login TTC", msg_lg)
+
+            # 2. Kiểm tra fb_dtsg của Cookie Facebook trước khi chạy
+            if parent_cookie:
+                self.update_ttc_page_ui(page_id, status_text="🔑 Đang lấy fb_dtsg từ Cookie Facebook...")
+                dtsg = ttc.get_fb_dtsg(page_id, parent_cookie)
+                if dtsg:
+                    self.emit_log(page_name, f"Khởi tạo phiên FB UID {page_id}", f"Lấy fb_dtsg thành công ({dtsg[:10]}...)")
+                else:
+                    self.emit_log(page_name, f"Cảnh báo Cookie UID {page_id}", "Không lấy được fb_dtsg (Kiểm tra lại Cookie!)")
+
+            # 3. Đặt cấu hình Nick/Page trên TTC (Bắt buộc trả về '1' mới quét ra job)
+            self.update_ttc_page_ui(page_id, status_text=f"⚙️ Đang đặt cấu hình UID {page_id} trên TTC...")
+            ok_dat, msg_dat = ttc.dat_nick(page_id)
+            if not ok_dat:
+                self.update_ttc_page_ui(page_id, status_text=f"❌ {msg_dat}")
+                self.emit_log(page_name, "Đặt cấu hình TTC thất bại", msg_dat)
+                self.running_ttc_pages[page_id] = False
+                return
+
+            self.emit_log(page_name, "Đặt cấu hình TTC", msg_dat)
+
+            completed_jobs = 0
+            max_jobs = int(max_jobs or 500)
+
+            # 4. Vòng lặp quét & làm nhiệm vụ qua các mục đã tích
+            while self.running_ttc_pages.get(page_id, False) and completed_jobs < max_jobs:
+                active_modes = self.get_checked_ttc_modes()
+                if not active_modes:
+                    self.update_ttc_page_ui(page_id, status_text="⏸️ Chưa tích chọn chế độ Job nào!")
+                    time.sleep(3)
+                    continue
+
+                found_job_in_round = False
+
+                for job_key in active_modes:
+                    if not self.running_ttc_pages.get(page_id, False) or completed_jobs >= max_jobs:
                         break
-                    tasks, _, matched_uid = xsmm.get_tasks(job, xsmm_uid, fallback_uids=[av, username])
-                    for nv in (tasks or []):
-                        if not self.single_running_threads.get(username, False):
+
+                    mode_name = TuongTacCheoTool.JOB_MODES.get(job_key, {}).get("name", job_key)
+                    self.update_ttc_page_ui(page_id, status_text=f"🔍 Đang quét {mode_name}...")
+
+                    with worker_semaphore:
+                        jobs, scan_msg, cd_sec = ttc.get_tasks(job_key)
+
+                    if not jobs:
+                        if cd_sec > 0:
+                            self._sleep_with_status(page_id, cd_sec, f"⏳ Countdown {mode_name}")
+                        else:
+                            self._sleep_with_status(page_id, 3, f"Chuyển mục ({mode_name} hết job)")
+                        continue
+
+                    found_job_in_round = True
+                    self.emit_log(page_name, f"Quét {mode_name}", f"Tìm thấy {len(jobs)} nhiệm vụ!")
+
+                    # Làm từng job trong danh sách trả về
+                    for idx, job in enumerate(jobs, start=1):
+                        if not self.running_ttc_pages.get(page_id, False) or completed_jobs >= max_jobs:
                             break
-                        tid = nv.get("id")
-                        t_id = nv.get("target_id", "") or nv.get("idorlink", "")
-                        t_url = nv.get("target_url", "") or nv.get("link", "")
-                        ok = False
-                        if job == "instagram_like":
-                            ok = ig.LIKE(av, fb_dtsg, t_id, ck, t_url)
-                        elif job == "instagram_follow":
-                            ok = ig.FOLLOW(fb_dtsg, t_id, t_url, av=av)
-                        elif job == "instagram_comment":
-                            ok = ig.COMMENT(av, fb_dtsg, t_id, t_url, nv.get("msg") or ai_generate_unique_comment())
-                        if ok:
-                            if job == "instagram_follow":
-                                follow_cache.append(tid)
-                                if len(follow_cache) >= 3:
-                                    c_res = gui_nhan_xu(job, follow_cache, matched_uid, cookie_check=ck, xsmm_obj=xsmm)
-                                    earned, _ = parse_real_earned_points(c_res, 30)
-                                    if earned > 0:
-                                        self.update_stats(coins=earned, jobs=len(follow_cache), entity_type="account", entity_key=username)
-                                    follow_cache = []
-                            else:
-                                c_res = gui_nhan_xu(job, [tid], matched_uid, cookie_check=ck, xsmm_obj=xsmm)
-                                earned, _ = parse_real_earned_points(c_res, 10)
-                                if earned > 0:
-                                    self.update_stats(coins=earned, jobs=1, entity_type="account", entity_key=username)
-                        if not self.smart_sleep(random.randint(d_min, d_max), username):
-                            break
-                if not self.smart_sleep(8, username):
-                    break
+
+                        idpost = job["idpost"]
+                        self.update_ttc_page_ui(
+                            page_id,
+                            status_text=f"⚡ [{idx}/{len(jobs)}] Đang làm {mode_name} -> ID: {idpost}"
+                        )
+
+                        with worker_semaphore:
+                            fb_ok, fb_msg = ttc.do_fb_action(page_id, page_token, parent_cookie, job)
+
+                        if not fb_ok:
+                            self.emit_log(page_name, f"Bỏ qua {mode_name} ({idpost})", fb_msg)
+                            self._sleep_with_status(page_id, 2, "⚠️ Lỗi thao tác FB, chuyển job kế")
+                            continue
+
+                        # Chờ 2.5s để Facebook cập nhật trạng thái trước khi bấm nhận tiền trên TTC
+                        time.sleep(2.5)
+
+                        with worker_semaphore:
+                            claim_ok, claim_msg, updated_coins = ttc.claim_reward(
+                                job_key, idpost, sub_path=job.get("sub_path")
+                            )
+
+                        if claim_ok:
+                            completed_jobs += 1
+                            with db_lock:
+                                conn = get_db_connection()
+                                conn.execute("UPDATE ttc_accounts SET coins=? WHERE ttc_token=?", (updated_coins, assigned_ttc))
+                                conn.execute("UPDATE fb_pages SET coins=? WHERE page_id=?", (updated_coins, page_id))
+                                conn.commit()
+                                conn.close()
+
+                            self.update_ttc_page_ui(
+                                page_id,
+                                status_text=f"💰 +{claim_msg} | Đã làm: {completed_jobs}/{max_jobs}",
+                                coins=updated_coins
+                            )
+                            self.emit_log(page_name, f"Nhận xu [{mode_name}]", f"{claim_msg} (Tổng: {updated_coins:,} xu)")
+                        else:
+                            self.emit_log(page_name, f"Nhận xu thất bại ({idpost})", claim_msg)
+                            # Nếu văng cấu hình hoặc hết phiên thì tự login + đặt lại nick
+                            if "cấu hình" in claim_msg.lower() or "đăng nhập" in claim_msg.lower():
+                                ttc.login()
+                                ttc.dat_nick(page_id)
+
+                        # Delay ngẫu nhiên trong khoảng Min - Max
+                        try:
+                            d_min = max(2, int(self.ent_ttc_delay_min.get().strip()))
+                            d_max = max(d_min, int(self.ent_ttc_delay_max.get().strip()))
+                        except Exception:
+                            d_min, d_max = 6, 10
+                        wait_s = random.randint(d_min, d_max)
+                        self._sleep_with_status(page_id, wait_s, f"⏳ Nghỉ {wait_s}s giãn cách")
+
+                if not found_job_in_round and self.running_ttc_pages.get(page_id, False):
+                    self._sleep_with_status(page_id, 10, "🔄 Quét hết các mục đều trống, chờ 10s quét vòng mới")
+
+        except Exception as e:
+            self.emit_log(page_id, "Lỗi luồng TTC", str(e))
         finally:
-            ig.close()
-            xsmm.close()
-        self.single_running_threads[username] = False
-        self.queue_row_ui("account", username, status_text="Đã dừng", status_color="#d97706", btn_text="Bắt đầu", btn_color="#2563eb")
+            self.running_ttc_pages[page_id] = False
+            self.update_ttc_page_ui(page_id, status_text="⏹️ Đã dừng")
+            lock.release()
+
+    def _sleep_with_status(self, page_id, seconds, prefix):
+        for rem in range(int(seconds), 0, -1):
+            if not self.running_ttc_pages.get(page_id, False):
+                break
+            self.update_ttc_page_ui(page_id, status_text=f"{prefix} ({rem}s)...")
+            time.sleep(1)
+
+    # ==========================================================================
+    # LUỒNG WORKER XSMM CHO FANPAGE & INSTAGRAM (GIỮ ĐẦY ĐỦ TÍNH NĂNG CŨ)
+    # ==========================================================================
+    def start_selected_xsmm_pages(self):
+        api_key = self.ent_xsmm_page_api.get().strip()
+        if not api_key:
+            messagebox.showwarning("Thiếu XSMM Token", "Hãy nhập XSMM API Token ở ô phía trên!")
+            return
+        for item in self.tree_all_pages.selection():
+            pid = str(self.tree_all_pages.item(item, "values")[2])
+            if not self.running_xsmm_pages.get(pid, False):
+                self.running_xsmm_pages[pid] = True
+                threading.Thread(target=self.worker_single_page_loop, args=(pid, api_key), daemon=True).start()
+
+    def stop_selected_xsmm_pages(self):
+        for item in self.tree_all_pages.selection():
+            pid = str(self.tree_all_pages.item(item, "values")[2])
+            self.running_xsmm_pages[pid] = False
+            self.update_ttc_page_ui(pid, status_text="⏹️ Đã dừng XSMM")
+
+    def worker_single_page_loop(self, page_id, xsmm_api_key):
+        try:
+            with db_lock:
+                conn = get_db_connection()
+                row = conn.execute(
+                    "SELECT page_name, page_token, proxy, coins, max_jobs, parent_cookie FROM fb_pages WHERE page_id=?",
+                    (page_id,)
+                ).fetchone()
+                conn.close()
+            if not row:
+                return
+            pname, ptoken, proxy, coins, max_jobs, pcookie = row
+            xsmm = XSMMTool(xsmm_api_key, proxy=proxy)
+            ttc_fb_executor = TuongTacCheoTool("", proxy=proxy)
+            done = 0
+
+            while self.running_xsmm_pages.get(page_id, False) and done < int(max_jobs or 100):
+                self.update_ttc_page_ui(page_id, status_text="🔍 Đang lấy job Facebook XSMM...")
+                tasks = xsmm.get_tasks(social="facebook", account_uid=page_id)
+                if not tasks:
+                    self.update_ttc_page_ui(page_id, status_text="⏳ Hết job XSMM, chờ 10s...")
+                    time.sleep(10)
+                    continue
+
+                for t in tasks:
+                    if not self.running_xsmm_pages.get(page_id, False):
+                        break
+                    tid = t.get("id") or t.get("task_id")
+                    link = t.get("link") or t.get("target_url") or ""
+                    jtype = str(t.get("type", "like")).upper()
+                    fake_job = {
+                        "idpost": link,
+                        "link": link,
+                        "loaicx": "LIKE",
+                        "nd": t.get("comment", "Tuyệt vời"),
+                        "action": "FOLLOW" if "FOLLOW" in jtype or "SUB" in jtype else "LIKE"
+                    }
+                    ok, msg = ttc_fb_executor.do_fb_action(page_id, ptoken, pcookie, fake_job)
+                    if ok:
+                        time.sleep(2)
+                        c_ok, c_msg, rew = xsmm.claim_reward(tid, account_uid=page_id)
+                        if c_ok:
+                            coins += rew
+                            done += 1
+                            with db_lock:
+                                conn = get_db_connection()
+                                conn.execute("UPDATE fb_pages SET coins=? WHERE page_id=?", (coins, page_id))
+                                conn.commit()
+                                conn.close()
+                            self.update_ttc_page_ui(page_id, status_text=f"💰 +{rew} xu XSMM ({done} job)", coins=coins)
+                    time.sleep(6)
+        finally:
+            self.running_xsmm_pages[page_id] = False
+            self.update_ttc_page_ui(page_id, status_text="⏹️ Đã dừng XSMM")
+
+    # ==========================================================================
+    # QUẢN LÝ & WORKER INSTAGRAM (XSMM)
+    # ==========================================================================
+    def add_ig_account(self):
+        cookie = self.ent_ig_cookie.get().strip()
+        proxy = self.ent_ig_proxy.get().strip()
+        max_j = self.ent_ig_maxjobs.get().strip() or "100"
+        if not cookie:
+            messagebox.showwarning("Thiếu Cookie", "Hãy dán Cookie Instagram vào ô!")
+            return
+
+        def _check():
+            ig = INSTAGRAM(cookie, proxy=proxy)
+            ok, uname = ig.GETINFO()
+            if ok:
+                with db_lock:
+                    conn = get_db_connection()
+                    conn.execute(
+                        "INSERT OR REPLACE INTO accounts (username, cookie, proxy, status, coins, max_jobs) VALUES (?, ?, ?, 'Ready', 0, ?)",
+                        (uname, cookie, proxy, int(max_j))
+                    )
+                    conn.commit()
+                    conn.close()
+                self.emit_log(uname, "Thêm tài khoản Instagram", "Check Live OK")
+                self.after(0, self.refresh_all_tables)
+            else:
+                self.emit_log("IG_ERROR", "Check Cookie IG thất bại", uname)
+
+        threading.Thread(target=_check, daemon=True).start()
+
+    def import_ig_file(self):
+        path = filedialog.askopenfilename(filetypes=[("Text Files", "*.txt")])
+        if not path:
+            return
+        with open(path, "r", encoding="utf-8", errors="ignore") as f:
+            lines = [line.strip() for line in f if line.strip()]
+        with db_lock:
+            conn = get_db_connection()
+            for idx, ln in enumerate(lines):
+                parts = ln.split("|")
+                ck = parts[0].strip()
+                prx = parts[1].strip() if len(parts) > 1 else ""
+                m = re.search(r"ds_user_id=(\d+)", ck)
+                uname = f"IG_{m.group(1)}" if m else f"IG_Import_{idx+1}"
+                conn.execute(
+                    "INSERT OR REPLACE INTO accounts (username, cookie, proxy, status, coins, max_jobs) VALUES (?, ?, ?, 'Imported', 0, 100)",
+                    (uname, ck, prx)
+                )
+            conn.commit()
+            conn.close()
+        self.refresh_all_tables()
+        self.emit_log("HỆ THỐNG", f"Import {len(lines)} Cookie IG từ file", "Thành công")
+
+    def start_selected_ig(self):
+        api_key = self.ent_ig_xsmm_token.get().strip()
+        if not api_key:
+            messagebox.showwarning("Thiếu XSMM API Key", "Hãy nhập XSMM API Key ở Tab Instagram!")
+            return
+        for item in self.tree_ig.selection():
+            uname = str(self.tree_ig.item(item, "values")[1])
+            if not self.running_ig.get(uname, False):
+                self.running_ig[uname] = True
+                threading.Thread(target=self.worker_single_account_loop, args=(uname, api_key), daemon=True).start()
+
+    def stop_selected_ig(self):
+        for item in self.tree_ig.selection():
+            uname = str(self.tree_ig.item(item, "values")[1])
+            self.running_ig[uname] = False
+            self.update_ig_ui(uname, status_text="⏹️ Đã dừng")
+
+    def delete_selected_ig(self):
+        sel = self.tree_ig.selection()
+        if not sel:
+            return
+        with db_lock:
+            conn = get_db_connection()
+            for item in sel:
+                uname = str(self.tree_ig.item(item, "values")[1])
+                self.running_ig[uname] = False
+                conn.execute("DELETE FROM accounts WHERE username=?", (uname,))
+            conn.commit()
+            conn.close()
+        self.refresh_all_tables()
+
+    def worker_single_account_loop(self, username, xsmm_api_key):
+        try:
+            with db_lock:
+                conn = get_db_connection()
+                row = conn.execute("SELECT cookie, proxy, coins, max_jobs FROM accounts WHERE username=?", (username,)).fetchone()
+                conn.close()
+            if not row:
+                return
+            cookie, proxy, coins, max_jobs = row
+            ig = INSTAGRAM(cookie, proxy=proxy)
+            xsmm = XSMMTool(xsmm_api_key, proxy=proxy)
+            done = 0
+
+            while self.running_ig.get(username, False) and done < int(max_jobs or 100):
+                self.update_ig_ui(username, status_text="🔍 Đang lấy job IG từ XSMM...")
+                tasks = xsmm.get_tasks(social="instagram", account_uid=username)
+                if not tasks:
+                    self.update_ig_ui(username, status_text="⏳ Hết job IG, chờ 10s...")
+                    time.sleep(10)
+                    continue
+
+                for t in tasks:
+                    if not self.running_ig.get(username, False):
+                        break
+                    tid = t.get("id") or t.get("task_id")
+                    target = t.get("link") or t.get("target") or ""
+                    jtype = str(t.get("type", "follow")).lower()
+
+                    if "like" in jtype:
+                        ok, msg = ig.LIKE(target)
+                    elif "comment" in jtype:
+                        ok, msg = ig.COMMENT(target, t.get("comment", "Nice!"))
+                    else:
+                        ok, msg = ig.FOLLOW(target)
+
+                    if ok:
+                        time.sleep(2)
+                        c_ok, c_msg, rew = xsmm.claim_reward(tid, account_uid=username)
+                        if c_ok:
+                            coins += rew
+                            done += 1
+                            with db_lock:
+                                conn = get_db_connection()
+                                conn.execute("UPDATE accounts SET coins=? WHERE username=?", (coins, username))
+                                conn.commit()
+                                conn.close()
+                            self.update_ig_ui(username, status_text=f"💰 +{rew} coins ({done}/{max_jobs})", coins=coins)
+                            self.emit_log(username, f"IG Job {jtype}", f"+{rew} coins")
+                    time.sleep(7)
+        finally:
+            self.running_ig[username] = False
+            self.update_ig_ui(username, status_text="⏹️ Đã dừng")
+
+    # ==========================================================================
+    # QUẢN LÝ NHẬT KÝ HỆ THỐNG (TAB DASHBOARD)
+    # ==========================================================================
+    def load_db_logs_to_view(self):
+        self.txt_system_log.delete("1.0", "end")
+        with db_lock:
+            conn = get_db_connection()
+            rows = conn.execute("SELECT timestamp, username, action, status FROM logs ORDER BY id DESC LIMIT 300").fetchall()
+            conn.close()
+        for ts, u, act, st in reversed(rows):
+            self.txt_system_log.insert("end", f"[{ts}] [{u}] {act} -> {st}\n")
+        self.txt_system_log.see("end")
+
+    def clear_all_logs(self):
+        with db_lock:
+            conn = get_db_connection()
+            conn.execute("DELETE FROM logs")
+            conn.commit()
+            conn.close()
+        self.txt_system_log.delete("1.0", "end")
+        self.txt_ttc_live_log.delete("1.0", "end")
 
 
 if __name__ == "__main__":
