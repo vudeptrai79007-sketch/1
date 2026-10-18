@@ -148,48 +148,54 @@ GOM_HOTMAIL_FILE = 'Gom_Hotmail_Dongvan.txt'
 FB_ACCOUNT_FILE = 'FB_NhaTrong.txt'
 TELE_FILE = 'Token-ID-Tele.txt'
 
+# CẤU HÌNH THỜI GIAN & ANTI-CHECKPOINT TỐI ƯU NHẤT
 DEFAULT_CONFIG = {
-    'delay_mo_facebook': 15,
-    'delay_chon_khong_cho_phep': 0.5,
-    'delay_chon_toi_co_tai_khoan_roi': 0.5,
-    'delay_click_tao_tk_lan1': 1,
-    'delay_click_tao_tk_lan2': 0.5,
-    'delay_chon_khong_cho_phep_lan2': 0.1,
-    'delay_nhap_ho': 0.1,
-    'delay_nhap_ten': 0.1,
-    'delay_click_tiep_lan1': 1,
-    'delay_click_chon': 0.5,
-    'delay_click_tiep_lan2': 0.15,
-    'delay_click_tiep_lan3': 1,
-    'delay_nhap_tuoi': 0.1,
-    'delay_click_tiep_lan4': 0.5,
-    'delay_click_ok': 0.5,
-    'delay_chon_gioi_tinh': 0.5,
-    'delay_click_tiep_lan5': 1,
-    'delay_nhap_sdt': 0.1,
-    'delay_click_tiep_sdt': 1.5,
-    'delay_click_tiep_tuc_tao_tk': 0.5,
-    'delay_kiem_tra_sdt': 0.5,
-    'delay_nhap_mat_khau': 1,
-    'delay_click_tiep_sau_mk': 1.5,
-    'delay_click_luu': 0.5,
-    'delay_cho_toi_dong_y': 25,
-    'delay_kiem_tra_loi': 1,
-    'delay_click_tiep_tuc': 0.5,
-    'delay_click_khong_cho_phep': 0.25,
-    'delay_click_khong_cho_phep_lan2': 0,
-    'delay_buoc_dung_fb': 0.1,
-    'delay_mo_lai_fb': 10,
-    'delay_click_toi_khong_nhan_duoc_ma': 0.75,
-    'delay_click_xac_nhan_email': 0,
-    'delay_nhap_email': 1,
-    'delay_click_tiep_sau_email': 1,
-    'delay_get_code': 2,
-    'delay_nhap_code': 1,
-    'delay_click_tiep_cuoi': 5,
-    'delay_up_avatar': 8,
-    'delay_giua_cac_lan_chay': 5,
-    'delay_thu_lai_khi_loi': 6,
+    'doi_ip_may_bay': True,
+    'thoi_gian_bat_may_bay': 5.0,
+    'thoi_gian_cho_4g': 6.0,
+    'doi_android_id': True,
+    'delay_mo_facebook': 9.0,
+    'delay_chon_khong_cho_phep': 0.8,
+    'delay_click_khoang_trong': 0.6,
+    'delay_chon_toi_co_tai_khoan_roi': 0.8,
+    'delay_click_tao_tk_lan1': 1.2,
+    'delay_click_tao_tk_lan2': 1.0,
+    'delay_chon_khong_cho_phep_lan2': 0.6,
+    'delay_nhap_ho': 0.6,
+    'delay_nhap_ten': 0.6,
+    'delay_click_tiep_lan1': 1.2,
+    'delay_click_chon': 0.8,
+    'delay_click_tiep_lan2': 0.8,
+    'delay_click_tiep_lan3': 1.0,
+    'delay_nhap_tuoi': 0.7,
+    'delay_click_tiep_lan4': 1.0,
+    'delay_click_ok': 0.8,
+    'delay_chon_gioi_tinh': 0.8,
+    'delay_click_tiep_lan5': 1.2,
+    'delay_nhap_sdt': 0.8,
+    'delay_click_tiep_sdt': 2.0,
+    'delay_click_tiep_tuc_tao_tk': 1.0,
+    'delay_kiem_tra_sdt': 0.8,
+    'delay_nhap_mat_khau': 1.2,
+    'delay_click_tiep_sau_mk': 1.8,
+    'delay_click_luu': 1.0,
+    'delay_cho_toi_dong_y': 18.0,
+    'delay_kiem_tra_loi': 1.2,
+    'delay_click_tiep_tuc': 1.0,
+    'delay_click_khong_cho_phep': 0.6,
+    'delay_click_khong_cho_phep_lan2': 0.5,
+    'delay_buoc_dung_fb': 0.5,
+    'delay_mo_lai_fb': 7.0,
+    'delay_click_toi_khong_nhan_duoc_ma': 1.0,
+    'delay_click_xac_nhan_email': 0.8,
+    'delay_nhap_email': 1.0,
+    'delay_click_tiep_sau_email': 2.0,
+    'delay_get_code': 2.5,
+    'delay_nhap_code': 1.2,
+    'delay_click_tiep_cuoi': 6.0,
+    'delay_up_avatar': 8.0,
+    'delay_giua_cac_lan_chay': 4.0,
+    'delay_thu_lai_khi_loi': 5.0,
     'so_lan_thu_get_code': 20,
     'mat_khau_fb': '@Letien09'
 }
@@ -198,6 +204,21 @@ device_steps = {}
 device_last_step = {}
 multi_mode = False
 stop_flag = STOP_EVENT
+
+
+def nghi_ngau_nhien(thoi_gian_goc, dao_dong=0.2):
+    """Tạo độ trễ ngẫu nhiên +-20% quanh mốc cấu hình để chống thuật toán phát hiện bot của Meta"""
+    try:
+        t = float(thoi_gian_goc)
+        if t <= 0:
+            return
+        min_t = max(0.05, t * (1.0 - dao_dong))
+        max_t = t * (1.0 + dao_dong)
+        time.sleep(random.uniform(min_t, max_t))
+    except KeyboardInterrupt:
+        raise KeyboardInterrupt
+    except Exception:
+        time.sleep(1)
 
 
 # ========== HÀM CƠ BẢN & HỆ THỐNG XỬ LÝ PROXY ĐA NĂNG ==========
@@ -478,12 +499,10 @@ class MailService:
 
                             code = None
                             if force_8_digits:
-                                # Bóc tách mã OTP 8 chữ số trực tiếp từ nội dung thư (email body)
                                 match_8 = re.search(r'(?<!\d)(\d{8})(?!\d)', clean_body)
                                 if match_8:
                                     code = match_8.group(1)
                             else:
-                                # Ưu tiên đọc mã 8 số từ nội dung thư hoặc mã xác nhận đăng ký
                                 match_body_8 = re.search(r'(?<!\d)(\d{8})(?!\d)', clean_body)
                                 match_sub = re.search(r'(?<!\d)(\d{5,8})(?!\d)', subject)
                                 match_body = re.search(r'(?<!\d)(\d{5,8})(?!\d)', clean_body)
@@ -631,7 +650,6 @@ class GmailIMAPService:
                                     code = None
 
                                     if force_8_digits:
-                                        # Bóc tách mã OTP 8 chữ số từ nội dung thư (email body)
                                         match_8 = re.search(r'(?<!\d)(\d{8})(?!\d)', safe_body)
                                         if match_8:
                                             code = match_8.group(1)
@@ -758,7 +776,6 @@ class HotmailAPIService:
                                     code = None
 
                                     if force_8_digits:
-                                        # Bóc tách mã OTP 8 chữ số từ nội dung thư (email body)
                                         match_8 = re.search(r'(?<!\d)(\d{8})(?!\d)', clean_text)
                                         if match_8:
                                             code = match_8.group(1)
@@ -967,6 +984,25 @@ def luu_config(config):
         json.dump(config, f, indent=4, ensure_ascii=False)
 
 
+def ap_dung_config_chong_checkpoint():
+    """Ghi đè bộ thông số thời gian chuẩn Anti-Checkpoint (giữ lại mật khẩu cũ nếu người dùng đã đặt)"""
+    config_moi = DEFAULT_CONFIG.copy()
+    if os.path.exists(CONFIG_FILE):
+        try:
+            with open(CONFIG_FILE, 'r', encoding='utf-8') as f:
+                cu = json.load(f)
+                if cu.get('mat_khau_fb'):
+                    config_moi['mat_khau_fb'] = cu['mat_khau_fb']
+                if 'doi_ip_may_bay' in cu:
+                    config_moi['doi_ip_may_bay'] = cu['doi_ip_may_bay']
+                if 'doi_android_id' in cu:
+                    config_moi['doi_android_id'] = cu['doi_android_id']
+        except Exception:
+            pass
+    luu_config(config_moi)
+    return config_moi
+
+
 def nhap_delay(tieu_de, gia_tri_mac_dinh):
     try:
         nhap = input(f'   {tieu_de} ({gia_tri_mac_dinh} giây): ').strip()
@@ -981,22 +1017,50 @@ def nhap_delay(tieu_de, gia_tri_mac_dinh):
 
 def cau_hinh_delay():
     print('\n──────────────────────────────────────────────────────────────────────')
-    print(f'{trang}⚙️  CẤU HÌNH DELAY')
+    print(f'{trang}⚙️  CẤU HÌNH DELAY & ANTI-CHECKPOINT (ĐỔI IP MÁY BAY + ANDROID ID)')
     print('──────────────────────────────────────────────────────────────────────')
     config = doc_config()
 
+    print(f'1. Áp dụng ngay bộ Delay Chuẩn Anti-Checkpoint (Khuyên dùng - Nhanh & Ổn định)')
+    print(f'2. Tự chỉnh từng thông số Delay thủ công')
+    chon_loai = input('   Chọn (1 hoặc 2, Enter=1): ').strip()
+
+    hoi_may_bay = input(f"   Bật tự động đổi IP 4G bằng Chế độ máy bay? (y/n, Enter={'y' if config.get('doi_ip_may_bay', True) else 'n'}): ").strip().lower()
+    if hoi_may_bay in ['y', 'n']:
+        config['doi_ip_may_bay'] = (hoi_may_bay == 'y')
+
+    hoi_android_id = input(f"   Bật tự động đổi mã phần cứng Android ID mỗi acc? (y/n, Enter={'y' if config.get('doi_android_id', True) else 'n'}): ").strip().lower()
+    if hoi_android_id in ['y', 'n']:
+        config['doi_android_id'] = (hoi_android_id == 'y')
+
+    if chon_loai != '2':
+        luu_config(config)
+        config = ap_dung_config_chong_checkpoint()
+        mat_khau_moi = input(f"   Nhập mật khẩu FB muốn đặt (Enter giữ '{config['mat_khau_fb']}'): ").strip()
+        if mat_khau_moi:
+            config['mat_khau_fb'] = mat_khau_moi
+        if config.get('doi_ip_may_bay', True):
+            config['thoi_gian_bat_may_bay'] = nhap_delay('Thời gian ngâm Chế độ máy bay để nhả IP cũ', config.get('thoi_gian_bat_may_bay', 5.0))
+            config['thoi_gian_cho_4g'] = nhap_delay('Thời gian chờ 4G kết nối lại sau khi tắt máy bay', config.get('thoi_gian_cho_4g', 6.0))
+        luu_config(config)
+        print('\n✅ Đã áp dụng cấu hình Anti-Checkpoint & Đổi IP 4G!')
+        return config
+
     print('\n📌 CÁC THÔNG SỐ DELAY (giây):')
     print('──────────────────────────────────────────────────')
-    print(f'\n{trang}【MẬT KHẨU FACEBOOK】{trang}')
+    print(f'\n{trang}【MẬT KHẨU & ĐỔI IP 4G】{trang}')
     mat_khau_moi = input('   Nhập mật khẩu muốn đặt: ').strip()
     if mat_khau_moi:
         config['mat_khau_fb'] = mat_khau_moi
+    config['thoi_gian_bat_may_bay'] = nhap_delay('Thời gian giữ Chế độ máy bay', config.get('thoi_gian_bat_may_bay', 5.0))
+    config['thoi_gian_cho_4g'] = nhap_delay('Thời gian chờ 4G lên mạng lại', config.get('thoi_gian_cho_4g', 6.0))
 
     print(f'\n{trang}【MỞ FACEBOOK】{trang}')
     config['delay_mo_facebook'] = nhap_delay('Delay mở Facebook', config['delay_mo_facebook'])
 
     print(f'\n{trang}【CÁC BƯỚC ĐĂNG KÝ】{trang}')
     config['delay_chon_khong_cho_phep'] = nhap_delay('Delay chọn Không cho phép', config['delay_chon_khong_cho_phep'])
+    config['delay_click_khoang_trong'] = nhap_delay('Delay sau khi click khoảng trống tắt gợi ý TK', config.get('delay_click_khoang_trong', 0.6))
     config['delay_chon_toi_co_tai_khoan_roi'] = nhap_delay('Delay chọn Tôi có tài khoản rồi', config['delay_chon_toi_co_tai_khoan_roi'])
     config['delay_click_tao_tk_lan1'] = nhap_delay('Delay click Tạo tài khoản lần 1', config['delay_click_tao_tk_lan1'])
     config['delay_click_tao_tk_lan2'] = nhap_delay('Delay click Tạo tài khoản lần 2', config['delay_click_tao_tk_lan2'])
@@ -1037,7 +1101,7 @@ def cau_hinh_delay():
     config['delay_get_code'] = nhap_delay('Delay giữa các lần get code', config['delay_get_code'])
     config['delay_nhap_code'] = nhap_delay('Delay sau nhập Code', config['delay_nhap_code'])
     config['delay_click_tiep_cuoi'] = nhap_delay('Delay click Tiếp lần cuối', config['delay_click_tiep_cuoi'])
-    config['delay_up_avatar'] = nhap_delay('Delay chờ tải xong Avatar', config.get('delay_up_avatar', 8))
+    config['delay_up_avatar'] = nhap_delay('Delay chờ tải xong Avatar', config.get('delay_up_avatar', 8.0))
 
     print(f'\n{trang}【VÒNG LẶP】{trang}')
     config['delay_giua_cac_lan_chay'] = nhap_delay('Delay giữa các lần chạy', config['delay_giua_cac_lan_chay'])
@@ -1136,10 +1200,11 @@ def gui_tele(token, id_tele, noi_dung):
         pass
 
 
-def luu_tai_khoan_fb(uid, email_or_phone, password, two_fa, cookie, token):
+def luu_tai_khoan_fb(email_or_phone, password, two_fa):
+    """Lưu thẳng thông tin Email/SĐT, Mật khẩu và 2FA vào FB_NhaTrong.txt trực tiếp từ thiết bị (Chống Checkpoint)"""
     two_fa_str = two_fa if two_fa else 'NO_2FA'
     with open(FB_ACCOUNT_FILE, 'a', encoding='utf-8') as f:
-        f.write(f'{uid} | {email_or_phone} | {password} | {two_fa_str} | {cookie} | {token}\n')
+        f.write(f'{email_or_phone} | {password} | {two_fa_str}\n')
 
 
 def chay_lenh_adb(cmd, serial=None):
@@ -1154,8 +1219,75 @@ def chay_lenh_adb(cmd, serial=None):
         pass
 
 
+def chay_lenh_adb_lay_ket_qua(cmd, serial=None, timeout=8):
+    try:
+        full_cmd = f'adb -s {serial} {cmd}' if serial else f'adb {cmd}'
+        res = subprocess.run(full_cmd, shell=True, capture_output=True, text=True, timeout=timeout)
+        return (res.stdout or '').strip()
+    except KeyboardInterrupt:
+        raise KeyboardInterrupt
+    except Exception:
+        return ''
+
+
+def lay_ip_hien_tai_adb(serial=None):
+    for url in ['https://api.ipify.org', 'https://icanhazip.com', 'https://ifconfig.me/ip']:
+        out = chay_lenh_adb_lay_ket_qua(f'shell curl -s --max-time 4 {url}', serial, timeout=6)
+        if out and re.match(r'^\d{1,3}(\.\d{1,3}){3}$', out.strip()):
+            return out.strip()
+    return None
+
+
+def lam_moi_thong_so_thiet_bi_adb(serial=None, config=None):
+    if config and not config.get('doi_android_id', True):
+        return
+    new_android_id = ''.join(random.choices('0123456789abcdef', k=16))
+    chay_lenh_adb(f'shell settings put secure android_id {new_android_id}', serial)
+    chay_lenh_adb('shell logcat -c', serial)
+
+
+def doi_ip_che_do_may_bay_adb(serial=None, device_name="Device", config=None):
+    if config and not config.get('doi_ip_may_bay', True):
+        return
+
+    tg_may_bay = config.get('thoi_gian_bat_may_bay', 5.0) if config else 5.0
+    tg_cho_4g = config.get('thoi_gian_cho_4g', 6.0) if config else 6.0
+
+    chay_lenh_adb('shell svc wifi disable', serial)
+    chay_lenh_adb('shell svc data enable', serial)
+
+    ip_cu = lay_ip_hien_tai_adb(serial)
+
+    update_step(device_name, f"✈️ Đang bật Chế độ máy bay ({tg_may_bay}s) | IP cũ: {ip_cu or 'Đang lấy'}...")
+    chay_lenh_adb('shell cmd connectivity airplane-mode enable', serial)
+    chay_lenh_adb('shell settings put global airplane_mode_on 1', serial)
+    chay_lenh_adb('shell am broadcast -a android.intent.action.AIRPLANE_MODE --ez state true', serial)
+
+    time.sleep(tg_may_bay)
+
+    update_step(device_name, "📡 Đang tắt Chế độ máy bay & chờ 4G kết nối lại...")
+    chay_lenh_adb('shell cmd connectivity airplane-mode disable', serial)
+    chay_lenh_adb('shell settings put global airplane_mode_on 0', serial)
+    chay_lenh_adb('shell am broadcast -a android.intent.action.AIRPLANE_MODE --ez state false', serial)
+    chay_lenh_adb('shell svc wifi disable', serial)
+    chay_lenh_adb('shell svc data enable', serial)
+
+    time.sleep(tg_cho_4g)
+
+    ip_moi = None
+    for _ in range(3):
+        ip_moi = lay_ip_hien_tai_adb(serial)
+        if ip_moi:
+            break
+        time.sleep(2)
+
+    if ip_moi:
+        update_step(device_name, f"🌐 Đổi IP 4G thành công: {ip_cu or 'N/A'} -> {ip_moi}")
+    else:
+        update_step(device_name, "⚠️ Đã bật/tắt máy bay xong (4G đang ổn định ngầm)")
+
+
 def cap_quyen_bo_nho_fb(serial=None):
-    """Cấp trước quyền đọc/ghi ảnh cho Facebook qua ADB để không hiện popup hỏi quyền khi up Avatar"""
     permissions = [
         'android.permission.READ_EXTERNAL_STORAGE',
         'android.permission.WRITE_EXTERNAL_STORAGE',
@@ -1171,9 +1303,20 @@ def khoa_xoay_man_hinh(serial=None):
 
 
 def xoa_du_lieu_fb(serial=None):
-    chay_lenh_adb('shell pm clear com.facebook.katana', serial)
-    time.sleep(0.2)
+    chay_lenh_adb('shell settings put secure autofill_service null', serial)
+    chay_lenh_adb('shell settings put secure credential_service null', serial)
+    chay_lenh_adb('shell settings put secure credential_service_primary null', serial)
+    chay_lenh_adb('shell cmd autofill destroy', serial)
+
     chay_lenh_adb('shell am force-stop com.facebook.katana', serial)
+    time.sleep(0.15)
+    chay_lenh_adb('shell pm clear com.facebook.katana', serial)
+    time.sleep(0.25)
+
+    chay_lenh_adb('shell pm clear com.facebook.services', serial)
+    chay_lenh_adb('shell pm clear com.facebook.appmanager', serial)
+
+    chay_lenh_adb('shell am broadcast -a android.intent.action.CLOSE_SYSTEM_DIALOGS', serial)
     time.sleep(0.2)
 
 
@@ -1193,162 +1336,7 @@ def get_devices():
         return []
 
 
-APP_TOKEN = '350685531728|62f8ce9f74b12f84c123cc23437a4a32'
-
-
-class Facebook:
-
-    def MaHoaMatKhau(self, mat_khau):
-        try:
-            url = 'https://b-graph.facebook.com/pwd_key_fetch'
-            params = {
-                'version': '2',
-                'flow': 'CONTROLLER_INITIALIZATION',
-                'method': 'GET',
-                'fb_api_req_friendly_name': 'pwdKeyFetch',
-                'fb_api_caller_class': 'com.facebook.auth.login.AuthOperations',
-                'access_token': '438142079694454|fc0a7caa49b192f64f6f5a6d9643bb28'
-            }
-            response = requests.post(url, params=params).json()
-            public_key = response.get('public_key')
-            key_id = str(response.get('key_id', '25'))
-            rand_key = get_random_bytes(32)
-            iv = get_random_bytes(12)
-            pubkey = RSA.import_key(public_key)
-            cipher_rsa = PKCS1_v1_5.new(pubkey)
-            encrypted_rand_key = cipher_rsa.encrypt(rand_key)
-            cipher_aes = AES.new(rand_key, AES.MODE_GCM, nonce=iv)
-            current_time = int(time.time())
-            cipher_aes.update(str(current_time).encode('utf-8'))
-            encrypted_passwd, auth_tag = cipher_aes.encrypt_and_digest(mat_khau.encode('utf-8'))
-            buf = io.BytesIO()
-            buf.write(bytes([1, int(key_id)]))
-            buf.write(iv)
-            buf.write(struct.pack('<h', len(encrypted_rand_key)))
-            buf.write(encrypted_rand_key)
-            buf.write(auth_tag)
-            buf.write(encrypted_passwd)
-            encoded = base64.b64encode(buf.getvalue()).decode('utf-8')
-            return encoded
-        except KeyboardInterrupt:
-            raise KeyboardInterrupt
-        except Exception as e:
-            raise Exception(f'Lỗi khi mã hóa mật khẩu: {e}')
-
-    @staticmethod
-    def _tao_machine_id():
-        return ''.join(random.choices(string.ascii_letters + string.digits, k=24))
-
-    def __init__(self, email_or_phone=None, mat_khau=None, auth=None):
-        self.email = email_or_phone
-        self.mat_khau = self.MaHoaMatKhau(mat_khau) if mat_khau else None
-        self.auth = auth.replace(' ', '') if auth else None
-        self.URL = 'https://b-graph.facebook.com/auth/login'
-        self.API_KEY = '882a8490361da98702bf97a021ddc14d'
-        self.SIG = '214049b9f17c38bd767de53752b53946'
-        self.device_id = str(uuid.uuid4())
-        self.adid = str(uuid.uuid4())
-        self.secure_family_device_id = str(uuid.uuid4())
-        self.machine_id = self._tao_machine_id()
-        self.jazoest = ''.join(random.choices(string.digits, k=5))
-        self.HEADERS = {
-            'content-type': 'application/x-www-form-urlencoded',
-            'x-fb-net-hni': '45201',
-            'zero-rated': '0',
-            'x-fb-sim-hni': '45201',
-            'x-fb-connection-quality': 'EXCELLENT',
-            'x-fb-friendly-name': 'authenticate',
-            'x-fb-connection-bandwidth': '78032897',
-            'x-tigon-is-retry': 'False',
-            'authorization': 'OAuth null',
-            'x-fb-connection-type': 'WIFI',
-            'x-fb-device-group': '3342',
-            'priority': 'u=3,i',
-            'x-fb-http-engine': 'Liger',
-            'x-fb-client-ip': 'True',
-            'x-fb-server-cluster': 'True',
-            'x-fb-request-analytics-tags': '{"network_tags":{"product":"350685531728","retry_attempt":"0"},"application_tags":"unknown"}',
-            'user-agent': 'Dalvik/2.1.0 (Linux; U; Android 9; 23113RKC6C Build/PQ3A.190705.08211809) [FBAN/FB4A;FBAV/417.0.0.33.65;FBPN/com.facebook.katana;FBLC/vi_VN;FBBV/480086274;FBCR/MobiFone;FBMF/Redmi;FBBD/Redmi;FBDV/23113RKC6C;FBSV/9;FBCA/x86:armeabi-v7a;FBDM/{density=1.5,width=1280,height=720};FB_FW/1;FBRV/0;]'
-        }
-
-    def DangNhap(self, app_token, config):
-        self.data = {
-            'email': self.email,
-            'password': self.mat_khau,
-            'generate_session_cookies': '1',
-            'locale': 'vi_VN',
-            'client_country_code': 'VN',
-            'access_token': app_token,
-            'api_key': self.API_KEY,
-            'adid': self.adid,
-            'account_switcher_uids': f'["{self.email}"]',
-            'source': 'login',
-            'machine_id': self.machine_id,
-            'jazoest': self.jazoest,
-            'meta_inf_fbmeta': 'V2_UNTAGGED',
-            'fb_api_req_friendly_name': 'authenticate',
-            'fb_api_caller_class': 'Fb4aAuthHandler',
-            'sig': self.SIG
-        }
-        try:
-            ket_qua = requests.post(self.URL, headers=self.HEADERS, data=self.data).json()
-            if 'error' in ket_qua:
-                error_msg = ket_qua.get('error', {}).get('message', 'Lỗi không xác định')
-                error_data = ket_qua.get('error', {}).get('error_data', {})
-                if 'login_first_factor' in error_data and 'uid' in error_data:
-                    if not self.auth:
-                        with OTP_LOCK:
-                            PAUSE_FOR_INPUT.clear()
-                            ma_2fa = input(f'Nhập mã 2FA cho {self.email}: ').strip()
-                            PAUSE_FOR_INPUT.set()
-                    else:
-                        try:
-                            ma_2fa = pyotp.TOTP(self.auth).now()
-                        except Exception:
-                            with OTP_LOCK:
-                                PAUSE_FOR_INPUT.clear()
-                                ma_2fa = input(f'Nhập mã 2FA cho {self.email}: ').strip()
-                                PAUSE_FOR_INPUT.set()
-                    data_2fa = {
-                        'locale': 'vi_VN',
-                        'format': 'json',
-                        'email': self.email,
-                        'device_id': self.device_id,
-                        'access_token': app_token,
-                        'generate_session_cookies': 'true',
-                        'generate_machine_id': '1',
-                        'twofactor_code': ma_2fa,
-                        'credentials_type': 'two_factor',
-                        'error_detail_type': 'button_with_disabled',
-                        'first_factor': error_data['login_first_factor'],
-                        'password': self.mat_khau,
-                        'userid': error_data['uid'],
-                        'machine_id': error_data['login_first_factor']
-                    }
-                    ket_qua = requests.post(self.URL, headers=self.HEADERS, data=data_2fa).json()
-                else:
-                    return {'status': 401, 'msg': error_msg}
-            if 'access_token' in ket_qua:
-                access_token = ket_qua.get('access_token')
-                cookies_list = ket_qua.get('session_cookies', [])
-                cookies_string = '; '.join((f"{c['name']}={c['value']}" for c in cookies_list))
-                return {'status': 200, 'data': {'cookies': cookies_string, 'token': access_token}}
-            error_msg = ket_qua.get('error', {}).get('message', 'Đăng nhập thất bại')
-            return {'status': 401, 'msg': error_msg}
-        except KeyboardInterrupt:
-            raise KeyboardInterrupt
-        except Exception as e:
-            return {'status': 401, 'msg': str(e)}
-
-
-def lay_uid_tu_cookie(cookies: str):
-    match = re.search(r'c_user=(\d+)', cookies)
-    if match:
-        return match.group(1)
-    return None
-
-
-# ==================== GIAO DIỆN ĐIỀU KHIỂN FACEBOOK UI (6 CHẾ ĐỘ + AUTO 2FA + AUTO AVATAR ADB) ====================
+# ==================== GIAO DIỆN ĐIỀU KHIỂN FACEBOOK UI (6 CHẾ ĐỘ + AUTO 2FA + AUTO AVATAR + LƯU TRỰC TIẾP CHỐNG CHECKPOINT) ====================
 class FacebookUI:
 
     def __init__(self, serial=None, device_name=None, config=None, avatar_folder=""):
@@ -1388,11 +1376,11 @@ class FacebookUI:
                 raise KeyboardInterrupt
             except Exception:
                 pass
-            time.sleep(delay)
+            nghi_ngau_nhien(delay)
         self.log('❌ Không lấy được code')
         return None
 
-    def click_text_chua(self, text, ten_nut, so_lan_thu=3, delay=1, click_duoi=False):
+    def click_text_chua(self, text, ten_nut, so_lan_thu=3, delay=0.8, click_duoi=False):
         for lan in range(so_lan_thu):
             if self.d(textContains=text).exists:
                 elements = self.d(textContains=text)
@@ -1420,7 +1408,7 @@ class FacebookUI:
             return True
         return False
 
-    def click_text(self, text, ten_nut, so_lan_thu=3, delay=1):
+    def click_text(self, text, ten_nut, so_lan_thu=3, delay=0.8):
         for lan in range(so_lan_thu):
             if self.d(text=text).exists:
                 self.d(text=text).click()
@@ -1431,7 +1419,7 @@ class FacebookUI:
             time.sleep(delay)
         return False
 
-    def click_truong(self, ten_truong, double=False, so_lan_thu=3, delay=1):
+    def click_truong(self, ten_truong, double=False, so_lan_thu=3, delay=0.8):
         for lan in range(so_lan_thu):
             if self.d(text=ten_truong).exists:
                 phan_tu = self.d(text=ten_truong)
@@ -1452,9 +1440,9 @@ class FacebookUI:
 
     def nhap_text(self, text):
         self.d.send_keys(text)
-        time.sleep(0.3)
+        time.sleep(random.uniform(0.35, 0.55))
 
-    def kiem_tra_text(self, danh_sach_text, so_lan_thu=2, delay=1):
+    def kiem_tra_text(self, danh_sach_text, so_lan_thu=2, delay=0.8):
         for lan in range(so_lan_thu):
             for text in danh_sach_text:
                 if (
@@ -1469,6 +1457,38 @@ class FacebookUI:
     def kiem_tra_loi_dang_ky(self):
         texts_loi = ['Để đăng ký, hãy đọc cũng như đồng ý với các điều khoản và chính sách của chúng tôi', 'Tìm hiểu thêm', 'Chính sách cookie']
         return self.kiem_tra_text(texts_loi, 2, 1)
+
+    def click_khoang_trong_tat_goi_y(self):
+        try:
+            chay_lenh_adb('shell cmd autofill destroy', self.serial)
+            chay_lenh_adb('shell am broadcast -a android.intent.action.CLOSE_SYSTEM_DIALOGS', self.serial)
+
+            w, h = self.d.window_size()
+            dau_hieu_goi_y = [
+                'Tiếp tục với', 'Continue as', 'Chọn tài khoản', 'Choose an account',
+                'Đăng nhập bằng tài khoản khác', 'Dùng tài khoản khác', 'Không phải bạn',
+                'Tài khoản đã lưu', 'Saved accounts', 'Google'
+            ]
+            co_bang_goi_y = self.kiem_tra_text(dau_hieu_goi_y, 1, 0.2)
+            chua_thay_nut_tao_tk = not (
+                self.d(textContains='Tạo tài khoản mới').exists
+                or self.d(descriptionContains='Tạo tài khoản mới').exists
+                or self.d(textContains='Tôi có tài khoản rồi').exists
+            )
+
+            if co_bang_goi_y or chua_thay_nut_tao_tk:
+                self.log('👆 Click ra khoảng trống tắt gợi ý tài khoản đã lưu...')
+                self.d.click(int(w * 0.5), int(h * 0.12))
+                time.sleep(0.3)
+                self.d.click(int(w * 0.1), int(h * 0.12))
+                nghi_ngau_nhien(self.config.get('delay_click_khoang_trong', 0.6))
+            else:
+                self.d.click(int(w * 0.5), int(h * 0.10))
+                nghi_ngau_nhien(self.config.get('delay_click_khoang_trong', 0.6))
+        except KeyboardInterrupt:
+            raise KeyboardInterrupt
+        except Exception:
+            pass
 
     def tao_so_dien_thoai(self, used_phones=None):
         if used_phones is not None and len(used_phones) >= 10000:
@@ -1499,7 +1519,6 @@ class FacebookUI:
             return (ho, ten)
 
     def lay_otp_theo_che_do(self, mode, used_email, mail_service=None, imap_service=None, hotmail_service=None, uid_moc=0, refresh_token=None, client_id=None, force_8_digits=False):
-        """Hàm lấy mã OTP hợp nhất cho cả 5 chế độ Email (hỗ trợ cả mã đăng ký và mã 8 số từ nội dung thư khi bật 2FA)"""
         max_resend_attempts = 2
         loai_otp_str = "8 số từ body" if force_8_digits else "đăng ký"
         for attempt in range(max_resend_attempts + 1):
@@ -1540,7 +1559,6 @@ class FacebookUI:
         return None
 
     def trich_xuat_key_2fa_tu_man_hinh(self):
-        """Quét khóa Base32 2FA từ giao diện XML hoặc thông qua nút Sao chép khóa (Clipboard)"""
         try:
             for nut_copy in ['Sao chép khóa', 'Copy key', 'Sao chép', 'Copy']:
                 if self.d(textContains=nut_copy).exists or self.d(descriptionContains=nut_copy).exists:
@@ -1565,7 +1583,6 @@ class FacebookUI:
         return None
 
     def dieu_huong_vao_man_hinh_2fa(self):
-        """Mở giao diện thiết lập 2FA bằng Deep Link hoặc qua Menu Cài đặt"""
         chay_lenh_adb(
             'shell am start -a android.intent.action.VIEW -d "fb://faceweb/f?href=%2Fsecurity%2F2fac%2Fsetup%2Fintro"',
             self.serial
@@ -1604,7 +1621,6 @@ class FacebookUI:
                 break
 
     def bat_2fa_fb(self, used_email, mode="1", mail_service=None, imap_service=None, hotmail_service=None, autosms_service=None, refresh_token_da_co=None, client_id_da_co=None):
-        """Tự động bật 2FA, xử lý xác minh email bằng mã OTP 8 số trong body và quay lại luồng thiết lập 2FA"""
         self.log('🛡️ Đang mở cài đặt Xác thực 2 yếu tố (2FA)...')
         two_fa_secret = ""
         try:
@@ -1613,10 +1629,8 @@ class FacebookUI:
                     self.click_text(nut_bo_qua, nut_bo_qua, 1, 0.3)
                     time.sleep(0.5)
 
-            # Bước 1: Mở giao diện thiết lập 2FA
             self.dieu_huong_vao_man_hinh_2fa()
 
-            # Bước 2: Kiểm tra nếu yêu cầu nhập lại mật khẩu
             if self.kiem_tra_text(['Nhập lại mật khẩu', 'Re-enter your password', 'Mật khẩu của bạn'], 1, 0.5):
                 self.log('🔑 Nhập mật khẩu xác nhận bật 2FA...')
                 if self.d(className='android.widget.EditText').exists:
@@ -1627,7 +1641,6 @@ class FacebookUI:
                     self.click_text_chua('Tiếp tục', 'Tiếp tục', 2, 0.5) or self.click_text_chua('Continue', 'Continue', 2, 0.5)
                     time.sleep(4)
 
-            # Bước 3: Xử lý giao diện xác minh email (bóc tách OTP 8 số trong body email) và quay lại thiết lập 2FA
             if self.kiem_tra_text(['Kiểm tra email', 'Check your email', 'Mã bảo mật', 'Nhập mã', 'Enter code', 'Xác nhận email'], 2, 1):
                 self.log('📧 Phát hiện xác minh email khi bật 2FA -> Quét mã OTP 8 số trong body email...')
                 uid_moc_2fa = 0
@@ -1662,12 +1675,10 @@ class FacebookUI:
                     self.click_text_chua('Tiếp tục', 'Tiếp tục', 2, 0.5) or self.click_text_chua('Continue', 'Continue', 2, 0.5) or self.click_text_chua('Xác nhận', 'Xác nhận', 2, 0.5)
                     time.sleep(5)
 
-                    # Sau khi hoàn tất xác minh email, đảm bảo quay lại đúng quy trình thiết lập 2FA
                     self.log('🔄 Hoàn tất xác minh email! Quay trở lại quy trình thiết lập 2FA...')
                     if not self.kiem_tra_text(['Ứng dụng xác thực', 'Authentication app', 'Sao chép khóa', 'Copy key', 'Quét mã QR'], 2, 1):
                         self.dieu_huong_vao_man_hinh_2fa()
 
-            # Bước 4: Chọn phương thức "Ứng dụng xác thực" (Authentication App)
             for phuong_thuc in ['Ứng dụng xác thực', 'Authentication app', 'Sử dụng ứng dụng xác thực', 'Duo Mobile', 'Google Authenticator']:
                 if self.d(textContains=phuong_thuc).exists or self.d(descriptionContains=phuong_thuc).exists:
                     self.click_text_chua(phuong_thuc, phuong_thuc, 2, 0.5)
@@ -1676,7 +1687,6 @@ class FacebookUI:
                     time.sleep(4)
                     break
 
-            # Bước 5: Trích xuất khóa Secret Key 2FA
             self.log('🔑 Đang trích xuất khóa Secret Key 2FA...')
             for _ in range(5):
                 two_fa_secret = self.trich_xuat_key_2fa_tu_man_hinh()
@@ -1725,7 +1735,6 @@ class FacebookUI:
             return ""
 
     def day_anh_qua_adb(self):
-        """Chọn ngẫu nhiên 1 ảnh từ thư mục trên PC, đẩy vào điện thoại qua ADB và quét MediaScanner"""
         if not self.avatar_folder or not os.path.isdir(self.avatar_folder):
             return None
 
@@ -1750,7 +1759,6 @@ class FacebookUI:
             else:
                 subprocess.run(f'adb push "{local_path}" "{remote_path}"', shell=True, capture_output=True)
 
-            # Kích hoạt MediaScanner để ảnh mới hiển thị ở vị trí đầu tiên trong Bộ sưu tập
             chay_lenh_adb(
                 f'shell am broadcast -a android.intent.action.MEDIA_SCANNER_SCAN_FILE -d "file://{remote_path}"',
                 self.serial
@@ -1764,7 +1772,6 @@ class FacebookUI:
             return None
 
     def up_avatar_fb(self):
-        """Tự động đẩy ảnh từ PC vào máy qua ADB và cập nhật Avatar Facebook sau khi bật 2FA"""
         if not self.avatar_folder or not os.path.isdir(self.avatar_folder):
             return False
 
@@ -1781,29 +1788,17 @@ class FacebookUI:
             )
             time.sleep(4.5)
 
-            # Đóng các hộp thoại cản trở nếu có
             for nut_dong in ['Lúc khác', 'Not Now', 'Bỏ qua', 'Skip', 'Đóng', 'Close', 'Dừng', 'Hủy']:
                 if self.d(text=nut_dong).exists or self.d(description=nut_dong).exists:
                     self.click_text(nut_dong, nut_dong, 1, 0.3)
                     time.sleep(0.5)
 
-            # Dự phòng nếu chưa vào thẳng Trang cá nhân
             if not self.kiem_tra_text(['Thêm vào tin', 'Add to story', 'Chỉnh sửa trang cá nhân', 'Edit profile', 'ảnh đại diện', 'profile picture'], 2, 1):
                 self.click_text_chua('Trang cá nhân', 'Trang cá nhân', 2, 0.5) or self.click_text_chua('Profile', 'Profile', 2, 0.5)
                 time.sleep(3)
 
-            # Bước 1: Nhấn vào khung ảnh đại diện hoặc nút Thêm ảnh đại diện
             da_click_khung_avatar = False
-            nhan_avatar = [
-                'Chọn ảnh đại diện',
-                'Select profile picture',
-                'Thêm ảnh đại diện',
-                'Add profile picture',
-                'ảnh đại diện',
-                'profile picture',
-                'Thêm ảnh',
-                'Add picture'
-            ]
+            nhan_avatar = ['Chọn ảnh đại diện', 'Select profile picture', 'Thêm ảnh đại diện', 'Add profile picture', 'ảnh đại diện', 'profile picture', 'Thêm ảnh', 'Add picture']
             for nhan in nhan_avatar:
                 if self.d(textContains=nhan).exists or self.d(descriptionContains=nhan).exists:
                     self.click_text_chua(nhan, nhan, 1, 0.5)
@@ -1812,25 +1807,21 @@ class FacebookUI:
                     break
 
             if not da_click_khung_avatar:
-                # Nhấn vào vị trí tọa độ mặc định của khung Avatar trên trang cá nhân Facebook
                 w, h = self.d.window_size()
                 self.d.click(int(w * 0.22), int(h * 0.32))
                 time.sleep(2)
 
-            # Bước 2: Nếu xuất hiện menu lựa chọn (Bottom Sheet), chọn "Chọn ảnh đại diện" / "Chọn từ thư viện"
             for tuy_chon in ['Chọn ảnh đại diện', 'Select profile picture', 'Chọn trên Thiết bị', 'Chọn từ thư viện', 'Choose from Gallery', 'Tải ảnh lên']:
                 if self.d(textContains=tuy_chon).exists or self.d(descriptionContains=tuy_chon).exists:
                     self.click_text_chua(tuy_chon, tuy_chon, 2, 0.5)
                     time.sleep(2.5)
                     break
 
-            # Bước 3: Chấp nhận quyền truy cập ảnh nếu Android vẫn hỏi
             for nut_quyen in ['Cho phép tất cả', 'Allow all', 'Cho phép', 'Allow', 'Trong khi dùng ứng dụng', 'While using the app']:
                 if self.d(textContains=nut_quyen).exists:
                     self.click_text_chua(nut_quyen, nut_quyen, 1, 0.5)
                     time.sleep(2)
 
-            # Bước 4: Chọn bức ảnh đầu tiên trong lưới thư viện (ảnh vừa được đẩy vào DCIM/Camera)
             self.log('🖼️ Đang chọn ảnh từ thư viện thiết bị...')
             da_chon_anh = False
             if self.d(descriptionContains='Ảnh').exists or self.d(descriptionContains='Photo').exists:
@@ -1849,7 +1840,6 @@ class FacebookUI:
 
             time.sleep(2.5)
 
-            # Bước 5: Nhấn nút Lưu / Xong để hoàn tất cập nhật Avatar
             self.log('💾 Đang bấm Lưu ảnh đại diện...')
             da_luu = False
             for nut_luu in ['Lưu', 'Save', 'Xong', 'Done', 'Áp dụng', 'Apply', 'Tiếp', 'Next', 'Chia sẻ', 'Share']:
@@ -1857,7 +1847,6 @@ class FacebookUI:
                     self.click_text(nut_luu, nut_luu, 2, 0.5)
                     da_luu = True
                     time.sleep(1.5)
-                    # Nếu vừa bấm Tiếp/Xong mà hiện thêm nút Lưu ở màn hình preview thì bấm thêm lần nữa
                     if self.d(text='Lưu').exists or self.d(description='Lưu').exists:
                         self.click_text('Lưu', 'Lưu', 1, 0.5)
                     elif self.d(text='Save').exists or self.d(description='Save').exists:
@@ -1865,13 +1854,12 @@ class FacebookUI:
                     break
 
             if not da_luu:
-                # Nhấn góc trên bên phải (vị trí nút Lưu chuẩn của Facebook Android)
                 w, h = self.d.window_size()
                 self.d.click(int(w * 0.90), int(h * 0.07))
 
-            delay_avatar = self.config.get('delay_up_avatar', 8)
+            delay_avatar = self.config.get('delay_up_avatar', 8.0)
             self.log(f'⏳ Chờ {delay_avatar}s để Facebook tải lên Avatar...')
-            time.sleep(delay_avatar)
+            nghi_ngau_nhien(delay_avatar, 0.15)
             self.log('✅ ĐÃ CẬP NHẬT AVATAR THÀNH CÔNG!')
             return True
         except KeyboardInterrupt:
@@ -1887,15 +1875,15 @@ class FacebookUI:
         while True:
             self.log('📞 Nhập số điện thoại...')
             so_dt = self.tao_so_dien_thoai(used_phones)
-            if self.click_truong('Số di động', False, 3, 1):
+            if self.click_truong('Số di động', False, 3, 0.8):
                 self.nhap_text(so_dt)
                 self.log(f'📞 {so_dt}')
-            time.sleep(self.config['delay_nhap_sdt'])
+            nghi_ngau_nhien(self.config['delay_nhap_sdt'])
             self.log('⏩ Click Tiếp')
-            if self.click_text_chua('Tiếp', 'Tiếp', 3, 1):
-                time.sleep(self.config['delay_click_tiep_sdt'])
-                self.click_text_chua('Tiếp tục tạo tài khoản', 'Tiếp tục tạo tài khoản', 3, 1, click_duoi=True)
-                time.sleep(self.config['delay_click_tiep_tuc_tao_tk'])
+            if self.click_text_chua('Tiếp', 'Tiếp', 3, 0.8):
+                nghi_ngau_nhien(self.config['delay_click_tiep_sdt'])
+                self.click_text_chua('Tiếp tục tạo tài khoản', 'Tiếp tục tạo tài khoản', 2, 0.8, click_duoi=True)
+                nghi_ngau_nhien(self.config['delay_click_tiep_tuc_tao_tk'])
                 texts_loi = ['Số di động của bạn là gì?', 'Nhập số di động có thể dùng để liên hệ với bạn.']
                 if self.kiem_tra_text(texts_loi, 2, self.config['delay_kiem_tra_sdt']):
                     self.log('⚠️ Số điện thoại không hợp lệ, nhập lại...')
@@ -1906,42 +1894,42 @@ class FacebookUI:
                     continue
                 mat_khau_fb = self.config['mat_khau_fb']
                 self.log('🔑 Nhập Mật khẩu')
-                if self.click_truong('Mật khẩu', False, 5, 1):
+                if self.click_truong('Mật khẩu', False, 5, 0.8):
                     self.nhap_text(mat_khau_fb)
-                    time.sleep(self.config['delay_nhap_mat_khau'])
+                    nghi_ngau_nhien(self.config['delay_nhap_mat_khau'])
                     self.log('⏩ Click Tiếp')
-                    if self.click_text_chua('Tiếp', 'Tiếp', 3, 1):
-                        time.sleep(self.config['delay_click_tiep_sau_mk'])
+                    if self.click_text_chua('Tiếp', 'Tiếp', 3, 0.8):
+                        nghi_ngau_nhien(self.config['delay_click_tiep_sau_mk'])
                         self.log('💾 Click Lưu')
                         self.click_text_chua('Lưu', 'Lưu', 2, 0.5, click_duoi=True)
-                        time.sleep(self.config['delay_click_luu'])
+                        nghi_ngau_nhien(self.config['delay_click_luu'])
                         self.log('✅ Click Tôi đồng ý')
                         self.click_toi_dong_y()
-                        time.sleep(self.config['delay_cho_toi_dong_y'])
+                        nghi_ngau_nhien(self.config['delay_cho_toi_dong_y'], 0.1)
                         if self.kiem_tra_loi_dang_ky():
                             return None
                         self.log('⏩ Click Tiếp tục')
-                        self.click_text_chua('Tiếp tục', 'Tiếp tục', 3, 1)
-                        time.sleep(self.config['delay_click_tiep_tuc'])
+                        self.click_text_chua('Tiếp tục', 'Tiếp tục', 3, 0.8)
+                        nghi_ngau_nhien(self.config['delay_click_tiep_tuc'])
                         self.log('❌ Click Không cho phép')
                         self.click_text_chua('Không cho phép', 'Không cho phép', 2, 0.5) or self.click_text_chua('TỪ CHỐI', 'TỪ CHỐI', 2, 0.5)
-                        time.sleep(self.config['delay_click_khong_cho_phep'])
+                        nghi_ngau_nhien(self.config['delay_click_khong_cho_phep'])
                         self.click_text_chua('Không cho phép', 'Không cho phép', 2, 0.5) or self.click_text_chua('TỪ CHỐI', 'TỪ CHỐI', 2, 0.5)
-                        time.sleep(self.config['delay_click_khong_cho_phep_lan2'])
+                        nghi_ngau_nhien(self.config['delay_click_khong_cho_phep_lan2'])
                         self.log('⏹️ Buộc dừng Facebook')
                         chay_lenh_adb('shell am force-stop com.facebook.katana', self.serial)
                         khoa_xoay_man_hinh(self.serial)
-                        time.sleep(self.config['delay_buoc_dung_fb'])
+                        nghi_ngau_nhien(self.config['delay_buoc_dung_fb'])
                         self.log('🚀 Mở lại Facebook')
                         chay_lenh_adb('shell am start -n com.facebook.katana/com.facebook.katana.LoginActivity', self.serial)
                         khoa_xoay_man_hinh(self.serial)
-                        time.sleep(self.config['delay_mo_lai_fb'])
+                        nghi_ngau_nhien(self.config['delay_mo_lai_fb'], 0.15)
                         self.log('📧 Click Tôi không nhận được mã')
-                        self.click_text_chua('Tôi không nhận được mã', 'Tôi không nhận được mã', 3, 1)
-                        time.sleep(self.config['delay_click_toi_khong_nhan_duoc_ma'])
+                        self.click_text_chua('Tôi không nhận được mã', 'Tôi không nhận được mã', 3, 0.8)
+                        nghi_ngau_nhien(self.config['delay_click_toi_khong_nhan_duoc_ma'])
                         self.log('📧 Click Xác nhận bằng email')
-                        self.click_text_chua('Xác nhận bằng email', 'Xác nhận bằng email', 3, 1)
-                        time.sleep(self.config['delay_click_xac_nhan_email'])
+                        self.click_text_chua('Xác nhận bằng email', 'Xác nhận bằng email', 3, 0.8)
+                        nghi_ngau_nhien(self.config['delay_click_xac_nhan_email'])
 
                         if used_email:
                             uid_moc = 0
@@ -1952,12 +1940,12 @@ class FacebookUI:
                                 hotmail_service.init_baseline()
 
                             self.log(f'📧 Nhập Email: {used_email[:25]}')
-                            if self.click_truong('Email', False, 3, 1):
+                            if self.click_truong('Email', False, 3, 0.8):
                                 self.nhap_text(used_email)
-                            time.sleep(self.config['delay_nhap_email'])
+                            nghi_ngau_nhien(self.config['delay_nhap_email'])
                             self.log('⏩ Click Tiếp')
-                            if self.click_text_chua('Tiếp', 'Tiếp', 3, 1):
-                                time.sleep(self.config['delay_click_tiep_sau_email'])
+                            if self.click_text_chua('Tiếp', 'Tiếp', 3, 0.8):
+                                nghi_ngau_nhien(self.config['delay_click_tiep_sau_email'])
                                 code = self.lay_otp_theo_che_do(
                                     mode=mode,
                                     used_email=used_email,
@@ -1971,12 +1959,12 @@ class FacebookUI:
                                 )
                                 if code:
                                     self.log('🔢 Nhập mã xác nhận')
-                                    if self.click_text_chua('Mã xác nhận', 'Mã xác nhận', 3, 1):
+                                    if self.click_text_chua('Mã xác nhận', 'Mã xác nhận', 3, 0.8):
                                         self.nhap_text(code)
-                                    time.sleep(self.config['delay_nhap_code'])
+                                    nghi_ngau_nhien(self.config['delay_nhap_code'])
                                     self.log('⏩ Click Tiếp lần cuối')
-                                    if self.click_text_chua('Tiếp', 'Tiếp lần cuối', 3, 1):
-                                        time.sleep(self.config['delay_click_tiep_cuoi'])
+                                    if self.click_text_chua('Tiếp', 'Tiếp lần cuối', 3, 0.8):
+                                        nghi_ngau_nhien(self.config['delay_click_tiep_cuoi'])
                                         self.log(f'✅ XÁC MINH EMAIL XONG: {used_email} -> Quay sang bật 2FA...')
                                         two_fa_key = self.bat_2fa_fb(
                                             used_email=used_email,
@@ -1989,7 +1977,7 @@ class FacebookUI:
                                         )
                                         # Tự động đẩy ảnh qua ADB và cập nhật Avatar sau khi bật 2FA
                                         self.up_avatar_fb()
-                                        return (used_email, mat_khau_fb, two_fa_key, refresh_token_da_co, client_id_da_co)
+                                        return (used_email, mat_khau_fb, two_fa_key)
                         return None
                     else:
                         return None
@@ -2006,16 +1994,16 @@ class FacebookUI:
             self.log('❌ Không thể thuê SĐT (Hết số hoặc sai API Key)!')
             return None
 
-        if self.click_truong('Số di động', False, 3, 1):
+        if self.click_truong('Số di động', False, 3, 0.8):
             self.nhap_text(so_dt)
             self.log(f'📞 Đã nhập số thuê: {so_dt}')
-        time.sleep(self.config['delay_nhap_sdt'])
+        nghi_ngau_nhien(self.config['delay_nhap_sdt'])
         self.log('⏩ Click Tiếp')
-        if self.click_text_chua('Tiếp', 'Tiếp', 3, 1):
-            time.sleep(self.config['delay_click_tiep_sdt'])
-            time.sleep(3)
-            self.click_text_chua('Tiếp tục tạo tài khoản', 'Tiếp tục tạo tài khoản', 3, 1, click_duoi=True)
-            time.sleep(self.config['delay_click_tiep_tuc_tao_tk'])
+        if self.click_text_chua('Tiếp', 'Tiếp', 3, 0.8):
+            nghi_ngau_nhien(self.config['delay_click_tiep_sdt'])
+            time.sleep(2.5)
+            self.click_text_chua('Tiếp tục tạo tài khoản', 'Tiếp tục tạo tài khoản', 2, 0.8, click_duoi=True)
+            nghi_ngau_nhien(self.config['delay_click_tiep_tuc_tao_tk'])
             texts_loi = ['Số di động của bạn là gì?', 'Nhập số di động có thể dùng để liên hệ với bạn.']
             if self.kiem_tra_text(texts_loi, 2, self.config['delay_kiem_tra_sdt']):
                 self.log('⚠️ SĐT thuê không hợp lệ trên FB, đang hủy đơn...')
@@ -2024,34 +2012,34 @@ class FacebookUI:
 
             mat_khau_fb = self.config['mat_khau_fb']
             self.log('🔑 Nhập Mật khẩu')
-            if self.click_truong('Mật khẩu', False, 5, 1):
+            if self.click_truong('Mật khẩu', False, 5, 0.8):
                 self.nhap_text(mat_khau_fb)
-                time.sleep(self.config['delay_nhap_mat_khau'])
+                nghi_ngau_nhien(self.config['delay_nhap_mat_khau'])
                 self.log('⏩ Click Tiếp')
-                if self.click_text_chua('Tiếp', 'Tiếp', 3, 1):
-                    time.sleep(self.config['delay_click_tiep_sau_mk'])
+                if self.click_text_chua('Tiếp', 'Tiếp', 3, 0.8):
+                    nghi_ngau_nhien(self.config['delay_click_tiep_sau_mk'])
                     self.log('💾 Click Lưu')
                     self.click_text_chua('Lưu', 'Lưu', 2, 0.5, click_duoi=True)
-                    time.sleep(self.config['delay_click_luu'])
+                    nghi_ngau_nhien(self.config['delay_click_luu'])
                     self.log('✅ Click Tôi đồng ý')
                     self.click_toi_dong_y()
-                    time.sleep(self.config['delay_cho_toi_dong_y'])
+                    nghi_ngau_nhien(self.config['delay_cho_toi_dong_y'], 0.1)
                     if self.kiem_tra_loi_dang_ky():
                         autosms_service.cancel_order()
                         return None
                     self.log('⏩ Click Gửi mã qua SMS')
                     self.click_text_chua('Gửi mã qua SMS', 'Gửi mã qua SMS', 2, 0.5)
-                    time.sleep(self.config['delay_click_tiep_tuc'])
+                    nghi_ngau_nhien(self.config['delay_click_tiep_tuc'])
                     self.click_text_chua('Gửi mã qua SMS', 'Gửi mã qua SMS', 2, 0.5)
-                    time.sleep(3)
+                    time.sleep(2.5)
                     self.log('⏹️ Buộc dừng Facebook')
                     chay_lenh_adb('shell am force-stop com.facebook.katana', self.serial)
                     khoa_xoay_man_hinh(self.serial)
-                    time.sleep(self.config['delay_buoc_dung_fb'])
+                    nghi_ngau_nhien(self.config['delay_buoc_dung_fb'])
                     self.log('🚀 Mở lại Facebook')
                     chay_lenh_adb('shell am start -n com.facebook.katana/com.facebook.katana.LoginActivity', self.serial)
                     khoa_xoay_man_hinh(self.serial)
-                    time.sleep(self.config['delay_mo_lai_fb'])
+                    nghi_ngau_nhien(self.config['delay_mo_lai_fb'], 0.15)
                     self.click_text_chua('Gửi mã qua SMS', 'Gửi mã qua SMS', 2, 0.5)
                     self.log('🔢 Chờ code AutoSMS (max 90s)...')
                     code = autosms_service.get_otp_code(timeout=90)
@@ -2071,12 +2059,12 @@ class FacebookUI:
                         return None
 
                     self.log(f'🔢 Nhập mã xác nhận: {code}')
-                    if self.click_text_chua('Mã xác nhận', 'Mã xác nhận', 3, 1):
+                    if self.click_text_chua('Mã xác nhận', 'Mã xác nhận', 3, 0.8):
                         self.nhap_text(code)
-                        time.sleep(self.config['delay_nhap_code'])
+                        nghi_ngau_nhien(self.config['delay_nhap_code'])
                         self.log('⏩ Click Tiếp lần cuối')
-                        if self.click_text_chua('Tiếp', 'Tiếp lần cuối', 3, 1):
-                            time.sleep(self.config['delay_click_tiep_cuoi'])
+                        if self.click_text_chua('Tiếp', 'Tiếp lần cuối', 3, 0.8):
+                            nghi_ngau_nhien(self.config['delay_click_tiep_cuoi'])
                             self.log(f'✅ XÁC MINH SĐT XONG: {so_dt} -> Tiến hành bật 2FA...')
                             two_fa_key = self.bat_2fa_fb(
                                 used_email=so_dt,
@@ -2085,80 +2073,99 @@ class FacebookUI:
                             )
                             # Tự động đẩy ảnh qua ADB và cập nhật Avatar sau khi bật 2FA
                             self.up_avatar_fb()
-                            return (so_dt, mat_khau_fb, two_fa_key, None, None)
+                            return (so_dt, mat_khau_fb, two_fa_key)
         autosms_service.cancel_order()
         return None
 
     def chay_dang_ky(self, used_email=None, mode="1", mail_service=None, imap_service=None, hotmail_service=None, autosms_service=None, refresh_token_da_co=None, client_id_da_co=None, used_phones=None, used_names=None):
-        self.log('🚀 Mở Facebook')
-        cap_quyen_bo_nho_fb(self.serial)
-        chay_lenh_adb('shell am start -n com.facebook.katana/com.facebook.katana.LoginActivity', self.serial)
-        self.log('🔒 Khóa xoay')
+        # 1. Đầu tiên xóa sạch dữ liệu app, tắt Autofill/Smart Lock, làm mới Android ID và đổi IP 4G qua Chế độ máy bay
+        self.log('🧹 Xóa dữ liệu FB & tắt Autofill/Smart Lock...')
+        xoa_du_lieu_fb(self.serial)
+        lam_moi_thong_so_thiet_bi_adb(self.serial, self.config)
+        doi_ip_che_do_may_bay_adb(self.serial, self.device_name, self.config)
+
+        self.log('🔒 Khóa xoay & Cấp quyền bộ nhớ')
         khoa_xoay_man_hinh(self.serial)
+        cap_quyen_bo_nho_fb(self.serial)
+
+        # 2. Bật ứng dụng Facebook trên IP 4G mới và Android ID mới
+        self.log('🚀 Mở Facebook')
+        chay_lenh_adb('shell am start -n com.facebook.katana/com.facebook.katana.LoginActivity', self.serial)
         self.log(f"⏳ Chờ {self.config['delay_mo_facebook']} giây")
-        time.sleep(self.config['delay_mo_facebook'])
+        nghi_ngau_nhien(self.config['delay_mo_facebook'], 0.1)
+
+        # 3. Xử lý bảng hỏi quyền nếu có
         self.log('❌ Không cho phép')
         self.click_text_chua('Không cho phép', 'Không cho phép', 2, 0.5, click_duoi=True) or self.click_text_chua('TỪ CHỐI', 'TỪ CHỐI', 2, 0.5, click_duoi=True)
-        time.sleep(self.config['delay_chon_khong_cho_phep'])
+        nghi_ngau_nhien(self.config['delay_chon_khong_cho_phep'])
+
+        # 4. Click ra khoảng trống để tắt bảng gợi ý các tài khoản đã lưu (nếu còn sót)
+        self.click_khoang_trong_tat_goi_y()
+
+        # 5. Chuyển vào luồng Tạo tài khoản mới
         self.log('👤 Tôi có tài khoản')
         self.click_text_chua('Tôi có tài khoản rồi', 'Tôi có tài khoản rồi', 2, 0.5, click_duoi=True) or self.click_text_chua('I already have a profile', 'I already have a profile', 2, 0.5, click_duoi=True)
-        time.sleep(self.config['delay_chon_toi_co_tai_khoan_roi'])
+        nghi_ngau_nhien(self.config['delay_chon_toi_co_tai_khoan_roi'])
+
+        if not (self.d(textContains='Tạo tài khoản mới').exists or self.d(descriptionContains='Tạo tài khoản mới').exists):
+            self.click_khoang_trong_tat_goi_y()
+
         self.log('➕ Tạo tài khoản')
-        if self.click_text_chua('Tạo tài khoản mới', 'Tạo tài khoản mới', 3, 1):
-            time.sleep(self.config['delay_click_tao_tk_lan1'])
+        if self.click_text_chua('Tạo tài khoản mới', 'Tạo tài khoản mới', 3, 0.8):
+            nghi_ngau_nhien(self.config['delay_click_tao_tk_lan1'])
             self.log('➕ Tạo TK lần 2')
             self.click_text_chua('Tạo tài khoản mới', 'Tạo tài khoản mới', 3, 0.5, click_duoi=True)
-            time.sleep(self.config['delay_click_tao_tk_lan2'])
+            nghi_ngau_nhien(self.config['delay_click_tao_tk_lan2'])
             self.log('❌ Không cho phép')
             self.click_text_chua('Không cho phép', 'Không cho phép', 2, 0.5, click_duoi=True) or self.click_text_chua('TỪ CHỐI', 'TỪ CHỐI', 2, 0.5, click_duoi=True)
-            time.sleep(self.config['delay_chon_khong_cho_phep_lan2'])
+            nghi_ngau_nhien(self.config['delay_chon_khong_cho_phep_lan2'])
             w, h = self.d.window_size()
             self.d.click(int(w / 2), int(h / 2))
             ho, ten = self.tao_ho_ten(used_names)
             self.log(f'📝 Họ: {ho}')
-            if self.click_truong('Họ', False, 3, 1):
+            if self.click_truong('Họ', False, 3, 0.8):
                 self.nhap_text(ho)
-            time.sleep(self.config['delay_nhap_ho'])
+            nghi_ngau_nhien(self.config['delay_nhap_ho'])
             self.d.click(int(w / 2), int(h / 2))
             self.log(f'📝 Tên: {ten}')
-            if self.click_truong('Tên', False, 3, 1):
+            if self.click_truong('Tên', False, 3, 0.8):
                 self.nhap_text(ten)
-            time.sleep(self.config['delay_nhap_ten'])
+            nghi_ngau_nhien(self.config['delay_nhap_ten'])
             self.d.click(int(w / 2), int(h / 2))
             self.log('⏩ Tiếp')
-            if self.click_text_chua('Tiếp', 'Tiếp', 3, 1):
-                time.sleep(self.config['delay_click_tiep_lan1'])
+            if self.click_text_chua('Tiếp', 'Tiếp', 3, 0.8):
+                nghi_ngau_nhien(self.config['delay_click_tiep_lan1'])
                 self.log('📅 Hủy/Chọn ngày sinh')
-                self.click_text_chua('HỦY', 'HỦY', 3, 1) or self.click_text_chua('CHỌN', 'CHỌN', 2, 0.5, click_duoi=True)
-                time.sleep(self.config['delay_click_chon'])
+                self.click_text_chua('HỦY', 'HỦY', 3, 0.8) or self.click_text_chua('CHỌN', 'CHỌN', 2, 0.5, click_duoi=True)
+                nghi_ngau_nhien(self.config['delay_click_chon'])
                 self.log('⏩ Tiếp')
-                if self.click_text_chua('Tiếp', 'Tiếp', 3, 1):
-                    time.sleep(self.config['delay_click_tiep_lan2'])
+                if self.click_text_chua('Tiếp', 'Tiếp', 3, 0.8):
+                    nghi_ngau_nhien(self.config['delay_click_tiep_lan2'])
                     self.log('⏩ Tiếp')
-                    if self.click_text_chua('Tiếp', 'Tiếp', 3, 1):
-                        time.sleep(self.config['delay_click_tiep_lan3'])
+                    if self.click_text_chua('Tiếp', 'Tiếp', 3, 0.8):
+                        nghi_ngau_nhien(self.config['delay_click_tiep_lan3'])
                         self.log('🎂 Nhập Tuổi')
-                        tuoi = str(random.randint(18, 40))
-                        if self.click_truong('Tuổi', False, 3, 1):
+                        tuoi = str(random.randint(19, 36))
+                        if self.click_truong('Tuổi', False, 3, 0.8):
                             self.nhap_text(tuoi)
                             self.log(f'🎂 Tuổi: {tuoi}')
-                        time.sleep(self.config['delay_nhap_tuoi'])
+                        nghi_ngau_nhien(self.config['delay_nhap_tuoi'])
                         self.log('⏩ Tiếp')
-                        if self.click_text_chua('Tiếp', 'Tiếp', 3, 1):
-                            time.sleep(self.config['delay_click_tiep_lan4'])
+                        if self.click_text_chua('Tiếp', 'Tiếp', 3, 0.8):
+                            nghi_ngau_nhien(self.config['delay_click_tiep_lan4'])
                             self.log('✅ OK')
-                            self.click_text('OK', 'OK', 3, 1)
-                            time.sleep(self.config['delay_click_ok'])
+                            self.click_text('OK', 'OK', 3, 0.8)
+                            nghi_ngau_nhien(self.config['delay_click_ok'])
                             self.log('👤 Giới tính')
                             gioi_tinh = random.choice(['Nam', 'Nữ'])
-                            self.click_text(gioi_tinh, gioi_tinh, 3, 1)
+                            self.click_text(gioi_tinh, gioi_tinh, 3, 0.8)
                             self.log(f'👤 {gioi_tinh}')
-                            time.sleep(self.config['delay_chon_gioi_tinh'])
+                            nghi_ngau_nhien(self.config['delay_chon_gioi_tinh'])
                             self.log('⏩ Tiếp')
-                            if self.click_text_chua('Tiếp', 'Tiếp', 3, 1):
-                                time.sleep(self.config['delay_click_tiep_lan5'])
+                            if self.click_text_chua('Tiếp', 'Tiếp', 3, 0.8):
+                                nghi_ngau_nhien(self.config['delay_click_tiep_lan5'])
                                 self.log('📱 Số di động')
-                                if self.click_text_chua('Số di động', 'Số di động', 3, 1):
+                                if self.click_text_chua('Số di động', 'Số di động', 3, 0.8):
                                     if mode == "6" and autosms_service:
                                         return self.sdt_mode6_autosms(autosms_service)
                                     return self.sdt(
@@ -2176,45 +2183,7 @@ class FacebookUI:
         return None
 
 
-def dang_nhap_va_luu_fb(email_or_phone, mat_khau, two_fa_key, device_name, config):
-    update_step(device_name, f'🔐 Đang đăng nhập lấy Cookie/Token • {email_or_phone[:25]}')
-    try:
-        fb = Facebook(email_or_phone, mat_khau, auth=two_fa_key)
-        for i in range(2):
-            ket_qua = fb.DangNhap(APP_TOKEN, config)
-            if ket_qua.get('status') == 200:
-                du_lieu = ket_qua['data']
-                token = du_lieu.get('token', '')
-                cookie = du_lieu.get('cookies', '')
-                uid = lay_uid_tu_cookie(cookie)
-                luu_tai_khoan_fb(uid, email_or_phone, mat_khau, two_fa_key, cookie, token)
-                token_tele, id_tele = doc_tele()
-                if token_tele and id_tele:
-                    two_fa_display = two_fa_key if two_fa_key else 'NO_2FA'
-                    noi_dung = (
-                        f'<code>{html.escape(str(uid))}</code> | '
-                        f'<code>{html.escape(email_or_phone)}</code> | '
-                        f'<code>{html.escape(mat_khau)}</code> | '
-                        f'<code>{html.escape(two_fa_display)}</code>'
-                    )
-                    gui_tele(token_tele, id_tele, noi_dung)
-                update_step(device_name, f'✅ {email_or_phone} (2FA: {two_fa_key[:8] if two_fa_key else "None"})')
-                return True
-            update_step(device_name, f"⚠️ Đăng nhập lấy Cookie thất bại, đợi {config['delay_thu_lai_khi_loi']}s")
-            time.sleep(config['delay_thu_lai_khi_loi'])
-        luu_tai_khoan_fb('NO_UID', email_or_phone, mat_khau, two_fa_key, 'NO_COOKIE', 'NO_TOKEN')
-        update_step(device_name, f'⚠️ Đã lưu {email_or_phone} kèm 2FA (Không lấy được Cookie)')
-    except KeyboardInterrupt:
-        raise KeyboardInterrupt
-    except Exception as e:
-        luu_tai_khoan_fb('NO_UID', email_or_phone, mat_khau, two_fa_key, 'NO_COOKIE', 'NO_TOKEN')
-        update_step(device_name, f'❌ Lỗi Login API: {str(e)[:25]}')
-        return False
-    return False
-
-
 def khoi_tao_dich_vu_theo_mode(mode, data_source, manual_password, base_gmail, app_password, api_mode, req_proxy, autosms_api_key, autosms_country):
-    """Lấy 1 tài nguyên Email/SĐT từ 1 trong 6 chế độ một cách an toàn đa luồng"""
     used_email = ""
     mail_service = None
     imap_service = None
@@ -2285,7 +2254,6 @@ def chay_mot_thiet_bi_loop(serial, device_name, config, mode, data_source, manua
                 update_step(device_name, '⚠️ Đã hết dữ liệu đầu vào hoặc lỗi tạo mail! Dừng luồng...')
                 break
 
-            xoa_du_lieu_fb(serial)
             fb_ui = FacebookUI(serial, device_name, config, avatar_folder=avatar_folder)
             if mode != "6":
                 update_step(device_name, f'📧 Dùng: {used_email[:25]}')
@@ -2304,43 +2272,58 @@ def chay_mot_thiet_bi_loop(serial, device_name, config, mode, data_source, manua
             )
 
             if ket_qua:
-                acc_id, mat_khau, two_fa_key, _, _ = ket_qua
-                dang_nhap_va_luu_fb(acc_id, mat_khau, two_fa_key, device_name, config)
+                email_or_phone, mat_khau_fb, two_fa_key = ket_qua
+                # LƯU TRỰC TIẾP TỪ THIẾT BỊ KHÔNG GỌI API LOGIN TRÊN PC (CHỐNG CHECKPOINT 100%)
+                luu_tai_khoan_fb(email_or_phone, mat_khau_fb, two_fa_key)
+                token_tele, id_tele = doc_tele()
+                if token_tele and id_tele:
+                    two_fa_display = two_fa_key if two_fa_key else 'NO_2FA'
+                    noi_dung = (
+                        f'<code>{html.escape(str(email_or_phone))}</code> | '
+                        f'<code>{html.escape(mat_khau_fb)}</code> | '
+                        f'<code>{html.escape(two_fa_display)}</code>'
+                    )
+                    gui_tele(token_tele, id_tele, noi_dung)
+                update_step(device_name, f'✅ THÀNH CÔNG: {email_or_phone} (2FA: {two_fa_key[:8] if two_fa_key else "None"})')
             else:
                 update_step(device_name, '❌ ĐĂNG KÝ THẤT BẠI')
 
-            time.sleep(config['delay_giua_cac_lan_chay'])
+            nghi_ngau_nhien(config['delay_giua_cac_lan_chay'])
         except KeyboardInterrupt:
             raise KeyboardInterrupt
         except Exception as e:
             update_step(device_name, f'❌ Lỗi: {str(e)[:25]}')
-            time.sleep(config['delay_giua_cac_lan_chay'])
+            nghi_ngau_nhien(config['delay_giua_cac_lan_chay'])
 
 
 def main():
     global multi_mode
     token_tele, id_tele = doc_tele()
     print('\n──────────────────────────────────────────────────────────────────────')
-    print(f'{trang}🤖 𝗧𝗢𝗢𝗟 𝗖𝗥𝗘𝗔𝗧𝗘 𝗔𝗖𝗖𝗢𝗨𝗡𝗧 𝗙𝗔𝗖𝗘𝗕𝗢𝗢𝗞 𝗔𝗗𝗕 (𝟲 𝗠𝗢𝗗𝗘𝗦 + 𝟮𝗙𝗔 + 𝗔𝗩𝗔𝗧𝗔𝗥)')
+    print(f'{trang}🤖 𝗧𝗢𝗢𝗟 𝗖𝗥𝗘𝗔𝗧𝗘 𝗔𝗖𝗖𝗢𝗨𝗡𝗧 𝗙𝗔𝗖𝗘𝗕𝗢𝗢𝗞 𝗔𝗗𝗕 (𝗔𝗡𝗧𝗜-𝗖𝗛𝗘𝗖𝗞𝗣𝗢𝗜𝗡𝗧 𝗗 I R E C T){trang}')
     print('──────────────────────────────────────────────────────────────────────')
 
     if os.path.exists(CONFIG_FILE):
-        chon_config = input('Dùng lại config delay cũ không (y/n): ').strip().lower()
+        chon_config = input('Chọn cấu hình Delay: [a = Chuẩn Anti-Checkpoint + Đổi IP 4G (Khuyên dùng) / y = Giữ file cũ / n = Tự chỉnh] (Enter=a): ').strip().lower()
         if chon_config == 'y':
             config = doc_config()
             print('✅ Đã tải cấu hình cũ!')
-        else:
+        elif chon_config == 'n':
             config = cau_hinh_delay()
+        else:
+            config = ap_dung_config_chong_checkpoint()
+            print('✅ Đã nạp cấu hình Chuẩn Anti-Checkpoint + Tự động đổi IP 4G & Android ID!')
     else:
-        print('⚠️ Chưa có file cấu hình! Hãy cấu hình delay lần đầu.')
-        config = cau_hinh_delay()
+        config = ap_dung_config_chong_checkpoint()
+        print('✅ Đã khởi tạo cấu hình Chuẩn Anti-Checkpoint + Tự động đổi IP 4G & Android ID!')
 
+    trang_thai_ip = f"{xanh}✔ Bật{trang}" if config.get('doi_ip_may_bay', True) else f"{do}✘ Tắt{trang}"
     print('\n──────────────────────────────────────────────────────────────────────')
     print(f'{trang}📋  MENU CHÍNH')
     print('──────────────────────────────────────────────────────────────────────')
-    print(f'1. Chạy Reg FB + Auto 2FA + Auto Avatar (6 Chế Độ Email / SĐT)')
+    print(f'1. Chạy Reg FB + Auto 2FA + Auto Avatar (Lưu trực tiếp chống Checkpoint)')
     print(f"2. Gửi Về Tele   │ {(f'{xanh}✔{trang} Đã cấu hình' if token_tele and id_tele else f'{do}✘{trang} Chưa cấu hình')}")
-    print(f'3. Cấu Hình Delay │ {xanh}✔{trang} Đã có config')
+    print(f'3. Cấu Hình Delay │ Đổi IP Máy Bay: {trang_thai_ip} • Anti-Checkpoint')
     print('──────────────────────────────────────────────────────────────────────')
 
     chon = input('Chọn Đi Bé (1, 2 hoặc 3): ').strip()
@@ -2455,7 +2438,6 @@ def main():
             built_in_print(f"{Colors.ERROR}Danh sách đầu vào trống! Thoát chương trình.{Colors.RESET}")
             sys.exit()
 
-        # Cấu hình thư mục Avatar đẩy qua ADB
         saved_avatar_folder = config_data.get("last_avatar_folder", "")
         avatar_folder_input = ""
 
@@ -2544,7 +2526,6 @@ def main():
                 print(f'🔄 LẦN CHẠY THỨ {lan_chay} (MODE {mode})')
                 print('──────────────────────────────────────────────────────────────────────')
                 fb_ui = FacebookUI(serial, device_name, config, avatar_folder=avatar_folder_input)
-                xoa_du_lieu_fb(serial)
 
                 if mode != "6":
                     print(f'📧 Đang sử dụng Email: {used_email}')
@@ -2563,16 +2544,25 @@ def main():
                 )
 
                 if ket_qua_dang_ky:
-                    acc_id, mat_khau_fb, two_fa_key, _, _ = ket_qua_dang_ky
-                    print(f'\n✅ Đăng ký thành công! Tài khoản: {acc_id} | 2FA: {two_fa_key if two_fa_key else "Chưa bật"}')
-                    time.sleep(5)
-                    dang_nhap_va_luu_fb(acc_id, mat_khau_fb, two_fa_key, device_name, config)
+                    email_or_phone, mat_khau_fb, two_fa_key = ket_qua_dang_ky
+                    print(f'\n✅ Đăng ký thành công! Tài khoản: {email_or_phone} | 2FA: {two_fa_key if two_fa_key else "Chưa bật"}')
+                    # LƯU TRỰC TIẾP TỪ THIẾT BỊ KHÔNG GỌI API LOGIN TRÊN PC
+                    luu_tai_khoan_fb(email_or_phone, mat_khau_fb, two_fa_key)
+                    token_tele, id_tele = doc_tele()
+                    if token_tele and id_tele:
+                        two_fa_display = two_fa_key if two_fa_key else 'NO_2FA'
+                        noi_dung = (
+                            f'<code>{html.escape(str(email_or_phone))}</code> | '
+                            f'<code>{html.escape(mat_khau_fb)}</code> | '
+                            f'<code>{html.escape(two_fa_display)}</code>'
+                        )
+                        gui_tele(token_tele, id_tele, noi_dung)
                 else:
                     print('\n❌ Đăng ký thất bại!')
 
                 xoa_du_lieu_fb(serial)
                 print(f"\n⏳ CHỜ {config['delay_giua_cac_lan_chay']} GIÂY...")
-                time.sleep(config['delay_giua_cac_lan_chay'])
+                nghi_ngau_nhien(config['delay_giua_cac_lan_chay'])
 
         except KeyboardInterrupt:
             print(f'\n\n{do}🛑 ĐÃ DỪNG{trang}')
