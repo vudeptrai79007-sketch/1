@@ -1369,7 +1369,7 @@ def fb_page_react_or_like(target_url, page_token, proxy=None, session=None, page
                 # Thử tối đa 2 bước: Bước 1 dùng feedback_b64 tính nhanh, Bước 2 bóc trực tiếp từ HTML bài viết nếu Bước 1 trả về null
                 for attempt_html in [False, True]:
                     if attempt_html:
-                        _, fb_b64_ second = _resolve_fb_feedback_and_post_id(sess, pg_ck, target_id, target_url, force_fetch_html=True)
+                        _, fb_b64_second = _resolve_fb_feedback_and_post_id(sess, pg_ck, target_id, target_url, force_fetch_html=True)
                         if not fb_b64_second or fb_b64_second == feedback_b64:
                             break
                         feedback_b64 = fb_b64_second
