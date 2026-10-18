@@ -1147,8 +1147,9 @@ def get_devices():
         raise KeyboardInterrupt
     except Exception:
         return []
-# ==================== KẾT THÚC PHẦN 1/2 ====================
-# ==================== BẮT ĐẦU PHẦN 2/2 (ĐOẠN 2A) ====================
+
+
+# ==================== CLASS ĐIỀU KHIỂN GIAO DIỆN FACEBOOK ====================
 class FacebookUI:
 
     def __init__(self, serial=None, device_name=None, config=None, avatar_folder=""):
@@ -1171,35 +1172,31 @@ class FacebookUI:
             print(text)
 
     def click_toa_do_an_toan(self, x, y):
-        """Click tọa độ có bọc chống lỗi SecurityException INJECT_EVENTS trên Xiaomi"""
+        """Ưu tiên bắn tap trực tiếp qua ADB để không bao giờ bị MIUI chặn ngầm trên Xiaomi"""
         x, y = int(x), int(y)
-        try:
-            self.d.click(x, y)
-        except Exception:
-            chay_lenh_adb(f'shell input tap {x} {y}', self.serial)
+        chay_lenh_adb(f'shell input tap {x} {y}', self.serial)
 
     def vuot_toa_do_an_toan(self, x1, y1, x2, y2, duration_ms=220):
-        """Vuốt tọa độ an toàn bằng u2 + ADB fallback chống lỗi INJECT_EVENTS"""
-        x1, y1, x2, y2 = int(x1), int(y1), int(x2), int(y2)
-        try:
-            self.d.swipe(x1, y1, x2, y2, duration=duration_ms / 1000.0)
-        except Exception:
-            chay_lenh_adb(f'shell input swipe {x1} {y1} {x2} {y2} {duration_ms}', self.serial)
+        """Ưu tiên vuốt trực tiếp qua ADB để cuộn mượt 3 cột NumberPicker trên Xiaomi"""
+        x1, y1, x2, y2, duration_ms = int(x1), int(y1), int(x2), int(y2), int(duration_ms)
+        chay_lenh_adb(f'shell input swipe {x1} {y1} {x2} {y2} {duration_ms}', self.serial)
 
     def _click_phan_tu_an_toan(self, elem):
-        """Click vào phần tử UI, nếu bị chặn INJECT_EVENTS thì tự động lấy tọa độ giữa phần tử để tap qua ADB"""
+        """Lấy tâm tọa độ của phần tử để tap qua ADB + fallback u2.click"""
+        try:
+            b = elem.info['bounds']
+            cx = (b['left'] + b['right']) // 2
+            cy = (b['top'] + b['bottom']) // 2
+            if cx > 0 and cy > 0:
+                chay_lenh_adb(f'shell input tap {cx} {cy}', self.serial)
+                return True
+        except Exception:
+            pass
         try:
             elem.click()
             return True
         except Exception:
-            try:
-                b = elem.info['bounds']
-                cx = (b['left'] + b['right']) // 2
-                cy = (b['top'] + b['bottom']) // 2
-                chay_lenh_adb(f'shell input tap {cx} {cy}', self.serial)
-                return True
-            except Exception:
-                return False
+            return False
 
     def click_text_chua(self, text, ten_nut="", so_lan_thu=3, delay=0.6, click_duoi=False):
         for _ in range(so_lan_thu):
@@ -1273,14 +1270,14 @@ class FacebookUI:
         return False
 
     def tat_quyen_khong_cho_phep(self):
-        """Tự động bấm KHÔNG CHO PHÉP khi hiện bảng hỏi quyền danh bạ / cuộc gọi (như Ảnh 2)"""
+        """Tự động bấm KHÔNG CHO PHÉP khi hiện bảng hỏi quyền danh bạ / cuộc gọi"""
         cac_nut_tu_choi = [
             'KHÔNG CHO PHÉP',
             'Không cho phép',
             'TỪ CHỐI',
             'Từ chối',
             "DON'T ALLOW",
-            ' Don’t allow',
+            'Don’t allow',
             'Deny'
         ]
         for nut in cac_nut_tu_choi:
@@ -1332,145 +1329,252 @@ class FacebookUI:
                 used_phones.add(phone)
             return phone
 
-    def mo_bang_chon_ngay(self):
+    def _dang_hien_bang_chon_ngay(self):
+        """Kiểm tra bảng popup 'Chọn ngày' (có 3 cột NumberPicker hoặc nút HỦY / CHỌN) đã hiện lên chưa"""
+        return (
+            self.d(text='Chọn ngày').exists
+            or self.d(text='CHỌN').exists
+            or self.d(text='HỦY').exists
+            or self.d(className='android.widget.NumberPicker').exists
+            or self.d(resourceId='android:id/datePicker').exists
+        )
+
+    def _lay_toa_do_vung_to_do_ngay_sinh(self):
         """
-        Nhấn thẳng vào khoảng trắng bên phải bên trong ô Ngày sinh (tránh bấm nhầm vào tiêu đề 'Ngày sinh của bạn là khi nào?')
-        cho đến khi bảng popup 'Chọn ngày' (có nút HỦY / CHỌN) hiện lên.
+        Tính chính xác tọa độ (x, y) của vùng tô đỏ bên phải trong ô 'Ngày sinh (0 tuổi)'
+        trên màn hình 'Ngày sinh của bạn là khi nào?':
+        - Tránh tuyệt đối việc bắt nhầm tiêu đề 'Ngày sinh của bạn là khi nào?' ở trên đầu.
+        - Bấm chuẩn vào vùng trống bên phải trong khung (x = 65% chiều ngang màn hình).
         """
         w, h = self.d.window_size()
+        x_do = int(w * 0.65)
+        y_do = None
 
-        for _ in range(4):
-            if self.d(text='CHỌN').exists or self.d(text='HỦY').exists or self.d(textContains='Chọn ngày').exists:
-                return True
-
-            self.log('📅 Đang bấm vào khoảng trắng trong ô Ngày sinh...')
-            da_bam = False
-
-            # Cách 1: Tìm dòng '(0 tuổi)' hoặc 'tháng' trong ô -> lấy tọa độ Y của ô và bấm sang khoảng trắng bên phải (x = 68% màn hình)
-            for dau_hieu in ['tuổi)', 'tháng', '2026', '2025']:
-                if self.d(textContains=dau_hieu).exists:
-                    try:
-                        b = self.d(textContains=dau_hieu)[-1].info['bounds']
-                        y_giua_o = (b['top'] + b['bottom']) // 2
-                        x_khoang_trang = int(w * 0.68)
-                        self.click_toa_do_an_toan(x_khoang_trang, y_giua_o)
-                        da_bam = True
-                        break
-                    except Exception:
-                        pass
-
-            # Cách 2: Dựa theo vị trí phía trên nút 'Tiếp' để bấm vào khoảng trắng bên phải ô Ngày sinh
-            if not da_bam and self.d(text='Tiếp').exists:
+        # Ưu tiên 1: Tìm phần tử chứa chữ 'Ngày sinh (' hoặc 'tuổi)' hoặc 'tháng' nằm ở vùng giữa (0.22*h -> 0.42*h)
+        for dau_hieu in ['Ngày sinh (', 'tuổi)', 'tháng', '2026', '2025']:
+            for selector in [self.d(textContains=dau_hieu), self.d(descriptionContains=dau_hieu)]:
                 try:
-                    b_tiep = self.d(text='Tiếp')[0].info['bounds']
-                    x_khoang_trang = int(w * 0.65)
-                    y_tren_nut_tiep = b_tiep['top'] - int(h * 0.055)
-                    self.click_toa_do_an_toan(x_khoang_trang, y_tren_nut_tiep)
-                    da_bam = True
+                    if selector.exists:
+                        for i in range(selector.count):
+                            b = selector[i].info['bounds']
+                            cy = (b['top'] + b['bottom']) // 2
+                            if int(h * 0.22) <= cy <= int(h * 0.42):
+                                y_do = cy
+                                break
+                    if y_do:
+                        break
+                except Exception:
+                    pass
+            if y_do:
+                break
+
+        # Ưu tiên 2: Tính từ mép trên của nút 'Tiếp' màu xanh dịch lên đúng tâm ô Ngày sinh
+        if not y_do:
+            for sel_tiep in [self.d(text='Tiếp'), self.d(description='Tiếp'), self.d(textContains='Tiếp')]:
+                try:
+                    if sel_tiep.exists:
+                        b_tiep = sel_tiep[0].info['bounds']
+                        if b_tiep['top'] > int(h * 0.28):
+                            y_do = b_tiep['top'] - int(h * 0.062)
+                            break
                 except Exception:
                     pass
 
-            # Cách 3: Click tọa độ khoảng trắng chuẩn theo khung ô Ngày sinh (x = 65% ngang, y = 30% dọc)
-            if not da_bam:
-                self.click_toa_do_an_toan(int(w * 0.65), int(h * 0.30))
+        # Ưu tiên 3: Tọa độ tỷ lệ vàng khớp với ảnh màn hình M2007J3SG (x = 65%, y = 30%)
+        if not y_do:
+            y_do = int(h * 0.30)
 
-            time.sleep(1.0)
-            if self.d(text='CHỌN').exists or self.d(text='HỦY').exists or self.d(textContains='Chọn ngày').exists:
-                return True
+        return x_do, y_do
 
-            # Dự phòng: Nhấn thêm vào khoảng trắng chính giữa ô Ngày sinh
-            self.click_toa_do_an_toan(int(w * 0.55), int(h * 0.30))
-            time.sleep(1.0)
-
-        return self.d(text='CHỌN').exists or self.d(text='HỦY').exists or self.d(textContains='Chọn ngày').exists
-
-    def vuot_chon_ngay_thang_nam_sinh(self):
+    def mo_bang_chon_ngay(self):
         """
-        Xử lý chuẩn Ảnh 4, 5, 6:
-        - Mở bảng 'Chọn ngày' bằng cách nhấn vào khoảng trắng trong ô ngày sinh
-        - Tự động vuốt cột Ngày, cột Tháng và vuốt cột Năm từ trên xuống (để chọn năm sinh 1992-2005)
-        - Bấm nút 'CHỌN', sau đó bấm nút 'Tiếp'
+        Đợi màn hình 'Ngày sinh của bạn là khi nào?' tải xong, sau đó bấm thẳng vào
+        vùng tô đỏ bên phải trong ô Ngày sinh cho đến khi bảng 'Chọn ngày' (3 cột) hiện ra.
         """
         w, h = self.d.window_size()
 
-        for lan_thu in range(3):
-            # 1. Nếu bảng 'Chọn ngày' (có nút CHỌN / HỦY) chưa mở thì bấm vào khoảng trắng ô Ngày sinh
-            if not self.mo_bang_chon_ngay():
-                self.log('⚠️ Chưa mở được bảng Chọn ngày, thử nhấn lại vào khoảng trắng ô...')
-                self.click_toa_do_an_toan(int(w * 0.65), int(h * 0.30))
-                time.sleep(1.0)
+        # Đợi tối đa 4 giây để màn hình Ngày sinh hiển thị hoàn toàn sau bước Họ Tên
+        for _ in range(8):
+            if self._dang_hien_bang_chon_ngay():
+                return True
+            if self.kiem_tra_text(['Ngày sinh của bạn là khi nào', 'Ngày sinh (', 'tuổi)'], 1, 0.2):
+                break
+            time.sleep(0.4)
 
-            # 2. Xác định tọa độ 3 cột: Ngày (Trái) - Tháng (Giữa) - Năm (Phải) trên bảng Chọn ngày (Ảnh 5)
+        for lan_bam in range(5):
+            if self._dang_hien_bang_chon_ngay():
+                return True
+
+            x_do, y_do = self._lay_toa_do_vung_to_do_ngay_sinh()
+            # Dịch nhẹ điểm bấm trong vùng tô đỏ (từ 63% đến 68% chiều ngang) nếu lần trước chưa ăn
+            x_tap = x_do if lan_bam % 2 == 0 else int(w * 0.68)
+            self.log(f'📅 Bấm vào vùng tô đỏ ô Ngày sinh ({x_tap}, {y_do}) để mở bảng 3 cột...')
+            self.click_toa_do_an_toan(x_tap, y_do)
+            time.sleep(1.1)
+
+            if self._dang_hien_bang_chon_ngay():
+                return True
+
+        return self._dang_hien_bang_chon_ngay()
+
+    def _lay_nam_hien_tai_trong_bang_3_cot(self):
+        """Đọc số năm đang được chọn ở cột thứ 3 (bên phải) của bảng 'Chọn ngày'"""
+        try:
+            pickers = self.d(className='android.widget.NumberPicker')
+            if pickers.count >= 3:
+                # Sắp xếp 3 cột theo tọa độ ngang từ Trái -> Phải, cột Năm là cột cuối cùng (index 2)
+                ds_picker = []
+                for i in range(pickers.count):
+                    b = pickers[i].info['bounds']
+                    ds_picker.append((b['left'], pickers[i]))
+                ds_picker.sort(key=lambda item: item[0])
+                cot_nam = ds_picker[2][1]
+
+                edit_nam = cot_nam.child(className='android.widget.EditText')
+                if edit_nam.exists:
+                    txt = (edit_nam.info.get('text') or '').strip()
+                    if txt.isdigit() and len(txt) == 4:
+                        return int(txt)
+        except Exception:
+            pass
+
+        try:
+            inputs = self.d(resourceId='android:id/numberpicker_input')
+            if inputs.count >= 3:
+                ds_in = []
+                for i in range(inputs.count):
+                    b = inputs[i].info['bounds']
+                    ds_in.append((b['left'], inputs[i].info.get('text') or ''))
+                ds_in.sort(key=lambda item: item[0])
+                txt_nam = ds_in[2][1].strip()
+                if txt_nam.isdigit() and len(txt_nam) == 4:
+                    return int(txt_nam)
+        except Exception:
+            pass
+        return None
+
+    def _kiem_tra_tuoi_hop_le_ngoai_man_hinh(self):
+        """
+        Kiểm tra trên màn hình 'Ngày sinh của bạn là khi nào?' sau khi bấm CHỌN
+        xem tuổi đã >= 18 tuổi chưa (ví dụ: 'Ngày sinh (24 tuổi)') và năm không còn là 2025/2026.
+        """
+        try:
+            xml_dump = self.d.dump_hierarchy()
+            match_tuoi = re.search(r'\((\d+)\s*tuổi\)', xml_dump, re.IGNORECASE)
+            if match_tuoi:
+                so_tuoi = int(match_tuoi.group(1))
+                return so_tuoi >= 18
+
+            # Nếu giao diện chỉ hiện năm dạng '18 tháng 10, 1999'
+            match_nam = re.findall(r'\b(19\d\d|20\d\d)\b', xml_dump)
+            for nam_str in match_nam:
+                nam_val = int(nam_str)
+                if 1980 <= nam_val <= 2006:
+                    return True
+                if nam_val >= 2009:
+                    return False
+        except Exception:
+            pass
+        return False
+
+    def vuot_chon_ngay_thang_nam_sinh(self):
+        """
+        Xử lý chuẩn theo 2 ảnh bạn gửi:
+        1. Bấm đúng vùng tô đỏ bên phải trong ô 'Ngày sinh (0 tuổi)' để hiện bảng 'Chọn ngày' 3 cột.
+        2. Xác định chính xác tọa độ 3 cột:
+           - Cột 1 (Trái - Ngày: 17 / 18 / 19)
+           - Cột 2 (Giữa - Tháng: thg 9 / thg 10 / thg 11)
+           - Cột 3 (Phải - Năm: 2025 / 2026 / 2027)
+        3. Vuốt chọn Ngày (Cột 1), vuốt chọn Tháng (Cột 2), và kéo Cột 3 (Năm) từ trên xuống dưới
+           cho đến khi năm lùi về khoảng 1994 - 2005 (trên 18 tuổi).
+        4. Bấm nút 'CHỌN', kiểm tra tuổi >= 18 rồi bấm nút 'Tiếp'.
+        """
+        w, h = self.d.window_size()
+
+        for lan_thu in range(4):
+            # Bước 1: Mở bảng 'Chọn ngày' bằng cách bấm vào chỗ tô đỏ
+            if not self.mo_bang_chon_ngay():
+                self.log('⚠️ Chưa hiện bảng Chọn ngày, bấm lại vào vùng tô đỏ...')
+                x_do, y_do = self._lay_toa_do_vung_to_do_ngay_sinh()
+                self.click_toa_do_an_toan(x_do, y_do)
+                time.sleep(1.2)
+
+            # Bước 2: Lấy tọa độ chuẩn của 3 cột Ngày (Trái) - Tháng (Giữa) - Năm (Phải)
+            x_day = int(w * 0.295)
+            x_month = int(w * 0.500)
+            x_year = int(w * 0.705)
+            y_top = int(h * 0.405)
+            y_bot = int(h * 0.575)
+
             pickers = self.d(className='android.widget.NumberPicker')
             if pickers.count >= 3:
                 try:
-                    b_day = pickers[0].info['bounds']
-                    b_month = pickers[1].info['bounds']
-                    b_year = pickers[2].info['bounds']
+                    ds_bounds = [pickers[i].info['bounds'] for i in range(pickers.count)]
+                    ds_bounds.sort(key=lambda b: b['left'])
+                    b_day, b_month, b_year = ds_bounds[0], ds_bounds[1], ds_bounds[2]
 
                     x_day = (b_day['left'] + b_day['right']) // 2
                     x_month = (b_month['left'] + b_month['right']) // 2
                     x_year = (b_year['left'] + b_year['right']) // 2
-                    y_top = b_year['top'] + int((b_year['bottom'] - b_year['top']) * 0.22)
-                    y_bot = b_year['top'] + int((b_year['bottom'] - b_year['top']) * 0.78)
+                    y_top = b_year['top'] + int((b_year['bottom'] - b_year['top']) * 0.18)
+                    y_bot = b_year['top'] + int((b_year['bottom'] - b_year['top']) * 0.82)
                 except Exception:
-                    x_day, x_month, x_year = int(w * 0.30), int(w * 0.50), int(w * 0.70)
-                    y_top, y_bot = int(h * 0.41), int(h * 0.56)
-            else:
-                # Tọa độ chuẩn theo đúng khung 'Chọn ngày' trong Ảnh 5
-                x_day = int(w * 0.30)
-                x_month = int(w * 0.50)
-                x_year = int(w * 0.70)
-                y_top = int(h * 0.41)
-                y_bot = int(h * 0.56)
+                    pass
 
-            # 3. Vuốt ngẫu nhiên cột Ngày (lên hoặc xuống 1-3 nhịp)
-            self.log('📅 Đang vuốt chọn Ngày & Tháng ngẫu nhiên...')
-            for _ in range(random.randint(1, 3)):
+            # Bước 3: Vuốt cột 1 (Ngày) và cột 2 (Tháng) để chọn ngày tháng tự nhiên
+            self.log('📅 Đang vuốt chọn Cột 1 (Ngày) & Cột 2 (Tháng)...')
+            for _ in range(random.randint(2, 4)):
                 if random.choice([True, False]):
-                    self.vuot_toa_do_an_toan(x_day, y_top, x_day, y_bot, 200)
+                    self.vuot_toa_do_an_toan(x_day, y_top, x_day, y_bot, 180)
                 else:
-                    self.vuot_toa_do_an_toan(x_day, y_bot, x_day, y_top, 200)
+                    self.vuot_toa_do_an_toan(x_day, y_bot, x_day, y_top, 180)
                 time.sleep(0.25)
 
-            # 4. Vuốt ngẫu nhiên cột Tháng (lên hoặc xuống 1-3 nhịp)
-            for _ in range(random.randint(1, 3)):
+            for _ in range(random.randint(2, 4)):
                 if random.choice([True, False]):
-                    self.vuot_toa_do_an_toan(x_month, y_top, x_month, y_bot, 200)
+                    self.vuot_toa_do_an_toan(x_month, y_top, x_month, y_bot, 180)
                 else:
-                    self.vuot_toa_do_an_toan(x_month, y_bot, x_month, y_top, 200)
+                    self.vuot_toa_do_an_toan(x_month, y_bot, x_month, y_top, 180)
                 time.sleep(0.25)
 
-            # 5. Vuốt cột Năm: Ở Ảnh 5, năm 2025 nằm TRÊN năm 2026 -> Kéo từ TRÊN xuống DƯỚI (y_top -> y_bot) để lùi về năm 1992-2005
-            so_lan_vuot_nam = random.randint(6, 10)
-            self.log(f'📅 Đang vuốt cột Năm sinh ({so_lan_vuot_nam} nhịp về khoảng 1993-2005)...')
-            for _ in range(so_lan_vuot_nam):
-                self.vuot_toa_do_an_toan(x_year, y_top, x_year, y_bot, 180)
-                time.sleep(0.25)
+            # Bước 4: Vuốt cột 3 (Năm): Số 2025 nằm ở trên số 2026 -> Kéo từ TRÊN xuống DƯỚI (y_top -> y_bot)
+            nam_muc_tieu = random.randint(1994, 2004)
+            self.log(f'📅 Đang cuộn Cột 3 (Năm) lùi về khoảng {nam_muc_tieu}...')
+            for nhip in range(14):
+                # Kéo dứt khoát từ mép trên xuống mép dưới của cột Năm để bánh xe cuộn nhanh nhiều năm
+                self.vuot_toa_do_an_toan(x_year, y_top, x_year, y_bot, 130)
+                time.sleep(0.28)
+                if nhip >= 4:
+                    nam_hien_tai = self._lay_nam_hien_tai_trong_bang_3_cot()
+                    if nam_hien_tai and 1985 <= nam_hien_tai <= 2005:
+                        self.log(f'✅ Đã cuộn Cột 3 tới năm: {nam_hien_tai}')
+                        break
 
-            # 6. Bấm nút CHỌN trên bảng Chọn ngày (Ảnh 5)
-            time.sleep(0.4)
-            self.log('📅 Bấm CHỌN ngày tháng năm sinh')
+            # Bước 5: Bấm nút 'CHỌN' ở góc dưới bên phải bảng Chọn ngày
+            time.sleep(0.5)
+            self.log('📅 Bấm nút CHỌN trên bảng Chọn ngày')
             if not (self.click_text('CHỌN', 'CHỌN', 2, 0.5) or self.click_text('OK', 'OK', 1, 0.4)):
-                self.click_toa_do_an_toan(int(w * 0.72), int(h * 0.62))
+                self.click_toa_do_an_toan(int(w * 0.72), int(h * 0.633))
             time.sleep(1.0)
 
-            # Kiểm tra xem trên màn hình (Ảnh 6) đã đổi từ (0 tuổi) sang số tuổi hợp lệ (>= 18 tuổi) chưa
-            if not self.kiem_tra_text(['(0 tuổi)', '(1 tuổi)', '(2 tuổi)', '(3 tuổi)', '(4 tuổi)', '2026', '2025'], 1, 0.2):
+            # Kiểm tra tuổi hiển thị ngoài ô Ngày sinh đã >= 18 tuổi chưa
+            if self._kiem_tra_tuoi_hop_le_ngoai_man_hinh():
+                self.log('✅ Ngày tháng năm sinh đã hợp lệ (>= 18 tuổi)!')
                 break
-            self.log('⚠️ Năm sinh chưa lùi đủ sâu, đang vuốt lại cột Năm...')
+            self.log('⚠️ Năm sinh chưa lùi đủ 18 tuổi, mở lại bảng Chọn ngày để cuộn thêm...')
 
-        # 7. Bấm nút Tiếp ở màn hình Ngày sinh (Ảnh 6)
-        self.log('⏩ Bấm Tiếp (sau khi chọn Ngày sinh)')
+        # Bước 6: Bấm nút 'Tiếp' màu xanh dưới ô Ngày sinh
+        self.log('⏩ Bấm nút Tiếp (sau khi chọn xong Ngày tháng năm sinh)')
         if not (self.click_text('Tiếp', 'Tiếp', 3, 0.8) or self.click_text_chua('Tiếp', 'Tiếp', 2, 0.6)):
-            self.click_toa_do_an_toan(int(w * 0.50), int(h * 0.38))
+            self.click_toa_do_an_toan(int(w * 0.50), int(h * 0.388))
         nghi_ngau_nhien(self.config.get('delay_click_tiep_lan2', 1.0))
 
-        # Xử lý phòng hờ nếu Facebook hiện popup hỏi xác nhận tuổi ("OK" / "Xác nhận")
+        # Nếu hiện thông báo xác nhận tuổi thì bấm OK / Xác nhận
         if self.d(text='OK').exists or self.d(text='Xác nhận').exists:
             self.click_text('OK', 'OK', 1, 0.4) or self.click_text('Xác nhận', 'Xác nhận', 1, 0.4)
             time.sleep(0.8)
-
+# ==================== KẾT THÚC PHẦN 1/2 ====================
+# ==================== PHẦN 2/2 (DÁN NỐI TIẾP NGAY DƯỚI PHẦN 1/2) ====================
     def lay_otp_theo_che_do(self, mode, used_email, mail_service=None, imap_service=None, hotmail_service=None, uid_moc=0, force_8_digits=False):
         max_resend_attempts = 2
         loai_otp_str = "8 số bảo mật" if force_8_digits else "xác nhận đăng ký"
@@ -1572,8 +1676,7 @@ class FacebookUI:
                 self.click_text_chua(nut_bd, nut_bd, 1, 0.5)
                 time.sleep(2.5)
                 break
-# ==================== HẾT ĐOẠN 2A (NỐI TIẾP ĐOẠN 2B BÊN DƯỚI) ====================
-# ==================== BẮT ĐẦU ĐOẠN 2B ====================
+
     def bat_2fa_fb(self, used_email, mode="1", mail_service=None, imap_service=None, hotmail_service=None, autosms_service=None):
         """
         Bật 2FA hoàn chỉnh:
@@ -1921,13 +2024,13 @@ class FacebookUI:
 
     def chay_dang_ky(self, used_email=None, mode="1", mail_service=None, imap_service=None, hotmail_service=None, autosms_service=None, used_phones=None, used_names=None):
         """
-        Quy trình Đăng ký khớp 100% với 8 ảnh giao diện thực tế:
-        Ảnh 1 (Bắt đầu) -> Ảnh 2 (KHÔNG CHO PHÉP) -> Ảnh 3 (Họ & Tên -> Tiếp)
-        -> Ảnh 4, 5, 6 (Nhấn khoảng trắng ô Ngày sinh -> Vuốt Chọn Ngày/Tháng/Năm sinh -> CHỌN -> Tiếp)
-        -> Ảnh 7 (Giới tính -> Tiếp) -> Ảnh 8 (Đăng ký bằng Email / SĐT -> Tiếp)
+        Quy trình Đăng ký khớp 100% với giao diện thực tế:
+        Bắt đầu -> KHÔNG CHO PHÉP -> Họ & Tên -> Tiếp
+        -> Bấm vùng tô đỏ trong ô Ngày sinh -> Mở bảng 3 cột Chọn ngày -> Vuốt Ngày/Tháng/Năm -> CHỌN -> Tiếp
+        -> Giới tính -> Tiếp -> Đăng ký bằng Email / SĐT -> Tiếp
         -> Mật khẩu & OTP -> Up Avatar & Bật 2FA
         """
-        # 1. Xóa sạch dữ liệu ngầm để vào thẳng giao diện Ảnh 1 ("Tham gia Facebook - Bắt đầu")
+        # 1. Xóa sạch dữ liệu ngầm để vào thẳng giao diện "Tham gia Facebook - Bắt đầu"
         self.log('🧹 Xóa dữ liệu ngầm FB & làm mới thông số máy...')
         xoa_du_lieu_fb(self.serial)
         lam_moi_thong_so_thiet_bi_adb(self.serial, self.config)
@@ -1936,7 +2039,7 @@ class FacebookUI:
         khoa_xoay_man_hinh(self.serial)
         cap_quyen_bo_nho_fb(self.serial)
 
-        # 2. Mở Facebook -> Chờ hiện màn hình Ảnh 1 ("Tham gia Facebook")
+        # 2. Mở Facebook -> Chờ hiện màn hình "Tham gia Facebook"
         self.log('🚀 Mở Facebook...')
         chay_lenh_adb('shell am start -n com.facebook.katana/com.facebook.katana.LoginActivity', self.serial)
         nghi_ngau_nhien(self.config['delay_mo_facebook'], 0.1)
@@ -1945,32 +2048,31 @@ class FacebookUI:
         self.tat_quyen_khong_cho_phep()
         self.dong_goi_y_google()
 
-        # 3. ẢNH 1: Bấm vào nút "Bắt đầu" màu xanh (hoặc "Tạo tài khoản mới" nếu giao diện phụ)
-        self.log('🔵 [Ảnh 1] Bấm nút Bắt đầu...')
+        # 3. Bấm vào nút "Bắt đầu" màu xanh (hoặc "Tạo tài khoản mới" nếu giao diện phụ)
+        self.log('🔵 Bấm nút Bắt đầu...')
         da_bam_bat_dau = (
             self.click_text('Bắt đầu', 'Bắt đầu', 3, 0.8)
             or self.click_text_chua('Bắt đầu', 'Bắt đầu', 2, 0.6)
             or self.click_text_chua('Tạo tài khoản mới', 'Tạo tài khoản mới', 2, 0.6)
         )
         if not da_bam_bat_dau:
-            # Nếu vướng màn hình phụ, thử tắt gợi ý rồi bấm lại Bắt đầu
             self.dong_goi_y_google()
             self.click_text_chua('Bắt đầu', 'Bắt đầu', 3, 0.8) or self.click_text_chua('Tạo tài khoản mới', 'Tạo TK mới', 2, 0.6)
 
         nghi_ngau_nhien(self.config['delay_click_tao_tk_lan1'])
 
-        # 4. ẢNH 2: Bấm "KHÔNG CHO PHÉP" khi bảng hỏi quyền truy cập danh bạ hiện lên
-        self.log('❌ [Ảnh 2] Kiểm tra & bấm KHÔNG CHO PHÉP quyền danh bạ...')
+        # 4. Bấm "KHÔNG CHO PHÉP" khi bảng hỏi quyền truy cập danh bạ hiện lên
+        self.log('❌ Kiểm tra & bấm KHÔNG CHO PHÉP quyền danh bạ...')
         for _ in range(3):
             if self.tat_quyen_khong_cho_phep():
                 break
             time.sleep(0.4)
         nghi_ngau_nhien(self.config['delay_chon_khong_cho_phep_lan2'])
 
-        # 5. ẢNH 3: Màn hình "Bạn tên gì?" -> Nhập ô Họ (trái) và ô Tên (phải) -> Bấm Tiếp
+        # 5. Màn hình "Bạn tên gì?" -> Nhập ô Họ (trái) và ô Tên (phải) -> Bấm Tiếp
         self.dong_goi_y_google()
         ho, ten = self.tao_ho_ten(used_names)
-        self.log(f'📝 [Ảnh 3] Nhập Họ: {ho} | Tên: {ten}')
+        self.log(f'📝 Nhập Họ: {ho} | Tên: {ten}')
 
         edit_texts = self.d(className='android.widget.EditText')
         if edit_texts.count >= 2:
@@ -1991,29 +2093,29 @@ class FacebookUI:
                 self.nhap_text(ten)
             nghi_ngau_nhien(self.config['delay_nhap_ten'])
 
-        self.log('⏩ [Ảnh 3] Bấm nút Tiếp')
+        self.log('⏩ Bấm nút Tiếp (sau khi nhập Họ Tên)')
         self.click_text('Tiếp', 'Tiếp', 3, 0.8) or self.click_text_chua('Tiếp', 'Tiếp', 2, 0.6)
         nghi_ngau_nhien(self.config['delay_click_tiep_lan1'])
 
-        # 6. ẢNH 4, 5, 6: Màn hình "Ngày sinh của bạn là khi nào?" -> Nhấn khoảng trắng ô Ngày sinh -> Vuốt chọn Ngày/Tháng/Năm -> Bấm CHỌN -> Bấm Tiếp
+        # 6. Màn hình "Ngày sinh của bạn là khi nào?" -> Bấm vùng tô đỏ mở bảng 3 cột -> Vuốt chọn Ngày/Tháng/Năm -> Bấm CHỌN -> Bấm Tiếp
         self.vuot_chon_ngay_thang_nam_sinh()
 
-        # 7. ẢNH 7: Màn hình "Giới tính của bạn là gì?" -> Chọn Nam hoặc Nữ -> Bấm Tiếp
+        # 7. Màn hình "Giới tính của bạn là gì?" -> Chọn Nam hoặc Nữ -> Bấm Tiếp
         gioi_tinh = random.choice(['Nam', 'Nữ'])
-        self.log(f'👤 [Ảnh 7] Chọn giới tính: {gioi_tinh}')
+        self.log(f'👤 Chọn giới tính: {gioi_tinh}')
         self.click_text(gioi_tinh, gioi_tinh, 3, 0.8) or self.click_text_chua(gioi_tinh, gioi_tinh, 2, 0.6)
         nghi_ngau_nhien(self.config['delay_chon_gioi_tinh'])
 
-        self.log('⏩ [Ảnh 7] Bấm nút Tiếp')
+        self.log('⏩ Bấm nút Tiếp (sau khi chọn Giới tính)')
         self.click_text('Tiếp', 'Tiếp', 3, 0.8) or self.click_text_chua('Tiếp', 'Tiếp', 2, 0.6)
         nghi_ngau_nhien(self.config['delay_click_tiep_lan5'])
 
-        # 8. ẢNH 8: Màn hình "Số di động của bạn là gì?" / Nhập Email
+        # 8. Màn hình "Số di động của bạn là gì?" / Nhập Email
         self.tat_quyen_khong_cho_phep()
 
         # Chế độ 6: Thuê SĐT AutoSMS
         if mode == "6" and autosms_service:
-            self.log('📞 [Ảnh 8 - Mode 6] Đang thuê SĐT từ AutoSMS.site...')
+            self.log('📞 [Mode 6] Đang thuê SĐT từ AutoSMS.site...')
             so_dt = autosms_service.buy_number()
             if not so_dt:
                 self.log('❌ Không thuê được SĐT!')
@@ -2039,7 +2141,7 @@ class FacebookUI:
             )
 
         # Chế độ 1 -> 5: Đăng ký bằng Email
-        self.log('📧 [Ảnh 8] Bấm nút "Đăng ký bằng email"...')
+        self.log('📧 Bấm nút "Đăng ký bằng email"...')
         if self.d(textContains='Đăng ký bằng email').exists or self.d(descriptionContains='Đăng ký bằng email').exists:
             self.click_text_chua('Đăng ký bằng email', 'Đăng ký bằng email', 3, 0.6)
             time.sleep(1.5)
