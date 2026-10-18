@@ -251,13 +251,11 @@ def chuyen_doi_2fa_sang_otp(secret_key, doi_chu_ky_moi=True):
     if len(clean_key) < 8:
         return None
 
-    # Nếu còn dưới 5 giây trong chu kỳ 30s thì đợi chu kỳ mới để tránh nhập vào lúc mã vừa hết hạn
     if doi_chu_ky_moi:
         con_lai = 30 - (int(time.time()) % 30)
         if con_lai < 5:
             time.sleep(con_lai + 0.5)
 
-    # Cách 1: Giải mã TOTP thuần bằng HMAC-SHA1 (tự động bù dấu '=' nếu độ dài không chia hết cho 8)
     try:
         padding = (8 - (len(clean_key) % 8)) % 8
         padded_key = clean_key + ('=' * padding)
@@ -271,7 +269,6 @@ def chuyen_doi_2fa_sang_otp(secret_key, doi_chu_ky_moi=True):
     except Exception:
         pass
 
-    # Cách 2: Dự phòng qua thư viện pyotp
     try:
         padding = (8 - (len(clean_key) % 8)) % 8
         return pyotp.TOTP(clean_key + ('=' * padding)).now()
@@ -1151,7 +1148,7 @@ def get_devices():
     except Exception:
         return []
 # ==================== KẾT THÚC PHẦN 1/2 ====================
-# ==================== BẮT ĐẦU PHẦN 2/2 ====================
+# ==================== BẮT ĐẦU PHẦN 2/2 (ĐOẠN 2A) ====================
 class FacebookUI:
 
     def __init__(self, serial=None, device_name=None, config=None, avatar_folder=""):
@@ -1173,29 +1170,62 @@ class FacebookUI:
         else:
             print(text)
 
+    def click_toa_do_an_toan(self, x, y):
+        """Click tọa độ có bọc chống lỗi SecurityException INJECT_EVENTS trên Xiaomi"""
+        x, y = int(x), int(y)
+        try:
+            self.d.click(x, y)
+        except Exception:
+            chay_lenh_adb(f'shell input tap {x} {y}', self.serial)
+
+    def vuot_toa_do_an_toan(self, x1, y1, x2, y2, duration_ms=220):
+        """Vuốt tọa độ an toàn bằng u2 + ADB fallback chống lỗi INJECT_EVENTS"""
+        x1, y1, x2, y2 = int(x1), int(y1), int(x2), int(y2)
+        try:
+            self.d.swipe(x1, y1, x2, y2, duration=duration_ms / 1000.0)
+        except Exception:
+            chay_lenh_adb(f'shell input swipe {x1} {y1} {x2} {y2} {duration_ms}', self.serial)
+
+    def _click_phan_tu_an_toan(self, elem):
+        """Click vào phần tử UI, nếu bị chặn INJECT_EVENTS thì tự động lấy tọa độ giữa phần tử để tap qua ADB"""
+        try:
+            elem.click()
+            return True
+        except Exception:
+            try:
+                b = elem.info['bounds']
+                cx = (b['left'] + b['right']) // 2
+                cy = (b['top'] + b['bottom']) // 2
+                chay_lenh_adb(f'shell input tap {cx} {cy}', self.serial)
+                return True
+            except Exception:
+                return False
+
     def click_text_chua(self, text, ten_nut="", so_lan_thu=3, delay=0.6, click_duoi=False):
         for _ in range(so_lan_thu):
             if self.d(textContains=text).exists:
                 elements = self.d(textContains=text)
                 elem = elements[-1] if click_duoi else (elements[0] if hasattr(elements, '__getitem__') else elements)
-                elem.click()
-                return True
+                if self._click_phan_tu_an_toan(elem):
+                    return True
             if self.d(descriptionContains=text).exists:
                 elements = self.d(descriptionContains=text)
                 elem = elements[-1] if click_duoi else (elements[0] if hasattr(elements, '__getitem__') else elements)
-                elem.click()
-                return True
+                if self._click_phan_tu_an_toan(elem):
+                    return True
             time.sleep(delay)
         return False
 
     def click_text(self, text, ten_nut="", so_lan_thu=3, delay=0.6):
         for _ in range(so_lan_thu):
             if self.d(text=text).exists:
-                self.d(text=text).click()
-                return True
+                elem = self.d(text=text)[0] if hasattr(self.d(text=text), '__getitem__') else self.d(text=text)
+                if self._click_phan_tu_an_toan(elem):
+                    return True
             if self.d(description=text).exists:
-                self.d(description=text).click()
-                return True
+                elem = self.d(description=text)[0] if hasattr(self.d(description=text), '__getitem__') else self.d(description=text)
+                if self._click_phan_tu_an_toan(elem):
+                    return True
             time.sleep(delay)
         return False
 
@@ -1204,26 +1234,30 @@ class FacebookUI:
             if self.d(text=ten_truong).exists:
                 phan_tu = self.d(text=ten_truong)[0]
                 if double:
-                    phan_tu.click()
+                    self._click_phan_tu_an_toan(phan_tu)
                     time.sleep(0.2)
-                phan_tu.click()
-                return True
+                if self._click_phan_tu_an_toan(phan_tu):
+                    return True
             if self.d(textContains=ten_truong).exists:
                 phan_tu = self.d(textContains=ten_truong)[0]
                 if double:
-                    phan_tu.click()
+                    self._click_phan_tu_an_toan(phan_tu)
                     time.sleep(0.2)
-                phan_tu.click()
-                return True
+                if self._click_phan_tu_an_toan(phan_tu):
+                    return True
             if self.d(descriptionContains=ten_truong).exists:
                 phan_tu = self.d(descriptionContains=ten_truong)[0]
-                phan_tu.click()
-                return True
+                if self._click_phan_tu_an_toan(phan_tu):
+                    return True
             time.sleep(delay)
         return False
 
     def nhap_text(self, text):
-        self.d.send_keys(str(text))
+        try:
+            self.d.send_keys(str(text))
+        except Exception:
+            safe_str = str(text).replace(' ', '%s')
+            chay_lenh_adb(f'shell input text "{safe_str}"', self.serial)
         time.sleep(random.uniform(0.3, 0.5))
 
     def kiem_tra_text(self, danh_sach_text, so_lan_thu=2, delay=0.5):
@@ -1251,11 +1285,11 @@ class FacebookUI:
         ]
         for nut in cac_nut_tu_choi:
             if self.d(text=nut).exists:
-                self.d(text=nut).click()
+                self._click_phan_tu_an_toan(self.d(text=nut)[0])
                 time.sleep(0.5)
                 return True
             if self.d(textContains=nut).exists:
-                self.d(textContains=nut)[-1].click()
+                self._click_phan_tu_an_toan(self.d(textContains=nut)[-1])
                 time.sleep(0.5)
                 return True
         return False
@@ -1298,36 +1332,90 @@ class FacebookUI:
                 used_phones.add(phone)
             return phone
 
+    def mo_bang_chon_ngay(self):
+        """
+        Nhấn thẳng vào khoảng trắng bên phải bên trong ô Ngày sinh (tránh bấm nhầm vào tiêu đề 'Ngày sinh của bạn là khi nào?')
+        cho đến khi bảng popup 'Chọn ngày' (có nút HỦY / CHỌN) hiện lên.
+        """
+        w, h = self.d.window_size()
+
+        for _ in range(4):
+            if self.d(text='CHỌN').exists or self.d(text='HỦY').exists or self.d(textContains='Chọn ngày').exists:
+                return True
+
+            self.log('📅 Đang bấm vào khoảng trắng trong ô Ngày sinh...')
+            da_bam = False
+
+            # Cách 1: Tìm dòng '(0 tuổi)' hoặc 'tháng' trong ô -> lấy tọa độ Y của ô và bấm sang khoảng trắng bên phải (x = 68% màn hình)
+            for dau_hieu in ['tuổi)', 'tháng', '2026', '2025']:
+                if self.d(textContains=dau_hieu).exists:
+                    try:
+                        b = self.d(textContains=dau_hieu)[-1].info['bounds']
+                        y_giua_o = (b['top'] + b['bottom']) // 2
+                        x_khoang_trang = int(w * 0.68)
+                        self.click_toa_do_an_toan(x_khoang_trang, y_giua_o)
+                        da_bam = True
+                        break
+                    except Exception:
+                        pass
+
+            # Cách 2: Dựa theo vị trí phía trên nút 'Tiếp' để bấm vào khoảng trắng bên phải ô Ngày sinh
+            if not da_bam and self.d(text='Tiếp').exists:
+                try:
+                    b_tiep = self.d(text='Tiếp')[0].info['bounds']
+                    x_khoang_trang = int(w * 0.65)
+                    y_tren_nut_tiep = b_tiep['top'] - int(h * 0.055)
+                    self.click_toa_do_an_toan(x_khoang_trang, y_tren_nut_tiep)
+                    da_bam = True
+                except Exception:
+                    pass
+
+            # Cách 3: Click tọa độ khoảng trắng chuẩn theo khung ô Ngày sinh (x = 65% ngang, y = 30% dọc)
+            if not da_bam:
+                self.click_toa_do_an_toan(int(w * 0.65), int(h * 0.30))
+
+            time.sleep(1.0)
+            if self.d(text='CHỌN').exists or self.d(text='HỦY').exists or self.d(textContains='Chọn ngày').exists:
+                return True
+
+            # Dự phòng: Nhấn thêm vào khoảng trắng chính giữa ô Ngày sinh
+            self.click_toa_do_an_toan(int(w * 0.55), int(h * 0.30))
+            time.sleep(1.0)
+
+        return self.d(text='CHỌN').exists or self.d(text='HỦY').exists or self.d(textContains='Chọn ngày').exists
+
     def vuot_chon_ngay_thang_nam_sinh(self):
         """
         Xử lý chuẩn Ảnh 4, 5, 6:
-        - Mở bảng 'Chọn ngày' nếu chưa hiện
+        - Mở bảng 'Chọn ngày' bằng cách nhấn vào khoảng trắng trong ô ngày sinh
         - Tự động vuốt cột Ngày, cột Tháng và vuốt cột Năm từ trên xuống (để chọn năm sinh 1992-2005)
         - Bấm nút 'CHỌN', sau đó bấm nút 'Tiếp'
         """
         w, h = self.d.window_size()
 
         for lan_thu in range(3):
-            # 1. Nếu bảng 'Chọn ngày' (có nút CHỌN / HỦY) chưa mở thì bấm vào ô Ngày sinh (Ảnh 4)
-            if not (self.d(text='CHỌN').exists or self.d(text='HỦY').exists or self.d(textContains='Chọn ngày').exists):
-                self.log('📅 Mở bảng Chọn ngày sinh...')
-                if not self.click_text_chua('Ngày sinh', 'Ngày sinh', 2, 0.4):
-                    if not self.click_text_chua('tuổi', 'Ngày sinh', 1, 0.4):
-                        self.d.click(int(w * 0.45), int(h * 0.30))
+            # 1. Nếu bảng 'Chọn ngày' (có nút CHỌN / HỦY) chưa mở thì bấm vào khoảng trắng ô Ngày sinh
+            if not self.mo_bang_chon_ngay():
+                self.log('⚠️ Chưa mở được bảng Chọn ngày, thử nhấn lại vào khoảng trắng ô...')
+                self.click_toa_do_an_toan(int(w * 0.65), int(h * 0.30))
                 time.sleep(1.0)
 
             # 2. Xác định tọa độ 3 cột: Ngày (Trái) - Tháng (Giữa) - Năm (Phải) trên bảng Chọn ngày (Ảnh 5)
             pickers = self.d(className='android.widget.NumberPicker')
             if pickers.count >= 3:
-                b_day = pickers[0].info['bounds']
-                b_month = pickers[1].info['bounds']
-                b_year = pickers[2].info['bounds']
+                try:
+                    b_day = pickers[0].info['bounds']
+                    b_month = pickers[1].info['bounds']
+                    b_year = pickers[2].info['bounds']
 
-                x_day = (b_day['left'] + b_day['right']) // 2
-                x_month = (b_month['left'] + b_month['right']) // 2
-                x_year = (b_year['left'] + b_year['right']) // 2
-                y_top = b_year['top'] + int((b_year['bottom'] - b_year['top']) * 0.22)
-                y_bot = b_year['top'] + int((b_year['bottom'] - b_year['top']) * 0.78)
+                    x_day = (b_day['left'] + b_day['right']) // 2
+                    x_month = (b_month['left'] + b_month['right']) // 2
+                    x_year = (b_year['left'] + b_year['right']) // 2
+                    y_top = b_year['top'] + int((b_year['bottom'] - b_year['top']) * 0.22)
+                    y_bot = b_year['top'] + int((b_year['bottom'] - b_year['top']) * 0.78)
+                except Exception:
+                    x_day, x_month, x_year = int(w * 0.30), int(w * 0.50), int(w * 0.70)
+                    y_top, y_bot = int(h * 0.41), int(h * 0.56)
             else:
                 # Tọa độ chuẩn theo đúng khung 'Chọn ngày' trong Ảnh 5
                 x_day = int(w * 0.30)
@@ -1340,31 +1428,31 @@ class FacebookUI:
             self.log('📅 Đang vuốt chọn Ngày & Tháng ngẫu nhiên...')
             for _ in range(random.randint(1, 3)):
                 if random.choice([True, False]):
-                    self.d.swipe(x_day, y_top, x_day, y_bot, duration=0.12)
+                    self.vuot_toa_do_an_toan(x_day, y_top, x_day, y_bot, 200)
                 else:
-                    self.d.swipe(x_day, y_bot, x_day, y_top, duration=0.12)
+                    self.vuot_toa_do_an_toan(x_day, y_bot, x_day, y_top, 200)
                 time.sleep(0.25)
 
             # 4. Vuốt ngẫu nhiên cột Tháng (lên hoặc xuống 1-3 nhịp)
             for _ in range(random.randint(1, 3)):
                 if random.choice([True, False]):
-                    self.d.swipe(x_month, y_top, x_month, y_bot, duration=0.12)
+                    self.vuot_toa_do_an_toan(x_month, y_top, x_month, y_bot, 200)
                 else:
-                    self.d.swipe(x_month, y_bot, x_month, y_top, duration=0.12)
+                    self.vuot_toa_do_an_toan(x_month, y_bot, x_month, y_top, 200)
                 time.sleep(0.25)
 
             # 5. Vuốt cột Năm: Ở Ảnh 5, năm 2025 nằm TRÊN năm 2026 -> Kéo từ TRÊN xuống DƯỚI (y_top -> y_bot) để lùi về năm 1992-2005
             so_lan_vuot_nam = random.randint(6, 10)
             self.log(f'📅 Đang vuốt cột Năm sinh ({so_lan_vuot_nam} nhịp về khoảng 1993-2005)...')
             for _ in range(so_lan_vuot_nam):
-                self.d.swipe(x_year, y_top, x_year, y_bot, duration=0.10)
-                time.sleep(0.22)
+                self.vuot_toa_do_an_toan(x_year, y_top, x_year, y_bot, 180)
+                time.sleep(0.25)
 
             # 6. Bấm nút CHỌN trên bảng Chọn ngày (Ảnh 5)
             time.sleep(0.4)
             self.log('📅 Bấm CHỌN ngày tháng năm sinh')
             if not (self.click_text('CHỌN', 'CHỌN', 2, 0.5) or self.click_text('OK', 'OK', 1, 0.4)):
-                self.d.click(int(w * 0.72), int(h * 0.62))
+                self.click_toa_do_an_toan(int(w * 0.72), int(h * 0.62))
             time.sleep(1.0)
 
             # Kiểm tra xem trên màn hình (Ảnh 6) đã đổi từ (0 tuổi) sang số tuổi hợp lệ (>= 18 tuổi) chưa
@@ -1374,7 +1462,8 @@ class FacebookUI:
 
         # 7. Bấm nút Tiếp ở màn hình Ngày sinh (Ảnh 6)
         self.log('⏩ Bấm Tiếp (sau khi chọn Ngày sinh)')
-        self.click_text('Tiếp', 'Tiếp', 3, 0.8) or self.click_text_chua('Tiếp', 'Tiếp', 2, 0.6)
+        if not (self.click_text('Tiếp', 'Tiếp', 3, 0.8) or self.click_text_chua('Tiếp', 'Tiếp', 2, 0.6)):
+            self.click_toa_do_an_toan(int(w * 0.50), int(h * 0.38))
         nghi_ngau_nhien(self.config.get('delay_click_tiep_lan2', 1.0))
 
         # Xử lý phòng hờ nếu Facebook hiện popup hỏi xác nhận tuổi ("OK" / "Xác nhận")
@@ -1475,7 +1564,7 @@ class FacebookUI:
 
         if self.kiem_tra_text(['Chọn tài khoản', 'Select an account', 'Trang cá nhân', 'Profiles'], 2, 0.8):
             if self.d(className='android.view.ViewGroup', clickable=True).exists:
-                self.d(className='android.view.ViewGroup', clickable=True)[0].click()
+                self._click_phan_tu_an_toan(self.d(className='android.view.ViewGroup', clickable=True)[0])
                 time.sleep(2.5)
 
         for nut_bd in ['Bắt đầu', 'Get started', 'Sử dụng ứng dụng xác thực', 'Use authentication app']:
@@ -1483,7 +1572,8 @@ class FacebookUI:
                 self.click_text_chua(nut_bd, nut_bd, 1, 0.5)
                 time.sleep(2.5)
                 break
-
+# ==================== HẾT ĐOẠN 2A (NỐI TIẾP ĐOẠN 2B BÊN DƯỚI) ====================
+# ==================== BẮT ĐẦU ĐOẠN 2B ====================
     def bat_2fa_fb(self, used_email, mode="1", mail_service=None, imap_service=None, hotmail_service=None, autosms_service=None):
         """
         Bật 2FA hoàn chỉnh:
@@ -1505,7 +1595,7 @@ class FacebookUI:
             if self.kiem_tra_text(['Nhập lại mật khẩu', 'Re-enter your password', 'Mật khẩu của bạn', 'Mật khẩu'], 1, 0.5):
                 if self.d(className='android.widget.EditText').exists:
                     self.log('🔑 Nhập mật khẩu xác nhận mở 2FA...')
-                    self.d(className='android.widget.EditText')[0].click()
+                    self._click_phan_tu_an_toan(self.d(className='android.widget.EditText')[0])
                     time.sleep(0.3)
                     self.nhap_text(self.config['mat_khau_fb'])
                     time.sleep(0.5)
@@ -1531,7 +1621,7 @@ class FacebookUI:
                 if verify_code:
                     self.log(f'🔢 Nhập mã bảo mật mở khóa 2FA: {verify_code}')
                     if self.d(className='android.widget.EditText').exists:
-                        self.d(className='android.widget.EditText')[0].click()
+                        self._click_phan_tu_an_toan(self.d(className='android.widget.EditText')[0])
                         time.sleep(0.3)
                     self.nhap_text(verify_code)
                     time.sleep(0.8)
@@ -1576,7 +1666,7 @@ class FacebookUI:
 
                 if ma_otp_6_so:
                     if self.d(className='android.widget.EditText').exists:
-                        self.d(className='android.widget.EditText')[0].click()
+                        self._click_phan_tu_an_toan(self.d(className='android.widget.EditText')[0])
                         time.sleep(0.3)
                         self.nhap_text(ma_otp_6_so)
                     else:
@@ -1670,7 +1760,7 @@ class FacebookUI:
 
                 if not da_click_khung:
                     w, h = self.d.window_size()
-                    self.d.click(int(w * 0.22), int(h * 0.32))
+                    self.click_toa_do_an_toan(int(w * 0.22), int(h * 0.32))
                     time.sleep(2.0)
 
             for tuy_chon in ['Chọn từ thư viện', 'Choose from Gallery', 'Chọn ảnh đại diện', 'Select profile picture', 'Chọn trên Thiết bị', 'Thêm ảnh']:
@@ -1688,17 +1778,17 @@ class FacebookUI:
             da_chon_anh = False
             if self.d(descriptionContains='Ảnh').exists or self.d(descriptionContains='Photo').exists:
                 phan_tu_anh = self.d(descriptionContains='Ảnh') if self.d(descriptionContains='Ảnh').exists else self.d(descriptionContains='Photo')
-                phan_tu_anh[0].click()
+                self._click_phan_tu_an_toan(phan_tu_anh[0])
                 da_chon_anh = True
             elif self.d(className='android.widget.GridView').exists:
                 grid = self.d(className='android.widget.GridView')[0]
                 if grid.child(clickable=True).exists:
-                    grid.child(clickable=True)[0].click()
+                    self._click_phan_tu_an_toan(grid.child(clickable=True)[0])
                     da_chon_anh = True
 
             if not da_chon_anh:
                 w, h = self.d.window_size()
-                self.d.click(int(w * 0.18), int(h * 0.35))
+                self.click_toa_do_an_toan(int(w * 0.18), int(h * 0.35))
 
             time.sleep(2.0)
             self.log('💾 Bấm Lưu / Xong ảnh đại diện...')
@@ -1743,7 +1833,7 @@ class FacebookUI:
                 self.log('🔑 Nhập Mật khẩu...')
                 if self.click_truong('Mật khẩu', False, 2, 0.5) or self.d(className='android.widget.EditText').exists:
                     if self.d(className='android.widget.EditText').exists:
-                        self.d(className='android.widget.EditText')[0].click()
+                        self._click_phan_tu_an_toan(self.d(className='android.widget.EditText')[0])
                     self.nhap_text(mat_khau_fb)
                     nghi_ngau_nhien(self.config['delay_nhap_mat_khau'])
                     self.log('⏩ Bấm Tiếp (sau Mật khẩu)')
@@ -1762,7 +1852,7 @@ class FacebookUI:
             if self.kiem_tra_text(['Tôi đồng ý', 'điều khoản và chính sách'], 1, 0.2):
                 self.log('✅ Bấm Tôi đồng ý')
                 if self.d(textContains='Tôi đồng ý').exists:
-                    self.d(textContains='Tôi đồng ý')[-1].click()
+                    self._click_phan_tu_an_toan(self.d(textContains='Tôi đồng ý')[-1])
                 nghi_ngau_nhien(self.config['delay_cho_toi_dong_y'], 0.15)
                 continue
 
@@ -1795,7 +1885,7 @@ class FacebookUI:
 
                 self.log(f'🔢 Nhập mã OTP: {code}')
                 if self.d(className='android.widget.EditText').exists:
-                    self.d(className='android.widget.EditText')[0].click()
+                    self._click_phan_tu_an_toan(self.d(className='android.widget.EditText')[0])
                     time.sleep(0.3)
                     self.nhap_text(code)
                 elif self.click_truong('Mã xác nhận', False, 2, 0.5):
@@ -1833,7 +1923,7 @@ class FacebookUI:
         """
         Quy trình Đăng ký khớp 100% với 8 ảnh giao diện thực tế:
         Ảnh 1 (Bắt đầu) -> Ảnh 2 (KHÔNG CHO PHÉP) -> Ảnh 3 (Họ & Tên -> Tiếp)
-        -> Ảnh 4, 5, 6 (Vuốt Chọn Ngày/Tháng/Năm sinh -> CHỌN -> Tiếp)
+        -> Ảnh 4, 5, 6 (Nhấn khoảng trắng ô Ngày sinh -> Vuốt Chọn Ngày/Tháng/Năm sinh -> CHỌN -> Tiếp)
         -> Ảnh 7 (Giới tính -> Tiếp) -> Ảnh 8 (Đăng ký bằng Email / SĐT -> Tiếp)
         -> Mật khẩu & OTP -> Up Avatar & Bật 2FA
         """
@@ -1884,12 +1974,12 @@ class FacebookUI:
 
         edit_texts = self.d(className='android.widget.EditText')
         if edit_texts.count >= 2:
-            edit_texts[0].click()
+            self._click_phan_tu_an_toan(edit_texts[0])
             time.sleep(0.25)
             self.nhap_text(ho)
             nghi_ngau_nhien(self.config['delay_nhap_ho'])
 
-            edit_texts[1].click()
+            self._click_phan_tu_an_toan(edit_texts[1])
             time.sleep(0.25)
             self.nhap_text(ten)
             nghi_ngau_nhien(self.config['delay_nhap_ten'])
@@ -1905,7 +1995,7 @@ class FacebookUI:
         self.click_text('Tiếp', 'Tiếp', 3, 0.8) or self.click_text_chua('Tiếp', 'Tiếp', 2, 0.6)
         nghi_ngau_nhien(self.config['delay_click_tiep_lan1'])
 
-        # 6. ẢNH 4, 5, 6: Màn hình "Ngày sinh của bạn là khi nào?" -> Vuốt chọn Ngày/Tháng/Năm -> Bấm CHỌN -> Bấm Tiếp
+        # 6. ẢNH 4, 5, 6: Màn hình "Ngày sinh của bạn là khi nào?" -> Nhấn khoảng trắng ô Ngày sinh -> Vuốt chọn Ngày/Tháng/Năm -> Bấm CHỌN -> Bấm Tiếp
         self.vuot_chon_ngay_thang_nam_sinh()
 
         # 7. ẢNH 7: Màn hình "Giới tính của bạn là gì?" -> Chọn Nam hoặc Nữ -> Bấm Tiếp
@@ -1930,7 +2020,7 @@ class FacebookUI:
                 return None
             self.log(f'📞 Nhập SĐT thuê: {so_dt}')
             if self.d(className='android.widget.EditText').exists:
-                self.d(className='android.widget.EditText')[0].click()
+                self._click_phan_tu_an_toan(self.d(className='android.widget.EditText')[0])
             else:
                 self.click_truong('Số di động', False, 3, 0.6)
             time.sleep(0.3)
@@ -1965,9 +2055,12 @@ class FacebookUI:
 
         self.log(f'📧 Nhập Email: {used_email}')
         if self.d(className='android.widget.EditText').exists:
-            self.d(className='android.widget.EditText')[0].click()
+            self._click_phan_tu_an_toan(self.d(className='android.widget.EditText')[0])
             time.sleep(0.25)
-            self.d.clear_text()
+            try:
+                self.d.clear_text()
+            except Exception:
+                pass
             self.nhap_text(used_email)
         elif self.click_truong('Email', False, 3, 0.6):
             self.nhap_text(used_email)
