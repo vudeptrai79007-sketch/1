@@ -28,7 +28,7 @@ DB_FILE = "mmo_fb_ig_accounts_v7.db"
 USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
 SEC_CH_UA_120 = '"Chromium";v="124", "Google Chrome";v="124", "Not-A.Brand";v="99"'
 
-# Danh sách 12 Chế độ làm Job chuẩn trên Tương Tác Chéo (TTC - Chuẩn hóa từ Lk2/z.smali)
+# Danh sách 12 Chế độ làm Job chuẩn trên Tương Tác Chéo (TTC - Chuẩn 100% từ Lk2/z.smali)
 TTC_12_JOB_MODES = {
     "ttc_like_thuong": {
         "name": "1. Like Bài Viết Thường",
@@ -55,7 +55,7 @@ TTC_12_JOB_MODES = {
         "default_xu": 400
     },
     "ttc_camxuc_vip": {
-        "name": "4. Cảm Xúc Bài Viết VIP",
+        "name": "4. Cảm Xúc Bài Viết VIP / Giá Rẻ",
         "get_ep": "/kiemtien/camxucvipcheo/getpost.php",
         "claim_ep": "/kiemtien/camxucvipcheo/nhantien.php",
         "referer": "https://tuongtaccheo.com/kiemtien/camxucvipcheo/",
@@ -72,9 +72,9 @@ TTC_12_JOB_MODES = {
     },
     "ttc_cmt_vip": {
         "name": "6. Bình Luận (Comment) VIP",
-        "get_ep": "/kiemtien/cmtvipcheo/getpost.php",
-        "claim_ep": "/kiemtien/cmtvipcheo/nhantien.php",
-        "referer": "https://tuongtaccheo.com/kiemtien/cmtvipcheo/",
+        "get_ep": "/kiemtien/cmtvip/getpost.php",
+        "claim_ep": "/kiemtien/cmtvip/nhantien.php",
+        "referer": "https://tuongtaccheo.com/kiemtien/cmtvip/",
         "action": "comment",
         "default_xu": 800
     },
@@ -120,9 +120,9 @@ TTC_12_JOB_MODES = {
     },
     "ttc_camxuc_cmt": {
         "name": "12. Cảm Xúc Bình Luận (React Cmt)",
-        "get_ep": "/kiemtien/camxuccheobinhluan/getpost.php",
-        "claim_ep": "/kiemtien/camxuccheobinhluan/nhantien.php",
-        "referer": "https://tuongtaccheo.com/kiemtien/camxuccheobinhluan/",
+        "get_ep": "/kiemtien/camxuccmt/getpost.php",
+        "claim_ep": "/kiemtien/camxuccmt/nhantien.php",
+        "referer": "https://tuongtaccheo.com/kiemtien/camxuccmt/",
         "action": "react_cmt",
         "default_xu": 400
     }
@@ -337,6 +337,9 @@ def get_ig_headers(cookie, csrftoken, referer="https://www.instagram.com/"):
         'x-requested-with': 'XMLHttpRequest'
     }
 
+# ==============================================================================
+# CLASS INSTAGRAM (DÙNG CHO TAB XSMM)
+# ==============================================================================
 class INSTAGRAM:
     def __init__(self, cookies_str, proxy=None):
         self.cookies_str = unquote(cookies_str).strip()
@@ -565,6 +568,9 @@ class INSTAGRAM:
             self.last_error = str(e)[:40]
         return False
 
+# ==============================================================================
+# CLASS XSMM TOOL (TÁCH RIÊNG CHO HỆ THỐNG XSMM)
+# ==============================================================================
 class XSMMTool:
     def __init__(self, token):
         self.base_url = "https://xsmm.net/api/taskapi"
@@ -704,15 +710,16 @@ def gui_nhan_xu(job_type, task_ids, uid, cookie_check="", xsmm_obj=None):
     return {"error": "Thất bại"}
 
 # ==============================================================================
-# CLASS TƯƠNG TÁC CHÉO (CHUẨN LUỒNG MTOOL MAX Lk2/z.smali - FIX COOLDOWN CẢM XÚC)
+# CLASS TƯƠNG TÁC CHÉO (CHUẨN LUỒNG MTOOL MAX Lk2/z.smali - TÁCH CHUẨN IDPOST & LINK)
 # ==============================================================================
 class TuongTacCheoTool:
     def __init__(self, ttc_token, proxy=None):
         self.ttc_token = str(ttc_token or "").strip()
         self.base_url = "https://tuongtaccheo.com"
-        self.session = c_requests.Session()
+        self.session = requests.Session()
         if proxies := format_proxy(proxy):
-            self.session.proxies = proxies
+            self.session.proxies.update(proxies)
+        self.cookies_dict = {}
         self.cookie_str = ""
         self.headers = {
             "User-Agent": USER_AGENT,
@@ -725,8 +732,8 @@ class TuongTacCheoTool:
         self.username = ""
         self.coins = 0
         self.current_configured_uid = ""
+        self.session_datnick_uid = ""
         self.configured_pages_map = {}
-        self.last_getpost_ts = 0.0
         self.mode_offset = 0
 
     def close(self):
@@ -736,10 +743,10 @@ class TuongTacCheoTool:
             pass
 
     def _extract_session_cookies(self, response=None):
-        ck_dict = {}
         try:
-            for k, v in self.session.cookies.items():
-                ck_dict[str(k)] = str(v)
+            for k, v in self.session.cookies.get_dict().items():
+                if v and str(v).lower() != "deleted":
+                    self.cookies_dict[str(k)] = str(v)
         except Exception:
             pass
         if response is not None:
@@ -748,26 +755,28 @@ class TuongTacCheoTool:
                 for m in re.finditer(r'([A-Za-z0-9_]+)=([^;\s,]+)', set_ck):
                     k, v = m.group(1), m.group(2)
                     if k.lower() not in ["path", "domain", "expires", "max-age", "samesite", "secure", "httponly"]:
-                        ck_dict[k] = v
+                        if v and str(v).lower() != "deleted":
+                            self.cookies_dict[k] = v
             except Exception:
                 pass
-        if ck_dict:
-            self.cookie_str = "; ".join(f"{k}={v}" for k, v in ck_dict.items())
+        if self.cookies_dict:
+            self.cookie_str = "; ".join(f"{k}={v}" for k, v in self.cookies_dict.items())
             self.headers["Cookie"] = self.cookie_str
 
     def login(self):
         try:
+            self.session_datnick_uid = ""
             res = self.session.post(
                 f"{self.base_url}/logintoken.php",
                 headers={
                     "User-Agent": USER_AGENT,
                     "Content-Type": "application/x-www-form-urlencoded",
                     "Accept": "application/json, text/javascript, */*; q=0.01",
+                    "X-Requested-With": "XMLHttpRequest",
                     "Origin": self.base_url,
                     "Referer": f"{self.base_url}/"
                 },
-                data=f"access_token={urllib.parse.quote(self.ttc_token)}",
-                impersonate="chrome120",
+                data={"access_token": self.ttc_token},
                 timeout=15
             )
             self._extract_session_cookies(res)
@@ -794,7 +803,6 @@ class TuongTacCheoTool:
                 r_web = self.session.get(
                     f"{self.base_url}{ep}",
                     headers=hdr,
-                    impersonate="chrome120",
                     timeout=12
                 )
                 self._extract_session_cookies(r_web)
@@ -805,8 +813,8 @@ class TuongTacCheoTool:
                     clean_n = re.sub(r'\s+', ' ', raw_name).strip(" -|:\t\r\n")
                     self.configured_pages_map[str(uid)] = clean_n if clean_n else f"ID_{uid}"
 
-                all_ids = re.findall(r'(?:idfb|iddat|uid|facebook\.com/)["\'\s:=/>]*(\d{10,22})', html, re.I)
-                for uid in all_ids:
+                checkbox_ids = re.findall(r'name=["\']?iddat\[\]["\']?[^>]*value=["\']?(\d{10,22})["\']?', html, re.I)
+                for uid in checkbox_ids:
                     if str(uid) not in self.configured_pages_map:
                         self.configured_pages_map[str(uid)] = f"Page_{uid}"
 
@@ -831,10 +839,16 @@ class TuongTacCheoTool:
         if not self.cookie_str:
             self.login()
 
-        if self.current_configured_uid == page_id_str and page_id_str:
-            return True, f"Đang chọn sẵn Page {page_id_str}"
+        if self.session_datnick_uid and self.session_datnick_uid == page_id_str:
+            return True, f"Đang chạy Page {page_id_str}"
 
-        candidates = [c for c in [page_id_str, parent_str] if c and not c.startswith("FB_") and not c.startswith("Main")]
+        candidates = []
+        for c in [page_id_str, parent_str, self.current_configured_uid] + list(self.configured_pages_map.keys()):
+            c_str = str(c or "").strip()
+            if c_str and not c_str.startswith("FB_") and not c_str.startswith("Main") and c_str not in candidates:
+                candidates.append(c_str)
+
+        last_resp = ""
         for cand_uid in candidates:
             try:
                 hdr = self.headers.copy()
@@ -843,53 +857,53 @@ class TuongTacCheoTool:
                 if self.cookie_str:
                     hdr["Cookie"] = self.cookie_str
 
-                payload_raw = f"iddat%5B%5D={urllib.parse.quote(cand_uid)}&loai=fb"
                 res = self.session.post(
                     f"{self.base_url}/cauhinh/datnick.php",
                     headers=hdr,
-                    data=payload_raw,
-                    impersonate="chrome120",
+                    data={"iddat[]": cand_uid, "loai": "fb"},
                     timeout=12
                 )
                 self._extract_session_cookies(res)
                 txt = res.text.strip()
+                last_resp = txt
                 if txt == "1" or '"1"' in txt or "success" in txt.lower():
+                    self.session_datnick_uid = cand_uid
                     self.current_configured_uid = cand_uid
                     self.configured_pages_map[cand_uid] = self.configured_pages_map.get(cand_uid, f"Page_{cand_uid}")
-                    return True, f"Đã đặt cấu hình ID {cand_uid}"
-            except Exception:
-                pass
+                    return True, f"Đã đặt Nick ID {cand_uid} (Mã: 1)"
+            except Exception as e:
+                last_resp = str(e)[:20]
 
         if not self.configured_pages_map:
             self.fetch_configured_pages_on_web()
-        if self.current_configured_uid:
-            return True, f"Dùng Nick mặc định trên Web ({self.current_configured_uid})"
-        if self.configured_pages_map:
-            first_web_uid = list(self.configured_pages_map.keys())[0]
-            try:
-                hdr = self.headers.copy()
-                hdr["Referer"] = f"{self.base_url}/cauhinh/facebook.php"
-                hdr["Content-Type"] = "application/x-www-form-urlencoded; charset=UTF-8"
-                res = self.session.post(
-                    f"{self.base_url}/cauhinh/datnick.php",
-                    headers=hdr,
-                    data=f"iddat%5B%5D={first_web_uid}&loai=fb",
-                    impersonate="chrome120",
-                    timeout=10
-                )
-                if res.text.strip() == "1":
-                    self.current_configured_uid = first_web_uid
-                    return True, f"Tự khớp ID trên Web ({first_web_uid})"
-            except Exception:
-                pass
+            for web_uid in list(self.configured_pages_map.keys()):
+                try:
+                    hdr = self.headers.copy()
+                    hdr["Referer"] = f"{self.base_url}/cauhinh/facebook.php"
+                    hdr["Content-Type"] = "application/x-www-form-urlencoded; charset=UTF-8"
+                    if self.cookie_str:
+                        hdr["Cookie"] = self.cookie_str
+                    res = self.session.post(
+                        f"{self.base_url}/cauhinh/datnick.php",
+                        headers=hdr,
+                        data={"iddat[]": web_uid, "loai": "fb"},
+                        timeout=10
+                    )
+                    self._extract_session_cookies(res)
+                    if res.text.strip() == "1":
+                        self.session_datnick_uid = web_uid
+                        self.current_configured_uid = web_uid
+                        return True, f"Tự khớp Nick Web {web_uid} (Mã: 1)"
+                except Exception:
+                    pass
 
-        return True, "Chạy theo cấu hình sẵn trên Web TTC"
+        return True, f"Chạy cấu hình Web (Mã datnick: {last_resp[:10]})"
 
     def get_tasks_with_cooldown(self, mode_key):
         """
-        Gọi getpost.php chuẩn theo Lk2/z.smali:
-        - Nếu khoảng cách giữa 2 lần gọi getpost.php < 5.5s, báo về worker để đếm ngược chờ đủ nhịp của TTC,
-          tránh việc các mục Cảm xúc bị trả về [] do gọi sát mục Like.
+        Gọi getpost.php và tách chuẩn xác:
+        - id (task_id): lấy từ 'idpost' để gửi lên nhantien.php nhận thưởng.
+        - target_id & target_url: ưu tiên lấy từ 'link' (địa chỉ/ID bài viết Facebook thật) để thực thi trên FB!
         """
         cfg = TTC_12_JOB_MODES.get(mode_key)
         if not cfg:
@@ -898,34 +912,24 @@ class TuongTacCheoTool:
         if not self.cookie_str:
             self.login()
 
-        elapsed_since_last = time.time() - self.last_getpost_ts
-        if self.last_getpost_ts > 0 and elapsed_since_last < 5.5:
-            rem_cd = max(2, int(6.0 - elapsed_since_last))
-            return [], f"Đợi nhả Cooldown TTC ({rem_cd}s)", rem_cd
-
         hdr = self.headers.copy()
         hdr["Referer"] = cfg["referer"]
         if self.cookie_str:
             hdr["Cookie"] = self.cookie_str
 
         try:
-            self.last_getpost_ts = time.time()
             res = self.session.get(
                 f"{self.base_url}{cfg['get_ep']}",
                 headers=hdr,
-                impersonate="chrome120",
                 timeout=12
             )
             self._extract_session_cookies(res)
             txt = res.text.lstrip("\ufeff").strip()
 
-            if "logintoken" in txt.lower() or "<html" in txt.lower():
-                ok_re, _, _, _ = self.login()
-                if ok_re and self.current_configured_uid:
-                    self.dat_nick(self.current_configured_uid)
-                return [], "Đang làm mới phiên TTC...", 4
-
             if not txt or txt == "[]":
+                return [], "EMPTY", 0
+
+            if txt.startswith("<"):
                 return [], "EMPTY", 0
 
             data = json.loads(txt)
@@ -933,8 +937,8 @@ class TuongTacCheoTool:
                 err_str = str(data.get("error") or data.get("mess") or "").strip()
                 if err_str:
                     m_sec = re.search(r'(\d+)\s*(?:giây|s\b|sec)', err_str, re.I)
-                    wait_s = int(m_sec.group(1)) if m_sec else 6
-                    return [], err_str, wait_s
+                    wait_s = int(m_sec.group(1)) if m_sec else 0
+                    return [], err_str, min(10, wait_s)
 
                 for k in ["data", "list", "posts"]:
                     if isinstance(data.get(k), list):
@@ -949,10 +953,20 @@ class TuongTacCheoTool:
                     if not isinstance(item, dict):
                         continue
                     tid = str(item.get("idpost") or item.get("id") or item.get("idfb") or "").strip()
-                    if not tid:
+                    raw_link = str(item.get("link") or item.get("idfb") or "").strip()
+                    if not tid and not raw_link:
                         continue
-                    link = str(item.get("link") or tid).strip()
-                    loaicx = str(item.get("loaicx") or item.get("type") or "LOVE").upper().strip()
+                    if not tid:
+                        tid = raw_link
+
+                    # Ưu tiên lấy mục tiêu tương tác trên Facebook từ trường 'link'
+                    fb_target = raw_link if raw_link else tid
+                    if fb_target.startswith("http"):
+                        target_url = fb_target
+                    else:
+                        target_url = f"https://www.facebook.com/{fb_target}"
+
+                    loaicx = str(item.get("loaicx") or item.get("type") or "LIKE").upper().strip()
                     nd_raw = item.get("nd") or ""
                     cmt_msg = ""
                     if nd_raw:
@@ -965,11 +979,10 @@ class TuongTacCheoTool:
                         except Exception:
                             cmt_msg = str(nd_raw)
 
-                    target_url = link if link.startswith("http") else f"https://www.facebook.com/{link}"
                     norm_tasks.append({
-                        "id": tid,
-                        "target_id": tid,
-                        "link": link,
+                        "id": tid,                # Mã nhiệm vụ gửi lên nhantien.php
+                        "target_id": fb_target,   # ID / Link thật trên Facebook để Like/React/Sub
+                        "link": raw_link or tid,
                         "target_url": target_url,
                         "loaicx": loaicx,
                         "msg": cmt_msg,
@@ -982,7 +995,7 @@ class TuongTacCheoTool:
 
             return [], "EMPTY", 0
         except Exception as e:
-            return [], f"Lỗi mạng ({str(e)[:20]})", 4
+            return [], f"Lỗi: {str(e)[:20]}", 0
 
     def get_tasks(self, mode_key):
         tasks, msg, _ = self.get_tasks_with_cooldown(mode_key)
@@ -993,25 +1006,22 @@ class TuongTacCheoTool:
         if not cfg:
             return 0, "Sai chế độ"
 
+        id_val = ",".join(str(x) for x in task_id) if isinstance(task_id, list) else str(task_id)
+        payload = {"id": id_val}
+        if cfg["action"] in ["react", "react_cmt"]:
+            payload["loaicx"] = loaicx if loaicx else "LOVE"
+
         hdr = self.headers.copy()
         hdr["Referer"] = cfg["referer"]
         hdr["Content-Type"] = "application/x-www-form-urlencoded; charset=UTF-8"
         if self.cookie_str:
             hdr["Cookie"] = self.cookie_str
 
-        id_val = ",".join(str(x) for x in task_id) if isinstance(task_id, list) else str(task_id)
-        if cfg["action"] in ["react", "react_cmt"]:
-            cx_str = loaicx if loaicx else "LOVE"
-            payload_str = f"id={urllib.parse.quote(id_val)}&loaicx={urllib.parse.quote(cx_str)}"
-        else:
-            payload_str = f"id={urllib.parse.quote(id_val)}"
-
         try:
             res = self.session.post(
                 f"{self.base_url}{cfg['claim_ep']}",
                 headers=hdr,
-                data=payload_str,
-                impersonate="chrome120",
+                data=payload,
                 timeout=15
             )
             self._extract_session_cookies(res)
@@ -1032,12 +1042,11 @@ class TuongTacCheoTool:
             return 0, str(e)[:35]
 
 # ==============================================================================
-# BỘ MÁY THỰC THI FACEBOOK GRAPHQL (CHUẨN Li2/X.smali - HỖ TRỢ THUONGTHUONG & BÓC FEEDBACK_ID)
+# BỘ MÁY THỰC THI FACEBOOK GRAPHQL & MBASIC FALLBACK (CHUẨN Li2/X.smali)
 # ==============================================================================
 _FB_DTSG_CACHE = {}
 _FB_DTSG_LOCK = threading.Lock()
 
-# Bổ sung đầy đủ mã THUONGTHUONG = 16 cho Tương Tác Chéo
 FB_REACTION_MAP = {
     "LIKE": 1,
     "LOVE": 2,
@@ -1183,116 +1192,160 @@ def scan_facebook_account_and_pages(cookie="", access_token="", proxy=None):
     return fb_info, list(pages_dict.values())
 
 def _build_page_cookie(parent_cookie, page_id):
+    """
+    Xây dựng Cookie chuẩn xác:
+    - Nếu page_id trùng với c_user (chạy bằng nick FB chính), tuyệt đối KHÔNG thêm i_user để tránh lỗi xung đột actor.
+    - Nếu page_id khác c_user (chạy bằng Fanpage Profile), gắn thêm i_user=<page_id>.
+    """
     base_ck = re.sub(r';?\s*i_user=\d+', '', (parent_cookie or "").strip()).strip(';')
-    if base_ck and page_id and str(page_id).isdigit():
-        return f"{base_ck}; i_user={page_id}"
+    m_c = re.search(r'c_user=(\d+)', base_ck)
+    c_user_id = m_c.group(1) if m_c else ""
+    pid_str = str(page_id or "").strip()
+    if base_ck and pid_str and pid_str.isdigit() and pid_str != c_user_id:
+        return f"{base_ck}; i_user={pid_str}"
     return base_ck
 
 def _get_fb_dtsg(session, page_cookie, page_id="", force_refresh=False):
-    cache_key = str(page_id or "")
+    """
+    Lấy fb_dtsg theo đúng thuật toán Li2/X;->f:
+    - Nếu lấy bằng page_cookie (có i_user) bị redirect (do Page thường không dùng i_user),
+      tự động lấy bằng base_cookie (không có i_user) vì fb_dtsg dùng chung cho toàn phiên xs!
+    """
+    cache_key = str(page_id or "default")
     if not force_refresh and cache_key:
         with _FB_DTSG_LOCK:
             cached = _FB_DTSG_CACHE.get(cache_key)
             if cached:
                 return cached
 
+    base_ck = re.sub(r';?\s*i_user=\d+', '', (page_cookie or "").strip()).strip(';')
+    cookie_variants = [page_cookie]
+    if base_ck and base_ck != page_cookie:
+        cookie_variants.append(base_ck)
+
     urls_to_try = [
         "https://www.facebook.com/",
         "https://mbasic.facebook.com/",
         "https://m.facebook.com/"
     ]
-    for url in urls_to_try:
-        try:
-            html = session.get(
-                url,
-                headers={
-                    "User-Agent": USER_AGENT,
-                    "Cookie": page_cookie,
-                    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-                    "Accept-Language": "vi-VN,vi;q=0.9,en-US;q=0.8",
-                    "Sec-Fetch-Dest": "document",
-                    "Sec-Fetch-Mode": "navigate",
-                    "Sec-Fetch-Site": "none"
-                },
-                impersonate="chrome120",
-                timeout=12,
-                max_redirects=5
-            ).text
-            for pat in _FB_DTSG_PATTERNS:
-                m = pat.search(html)
-                if m and m.group(1):
-                    token = m.group(1)
-                    if cache_key:
+    for ck_try in cookie_variants:
+        if not ck_try:
+            continue
+        for url in urls_to_try:
+            try:
+                session.cookies.clear()
+                html = session.get(
+                    url,
+                    headers={
+                        "User-Agent": USER_AGENT,
+                        "Cookie": ck_try,
+                        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+                        "Accept-Language": "vi-VN,vi;q=0.9,en-US;q=0.8",
+                        "Sec-Fetch-Dest": "document",
+                        "Sec-Fetch-Mode": "navigate",
+                        "Sec-Fetch-Site": "none",
+                        "Upgrade-Insecure-Requests": "1"
+                    },
+                    impersonate="chrome120",
+                    timeout=12,
+                    max_redirects=5
+                ).text
+                for pat in _FB_DTSG_PATTERNS:
+                    m = pat.search(html)
+                    if m and m.group(1):
+                        token = m.group(1)
                         with _FB_DTSG_LOCK:
                             _FB_DTSG_CACHE[cache_key] = token
-                    return token
-        except Exception:
-            continue
+                        return token
+            except Exception:
+                continue
     return ""
 
 def _resolve_fb_feedback_and_post_id(session, page_cookie, target_id, target_url="", force_fetch_html=False):
     """
-    Giải mã ID bài viết & Feedback ID chuẩn theo Li2/X;->k, l, m, n:
-    - Nếu force_fetch_html=True (khi GraphQL lần 1 trả về feedback_react: null do bài viết là ảnh/video/reel),
-      hàm sẽ tải trực tiếp trang bài viết để bóc chính xác chuỗi "feedback":{"id":"..."} từ HTML.
+    Giải mã post_id & feedback_id chuẩn theo Li2/X;->k, l, m, n:
+    - Tách đúng ID từ chuỗi ghép uid_postid hoặc từ URL.
+    - Nếu là URL/pfbid hoặc force_fetch_html=True, tải trang bài viết với đầy đủ header điều hướng để lấy chính xác chuỗi Base64 'ZmVlZGJhY2s6...'
     """
     raw_id = str(target_id or "").strip()
     raw_url = str(target_url or "").strip()
 
-    if "_" in raw_id:
+    # Tách ID bài viết nếu có dạng uid_postid (VD: 100012345_987654321)
+    if "_" in raw_id and not raw_id.startswith("http"):
         parts = raw_id.split("_")
         if parts[-1].isdigit():
             raw_id = parts[-1]
 
-    if not force_fetch_html:
-        if raw_id.isdigit() and len(raw_id) >= 8:
-            fb_b64 = base64.b64encode(f"feedback:{raw_id}".encode("utf-8")).decode("utf-8")
-            return raw_id, fb_b64
+    # Tìm ID bài viết từ trong URL nếu raw_id đang là URL
+    for src in [raw_id, raw_url]:
+        if "facebook.com" in src:
+            m_story = (
+                re.search(r'story_fbid=(pfbid[A-Za-z0-9]+|\d+)', src)
+                or re.search(r'fbid=(\d+)', src)
+                or re.search(r'/(?:posts|videos|reel|photos/[^/]+)/(pfbid[A-Za-z0-9]+|\d+)', src)
+                or re.search(r'facebook\.com/\d+_(?:\d+_)?(\d{8,25})', src)
+                or re.search(r'facebook\.com/(\d{8,25})$', src)
+            )
+            if m_story:
+                raw_id = m_story.group(1)
+                break
 
-        for src in [raw_url, raw_id]:
-            m_num = re.search(r'(?:story_fbid=|fbid=|/posts/|/videos/|/reel/|/photos/[^/]+/)(\d{8,25})', src)
-            if m_num:
-                num_id = m_num.group(1)
-                fb_b64 = base64.b64encode(f"feedback:{num_id}".encode("utf-8")).decode("utf-8")
-                return num_id, fb_b64
+    is_complex_url = ("pfbid" in raw_id or "pfbid" in raw_url or "photo" in raw_url or "video" in raw_url or "reel" in raw_url or not raw_id.isdigit())
+
+    if not force_fetch_html and not is_complex_url and raw_id.isdigit() and len(raw_id) >= 8:
+        fb_b64 = base64.b64encode(f"feedback:{raw_id}".encode("utf-8")).decode("utf-8")
+        return raw_id, fb_b64
 
     fetch_url = raw_url if raw_url.startswith("http") else f"https://www.facebook.com/{raw_id}"
-    try:
-        html = session.get(
-            fetch_url,
-            headers={
-                "User-Agent": USER_AGENT,
-                "Cookie": page_cookie,
-                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
-            },
-            impersonate="chrome120",
-            timeout=10,
-            max_redirects=5
-        ).text
+    base_ck = re.sub(r';?\s*i_user=\d+', '', (page_cookie or "").strip()).strip(';')
+    for ck_use in [page_cookie, base_ck]:
+        if not ck_use:
+            continue
+        try:
+            session.cookies.clear()
+            html = session.get(
+                fetch_url,
+                headers={
+                    "User-Agent": USER_AGENT,
+                    "Cookie": ck_use,
+                    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+                    "Accept-Language": "vi-VN,vi;q=0.9,en-US;q=0.8",
+                    "Sec-Fetch-Dest": "document",
+                    "Sec-Fetch-Mode": "navigate",
+                    "Sec-Fetch-Site": "none",
+                    "Upgrade-Insecure-Requests": "1"
+                },
+                impersonate="chrome120",
+                timeout=10,
+                max_redirects=5
+            ).text
 
-        m_fb = (
-            re.search(r'"feedback"\s*:\s*\{\s*"id"\s*:\s*"(ZmVlZGJhY2s6[^"]+)"', html)
-            or re.search(r'"feedback_id"\s*:\s*"(ZmVlZGJhY2s6[^"]+)"', html)
-            or re.search(r'"feedback"\s*:\s*\{\s*"id"\s*:\s*"([^"]+)"', html)
-        )
-        m_post = (
-            re.search(r'"top_level_post_id"\s*:\s*"(\d+)"', html)
-            or re.search(r'"post_id"\s*:\s*"(\d+)"', html)
-            or re.search(r'"story_fbid"\s*:\s*"(\d+)"', html)
-            or re.search(r'fb://post/(\d+)', html)
-        )
-        post_num = m_post.group(1) if m_post else raw_id
-        if m_fb:
-            return post_num, m_fb.group(1)
-        if post_num and post_num.isdigit():
-            return post_num, base64.b64encode(f"feedback:{post_num}".encode("utf-8")).decode("utf-8")
-    except Exception:
-        pass
+            m_fb = (
+                re.search(r'"feedback"\s*:\s*\{\s*"id"\s*:\s*"(ZmVlZGJhY2s6[^"]+)"', html)
+                or re.search(r'"feedback_id"\s*:\s*"(ZmVlZGJhY2s6[^"]+)"', html)
+                or re.search(r'"feedback"\s*:\s*\{\s*"id"\s*:\s*"([^"]+)"', html)
+            )
+            m_post = (
+                re.search(r'"top_level_post_id"\s*:\s*"(\d+)"', html)
+                or re.search(r'"post_id"\s*:\s*"(\d+)"', html)
+                or re.search(r'"story_fbid"\s*:\s*"(\d+)"', html)
+                or re.search(r'fb://post/(\d+)', html)
+            )
+            post_num = m_post.group(1) if m_post else raw_id
+            if m_fb:
+                return post_num, m_fb.group(1)
+            if post_num and str(post_num).isdigit():
+                return post_num, base64.b64encode(f"feedback:{post_num}".encode("utf-8")).decode("utf-8")
+        except Exception:
+            continue
 
     fallback_b64 = base64.b64encode(f"feedback:{raw_id}".encode("utf-8")).decode("utf-8")
     return raw_id, fallback_b64
 
-def _post_fb_graphql(session, page_cookie, actor_id, dtsg, friendly_name, doc_id, variables_dict):
+def _post_fb_graphql(session, page_cookie, actor_id, dtsg, friendly_name, doc_id, variables_dict, user_uid_override=""):
+    """Gửi truy vấn GraphQL sạch Cookie Jar để tránh xung đột phiên trong curl_cffi"""
+    session.cookies.clear()
+    u_id = str(user_uid_override) if user_uid_override else str(actor_id)
     headers = {
         "User-Agent": USER_AGENT,
         "Cookie": page_cookie,
@@ -1308,7 +1361,7 @@ def _post_fb_graphql(session, page_cookie, actor_id, dtsg, friendly_name, doc_id
     }
     data = {
         "av": str(actor_id),
-        "__user": str(actor_id),
+        "__user": u_id,
         "__a": "1",
         "fb_dtsg": dtsg,
         "fb_api_caller_class": "RelayModern",
@@ -1328,9 +1381,9 @@ def _post_fb_graphql(session, page_cookie, actor_id, dtsg, friendly_name, doc_id
 def fb_page_react_or_like(target_url, page_token, proxy=None, session=None, page_id="", parent_cookie="", target_id="", reaction_type="LIKE"):
     """
     Thực hiện Like hoặc Thả Cảm Xúc chuẩn theo Li2/X;->e:
-    - Kiểm tra chính xác "viewer_feedback_reaction_info" trong phản hồi GraphQL.
-    - Nếu lần 1 trả về null (do bài viết là ảnh/video/reel có feedback_id khác idpost),
-      tự động tải HTML bài viết để lấy feedback_id thật và thả cảm xúc lại (như Li2/X;->n).
+    - Kiểm tra chặt chẽ kết quả phản hồi có chứa đối tượng reaction khác null ('"viewer_feedback_reaction_info":{"').
+    - Nếu bước 1 trả về null, tự động tải HTML lấy feedback_id thật và thử cả 2 chế độ (Profile Page i_user & Classic Page c_user).
+    - Tự động fallback qua mbasic.facebook.com nếu GraphQL bị chặn.
     """
     own_sess = session is None
     sess = session or c_requests.Session()
@@ -1342,37 +1395,38 @@ def fb_page_react_or_like(target_url, page_token, proxy=None, session=None, page
 
     try:
         raw_ck = parent_cookie if parent_cookie else (page_token if "c_user=" in str(page_token) else "")
-        actor_id = str(page_id or "").strip()
-        if not actor_id and raw_ck:
-            m_c = re.search(r'c_user=(\d+)', raw_ck)
-            if m_c:
-                actor_id = m_c.group(1)
+        m_c = re.search(r'c_user=(\d+)', raw_ck) if raw_ck else None
+        c_user_id = m_c.group(1) if m_c else ""
+        actor_id = str(page_id or c_user_id or "").strip()
 
         pg_ck = _build_page_cookie(raw_ck, actor_id) if raw_ck else ""
+        base_ck = re.sub(r';?\s*i_user=\d+', '', raw_ck).strip(';') if raw_ck else ""
+
         obj_id, feedback_b64 = _resolve_fb_feedback_and_post_id(sess, pg_ck, target_id, target_url, force_fetch_html=False)
 
-        if page_token and str(page_token).startswith("EAA") and react_upper == "LIKE" and obj_id:
+        # 1. Thử qua Graph API nếu có Page Token EAA...
+        if page_token and str(page_token).startswith("EAA") and react_upper == "LIKE" and str(obj_id).isdigit():
             try:
+                sess.cookies.clear()
                 res = sess.post(
                     f"https://graph.facebook.com/v18.0/{obj_id}/likes",
                     data={"access_token": page_token},
                     timeout=10
                 )
-                if "true" in res.text.lower() or '"success":true' in res.text.lower():
+                if '"success":true' in res.text.lower().replace(" ", "") or res.text.strip().lower() == "true":
                     return json.dumps({"success": True})
             except Exception:
                 pass
 
+        # 2. Thực thi qua GraphQL CometUFIFeedbackReactMutation (Li2/X;->e)
         if pg_ck and actor_id:
             dtsg = _get_fb_dtsg(sess, pg_ck, actor_id)
             if dtsg:
-                # Thử tối đa 2 bước: Bước 1 dùng feedback_b64 tính nhanh, Bước 2 bóc trực tiếp từ HTML bài viết nếu Bước 1 trả về null
                 for attempt_html in [False, True]:
                     if attempt_html:
                         _, fb_b64_second = _resolve_fb_feedback_and_post_id(sess, pg_ck, target_id, target_url, force_fetch_html=True)
-                        if not fb_b64_second or fb_b64_second == feedback_b64:
-                            break
-                        feedback_b64 = fb_b64_second
+                        if fb_b64_second:
+                            feedback_b64 = fb_b64_second
 
                     variables = {
                         "input": {
@@ -1390,14 +1444,47 @@ def fb_page_react_or_like(target_url, page_token, proxy=None, session=None, page
                         "useDefaultActor": False,
                         "scale": 1
                     }
-                    for doc_id_cand in ["9014612158646528", "6623712531077310"]:
-                        gql_res = _post_fb_graphql(sess, pg_ck, actor_id, dtsg, "CometUFIFeedbackReactMutation", doc_id_cand, variables)
-                        txt_res = gql_res.text
-                        if gql_res.status_code == 200 and (
-                            '"viewer_feedback_reaction_info"' in txt_res
-                            or ('"feedback_react":{' in txt_res and '"feedback_react":null' not in txt_res)
-                        ):
+                    # Thử với cả pg_ck (Profile Page) và base_ck (Classic Page / Nick chính)
+                    auth_combos = [(pg_ck, actor_id)]
+                    if base_ck and c_user_id and c_user_id != actor_id:
+                        auth_combos.append((base_ck, c_user_id))
+
+                    for ck_use, u_override in auth_combos:
+                        for doc_id_cand in ["9014612158646528", "6623712531077310"]:
+                            gql_res = _post_fb_graphql(sess, ck_use, actor_id, dtsg, "CometUFIFeedbackReactMutation", doc_id_cand, variables, user_uid_override=u_override)
+                            clean_txt = gql_res.text.replace(" ", "")
+                            # Kiểm tra chắc chắn reaction_info hoặc feedback_react KHÁC null
+                            if gql_res.status_code == 200 and (
+                                '"viewer_feedback_reaction_info":{' in clean_txt
+                                or ('"feedback_react":{"feedback":{' in clean_txt and '"viewer_feedback_reaction_info":null' not in clean_txt)
+                            ):
+                                return json.dumps({"success": True})
+
+        # 3. Fallback qua mbasic.facebook.com nếu bài viết chặn GraphQL
+        if pg_ck and obj_id:
+            try:
+                sess.cookies.clear()
+                mb_url = f"https://mbasic.facebook.com/{obj_id}"
+                mb_html = sess.get(mb_url, headers={"User-Agent": USER_AGENT, "Cookie": pg_ck}, impersonate="chrome120", timeout=10, max_redirects=5).text
+                if react_upper == "LIKE":
+                    m_like = re.search(r'href="(/a/like\.php\?[^"]+)"', mb_html)
+                    if m_like:
+                        like_link = "https://mbasic.facebook.com" + m_like.group(1).replace("&amp;", "&")
+                        r_mb = sess.get(like_link, headers={"User-Agent": USER_AGENT, "Cookie": pg_ck}, impersonate="chrome120", timeout=10)
+                        if r_mb.status_code in [200, 302]:
                             return json.dumps({"success": True})
+                m_picker = re.search(r'href="(/reactions/picker/\?[^"]+)"', mb_html)
+                if m_picker:
+                    picker_url = "https://mbasic.facebook.com" + m_picker.group(1).replace("&amp;", "&")
+                    pk_html = sess.get(picker_url, headers={"User-Agent": USER_AGENT, "Cookie": pg_ck}, impersonate="chrome120", timeout=10).text
+                    m_act = re.search(rf'href="(/ufi/reaction/\?[^"]*reaction_type={react_code}[^"]*)"', pk_html)
+                    if m_act:
+                        act_url = "https://mbasic.facebook.com" + m_act.group(1).replace("&amp;", "&")
+                        r_act = sess.get(act_url, headers={"User-Agent": USER_AGENT, "Cookie": pg_ck}, impersonate="chrome120", timeout=10)
+                        if r_act.status_code in [200, 302]:
+                            return json.dumps({"success": True})
+            except Exception:
+                pass
 
         return json.dumps({"error": f"Không thể {react_upper}"})
     except Exception as e:
@@ -1413,37 +1500,55 @@ def fb_page_like(target_url, page_token, proxy=None, session=None, page_id="", p
     return fb_page_react_or_like(target_url, page_token, proxy, session, page_id, parent_cookie, target_id, "LIKE")
 
 def fb_page_follow(target_id, page_token, proxy=None, session=None, page_id="", parent_cookie=""):
+    """
+    Thực hiện Follow / Sub hoặc Like Fanpage chuẩn theo Li2/X;->g & Li2/X;->j:
+    - Bóc tách đúng UID số từ link/idpost.
+    - Kiểm tra chặt chẽ phản hồi GraphQL khác null + hỗ trợ mbasic fallback.
+    """
     own_sess = session is None
     sess = session or c_requests.Session()
     if proxies := format_proxy(proxy):
         sess.proxies = proxies
 
     clean_tid = str(target_id or "").strip()
-    if "_" in clean_tid:
+    if "_" in clean_tid and not clean_tid.startswith("http"):
         clean_tid = clean_tid.split("_")[0]
-    if "facebook.com/" in clean_tid:
+    if "facebook.com" in clean_tid:
         m = re.search(r'id=(\d+)', clean_tid) or re.search(r'facebook\.com/(\d+)', clean_tid)
         if m:
             clean_tid = m.group(1)
 
     try:
-        if page_token and str(page_token).startswith("EAA") and clean_tid:
+        raw_ck = parent_cookie if parent_cookie else (page_token if "c_user=" in str(page_token) else "")
+        m_c = re.search(r'c_user=(\d+)', raw_ck) if raw_ck else None
+        c_user_id = m_c.group(1) if m_c else ""
+        actor_id = str(page_id or c_user_id or "").strip()
+
+        pg_ck = _build_page_cookie(raw_ck, actor_id) if raw_ck else ""
+        base_ck = re.sub(r';?\s*i_user=\d+', '', raw_ck).strip(';') if raw_ck else ""
+
+        # Nếu clean_tid vẫn là link rút gọn/username chữ, tải trang để lấy UID số
+        if not clean_tid.isdigit() and pg_ck:
             try:
+                sess.cookies.clear()
+                u_url = clean_tid if clean_tid.startswith("http") else f"https://www.facebook.com/{clean_tid}"
+                u_html = sess.get(u_url, headers={"User-Agent": USER_AGENT, "Cookie": pg_ck, "Sec-Fetch-Mode": "navigate"}, impersonate="chrome120", timeout=10).text
+                m_uid = re.search(r'"userID"\s*:\s*"(\d+)"', u_html) or re.search(r'"pageID"\s*:\s*"(\d+)"', u_html) or re.search(r'fb://(?:profile|page)/(\d+)', u_html)
+                if m_uid:
+                    clean_tid = m_uid.group(1)
+            except Exception:
+                pass
+
+        if page_token and str(page_token).startswith("EAA") and clean_tid.isdigit():
+            try:
+                sess.cookies.clear()
                 res = sess.post(f"https://graph.facebook.com/v18.0/{clean_tid}/subscribers", data={"access_token": page_token}, timeout=10)
-                if "true" in res.text.lower() or '"success":true' in res.text.lower():
+                if '"success":true' in res.text.lower().replace(" ", "") or res.text.strip().lower() == "true":
                     return json.dumps({"success": True})
             except Exception:
                 pass
 
-        raw_ck = parent_cookie if parent_cookie else (page_token if "c_user=" in str(page_token) else "")
-        actor_id = str(page_id or "").strip()
-        if not actor_id and raw_ck:
-            m_c = re.search(r'c_user=(\d+)', raw_ck)
-            if m_c:
-                actor_id = m_c.group(1)
-
-        if raw_ck and actor_id and clean_tid:
-            pg_ck = _build_page_cookie(raw_ck, actor_id)
+        if pg_ck and actor_id and clean_tid.isdigit():
             dtsg = _get_fb_dtsg(sess, pg_ck, actor_id)
             if dtsg:
                 variables_sub = {
@@ -1458,8 +1563,6 @@ def fb_page_follow(target_id, page_token, proxy=None, session=None, page_id="", 
                     },
                     "scale": 1
                 }
-                gql_sub = _post_fb_graphql(sess, pg_ck, actor_id, dtsg, "CometUserFollowMutation", "7894270510655852", variables_sub)
-
                 variables_like_page = {
                     "input": {
                         "attribution_id_v2": "ProfileCometTimelineListViewRoot.react,comet.profile.timeline.list,via_cold_start,1700000000000,123456,190055527696468,,",
@@ -1471,12 +1574,37 @@ def fb_page_follow(target_id, page_token, proxy=None, session=None, page_id="", 
                         "client_mutation_id": "1"
                     }
                 }
-                gql_page = _post_fb_graphql(sess, pg_ck, actor_id, dtsg, "CometPageLikeMutation", "7341530392590924", variables_like_page)
 
-                if (gql_sub.status_code == 200 and '"errors"' not in gql_sub.text) or (gql_page.status_code == 200 and '"errors"' not in gql_page.text):
-                    return json.dumps({"success": True})
-                if '"subscribe_status"' in gql_sub.text or '"does_viewer_like"' in gql_page.text:
-                    return json.dumps({"success": True})
+                auth_combos = [(pg_ck, actor_id)]
+                if base_ck and c_user_id and c_user_id != actor_id:
+                    auth_combos.append((base_ck, c_user_id))
+
+                for ck_use, u_override in auth_combos:
+                    gql_sub = _post_fb_graphql(sess, ck_use, actor_id, dtsg, "CometUserFollowMutation", "7894270510655852", variables_sub, user_uid_override=u_override)
+                    gql_page = _post_fb_graphql(sess, ck_use, actor_id, dtsg, "CometPageLikeMutation", "7341530392590924", variables_like_page, user_uid_override=u_override)
+
+                    t_sub = gql_sub.text.replace(" ", "")
+                    t_page = gql_page.text.replace(" ", "")
+                    if (
+                        '"subscribe_status":"IS_SUBSCRIBED"' in t_sub
+                        or '"actor_subscribe":{"subscribee":{' in t_sub
+                        or '"does_viewer_like":true' in t_page
+                        or '"page_like":{"page":{' in t_page
+                    ):
+                        return json.dumps({"success": True})
+
+            # Fallback qua mbasic.facebook.com nếu GraphQL trả về null
+            try:
+                sess.cookies.clear()
+                mb_html = sess.get(f"https://mbasic.facebook.com/{clean_tid}", headers={"User-Agent": USER_AGENT, "Cookie": pg_ck}, impersonate="chrome120", timeout=10).text
+                m_sub = re.search(r'href="(/a/subscribe\.php\?[^"]+)"', mb_html) or re.search(r'href="(/a/profile\.php\?fan&[^"]+)"', mb_html)
+                if m_sub:
+                    sub_url = "https://mbasic.facebook.com" + m_sub.group(1).replace("&amp;", "&")
+                    r_sub = sess.get(sub_url, headers={"User-Agent": USER_AGENT, "Cookie": pg_ck}, impersonate="chrome120", timeout=10)
+                    if r_sub.status_code in [200, 302]:
+                        return json.dumps({"success": True})
+            except Exception:
+                pass
 
         return json.dumps({"error": "Follow/LikePage thất bại"})
     except Exception as e:
@@ -1496,17 +1624,17 @@ def fb_page_comment(target_id_or_post, comment_text, page_token, proxy=None, ses
 
     try:
         raw_ck = parent_cookie if parent_cookie else (page_token if "c_user=" in str(page_token) else "")
-        actor_id = str(page_id or "").strip()
-        if not actor_id and raw_ck:
-            m_c = re.search(r'c_user=(\d+)', raw_ck)
-            if m_c:
-                actor_id = m_c.group(1)
+        m_c = re.search(r'c_user=(\d+)', raw_ck) if raw_ck else None
+        c_user_id = m_c.group(1) if m_c else ""
+        actor_id = str(page_id or c_user_id or "").strip()
 
         pg_ck = _build_page_cookie(raw_ck, actor_id) if raw_ck else ""
-        clean_tid, feedback_b64 = _resolve_fb_feedback_and_post_id(sess, pg_ck, target_id_or_post, target_url)
+        base_ck = re.sub(r';?\s*i_user=\d+', '', raw_ck).strip(';') if raw_ck else ""
+        clean_tid, feedback_b64 = _resolve_fb_feedback_and_post_id(sess, pg_ck, target_id_or_post, target_url, force_fetch_html=False)
 
-        if page_token and str(page_token).startswith("EAA") and clean_tid:
+        if page_token and str(page_token).startswith("EAA") and str(clean_tid).isdigit():
             try:
+                sess.cookies.clear()
                 res = sess.post(
                     f"https://graph.facebook.com/v18.0/{clean_tid}/comments",
                     data={"access_token": page_token, "message": comment_text},
@@ -1517,41 +1645,53 @@ def fb_page_comment(target_id_or_post, comment_text, page_token, proxy=None, ses
             except Exception:
                 pass
 
-        if pg_ck and actor_id and feedback_b64:
+        if pg_ck and actor_id:
             dtsg = _get_fb_dtsg(sess, pg_ck, actor_id)
             if dtsg:
-                variables = {
-                    "feedLocation": "PERMALINK",
-                    "feedbackSource": 2,
-                    "groupID": None,
-                    "input": {
-                        "client_mutation_id": "1",
-                        "actor_id": str(actor_id),
-                        "attachments": [],
-                        "feedback_id": feedback_b64,
-                        "formatting_style": None,
-                        "message": {
-                            "ranges": [],
-                            "text": str(comment_text)
+                for attempt_html in [False, True]:
+                    if attempt_html:
+                        _, fb_b64_second = _resolve_fb_feedback_and_post_id(sess, pg_ck, target_id_or_post, target_url, force_fetch_html=True)
+                        if fb_b64_second:
+                            feedback_b64 = fb_b64_second
+
+                    variables = {
+                        "feedLocation": "PERMALINK",
+                        "feedbackSource": 2,
+                        "groupID": None,
+                        "input": {
+                            "client_mutation_id": "1",
+                            "actor_id": str(actor_id),
+                            "attachments": [],
+                            "feedback_id": feedback_b64,
+                            "formatting_style": None,
+                            "message": {
+                                "ranges": [],
+                                "text": str(comment_text)
+                            },
+                            "attribution_id_v2": "CometSinglePostDialogRoot.react,comet.post.single_dialog,via_cold_start,1700000000000,123456,4748854339,,",
+                            "vod_video_timestamp": None,
+                            "is_tracking_encrypted": True,
+                            "tracking": [],
+                            "feedback_source": "OBJECT",
+                            "idempotence_token": f"client:{random.randint(10000000, 99999999)}",
+                            "session_id": f"session_{random.randint(100000, 999999)}"
                         },
-                        "attribution_id_v2": "CometSinglePostDialogRoot.react,comet.post.single_dialog,via_cold_start,1700000000000,123456,4748854339,,",
-                        "vod_video_timestamp": None,
-                        "is_tracking_encrypted": True,
-                        "tracking": [],
-                        "feedback_source": "OBJECT",
-                        "idempotence_token": f"client:{random.randint(10000000, 99999999)}",
-                        "session_id": f"session_{random.randint(100000, 999999)}"
-                    },
-                    "inviteShortLinkKey": None,
-                    "renderLocation": None,
-                    "scale": 1,
-                    "useDefaultActor": False,
-                    "focusCommentID": None
-                }
-                for doc_id_cand in ["7302660669831903", "6993516810709754"]:
-                    gql_res = _post_fb_graphql(sess, pg_ck, actor_id, dtsg, "CometUFICommentCreateMutation", doc_id_cand, variables)
-                    if gql_res.status_code == 200 and ('"comment"' in gql_res.text or '"errors"' not in gql_res.text):
-                        return json.dumps({"id": clean_tid, "success": True})
+                        "inviteShortLinkKey": None,
+                        "renderLocation": None,
+                        "scale": 1,
+                        "useDefaultActor": False,
+                        "focusCommentID": None
+                    }
+                    auth_combos = [(pg_ck, actor_id)]
+                    if base_ck and c_user_id and c_user_id != actor_id:
+                        auth_combos.append((base_ck, c_user_id))
+
+                    for ck_use, u_override in auth_combos:
+                        for doc_id_cand in ["7302660669831903", "6993516810709754"]:
+                            gql_res = _post_fb_graphql(sess, ck_use, actor_id, dtsg, "CometUFICommentCreateMutation", doc_id_cand, variables, user_uid_override=u_override)
+                            clean_txt = gql_res.text.replace(" ", "")
+                            if gql_res.status_code == 200 and '"comment":{"id":' in clean_txt:
+                                return json.dumps({"id": clean_tid, "success": True})
 
         return json.dumps({"error": "Comment thất bại"})
     except Exception as e:
@@ -1570,12 +1710,13 @@ def fb_page_share(target_id_or_url, page_token, proxy=None, session=None, page_i
         sess.proxies = proxies
 
     clean_tid = str(target_id_or_url or "").strip()
-    if "_" in clean_tid:
+    if "_" in clean_tid and not clean_tid.startswith("http"):
         clean_tid = clean_tid.split("_")[-1]
     share_link = clean_tid if clean_tid.startswith("http") else f"https://www.facebook.com/{clean_tid}"
 
     try:
         if page_token and str(page_token).startswith("EAA"):
+            sess.cookies.clear()
             res = sess.post(
                 "https://graph.facebook.com/v18.0/me/feed",
                 data={"access_token": page_token, "link": share_link}, timeout=12
@@ -1584,11 +1725,9 @@ def fb_page_share(target_id_or_url, page_token, proxy=None, session=None, page_i
                 return json.dumps({"success": True})
 
         raw_ck = parent_cookie if parent_cookie else (page_token if "c_user=" in str(page_token) else "")
-        actor_id = str(page_id or "").strip()
-        if not actor_id and raw_ck:
-            m_c = re.search(r'c_user=(\d+)', raw_ck)
-            if m_c:
-                actor_id = m_c.group(1)
+        m_c = re.search(r'c_user=(\d+)', raw_ck) if raw_ck else None
+        c_user_id = m_c.group(1) if m_c else ""
+        actor_id = str(page_id or c_user_id or "").strip()
 
         if raw_ck and actor_id:
             pg_ck = _build_page_cookie(raw_ck, actor_id)
@@ -1605,92 +1744,9 @@ def fb_page_share(target_id_or_url, page_token, proxy=None, session=None, page_i
                 sess.close()
             except Exception:
                 pass
-def fb_page_react_or_like(target_url, page_token, proxy=None, session=None, page_id="", parent_cookie="", target_id="", reaction_type="LIKE"):
-    """
-    Thực hiện Like hoặc Thả Cảm Xúc chuẩn theo Li2/X;->e:
-    - Kiểm tra chính xác "viewer_feedback_reaction_info" trong phản hồi GraphQL.
-    - Nếu lần 1 trả về null (do bài viết là ảnh/video/reel có feedback_id khác idpost),
-      tự động tải HTML bài viết để lấy feedback_id thật và thả cảm xúc lại (như Li2/X;->n).
-    """
-    own_sess = session is None
-    sess = session or c_requests.Session()
-    if proxies := format_proxy(proxy):
-        sess.proxies = proxies
-
-    react_upper = str(reaction_type or "LIKE").upper().strip()
-    react_code = FB_REACTION_MAP.get(react_upper, 2 if react_upper != "LIKE" else 1)
-
-    try:
-        raw_ck = parent_cookie if parent_cookie else (page_token if "c_user=" in str(page_token) else "")
-        actor_id = str(page_id or "").strip()
-        if not actor_id and raw_ck:
-            m_c = re.search(r'c_user=(\d+)', raw_ck)
-            if m_c:
-                actor_id = m_c.group(1)
-
-        pg_ck = _build_page_cookie(raw_ck, actor_id) if raw_ck else ""
-        obj_id, feedback_b64 = _resolve_fb_feedback_and_post_id(sess, pg_ck, target_id, target_url, force_fetch_html=False)
-
-        if page_token and str(page_token).startswith("EAA") and react_upper == "LIKE" and obj_id:
-            try:
-                res = sess.post(
-                    f"https://graph.facebook.com/v18.0/{obj_id}/likes",
-                    data={"access_token": page_token},
-                    timeout=10
-                )
-                if "true" in res.text.lower() or '"success":true' in res.text.lower():
-                    return json.dumps({"success": True})
-            except Exception:
-                pass
-
-        if pg_ck and actor_id:
-            dtsg = _get_fb_dtsg(sess, pg_ck, actor_id)
-            if dtsg:
-                for attempt_html in [False, True]:
-                    if attempt_html:
-                        _, fb_b64_second = _resolve_fb_feedback_and_post_id(sess, pg_ck, target_id, target_url, force_fetch_html=True)
-                        if not fb_b64_second or fb_b64_second == feedback_b64:
-                            break
-                        feedback_b64 = fb_b64_second
-
-                    variables = {
-                        "input": {
-                            "attribution_id_v2": "CometSinglePostDialogRoot.react,comet.post.single_dialog,via_cold_start,1700000000000,123456,4748854339,,",
-                            "feedback_id": feedback_b64,
-                            "feedback_reaction_id": react_code,
-                            "feedback_source": "OBJECT",
-                            "feedback_referrer": "UNKNOWN",
-                            "is_tracking_encrypted": True,
-                            "tracking": [],
-                            "session_id": f"session_{random.randint(100000, 999999)}",
-                            "actor_id": str(actor_id),
-                            "client_mutation_id": "1"
-                        },
-                        "useDefaultActor": False,
-                        "scale": 1
-                    }
-                    for doc_id_cand in ["9014612158646528", "6623712531077310"]:
-                        gql_res = _post_fb_graphql(sess, pg_ck, actor_id, dtsg, "CometUFIFeedbackReactMutation", doc_id_cand, variables)
-                        txt_res = gql_res.text
-                        if gql_res.status_code == 200 and (
-                            '"viewer_feedback_reaction_info"' in txt_res
-                            or ('"feedback_react":{' in txt_res and '"feedback_react":null' not in txt_res)
-                        ):
-                            return json.dumps({"success": True})
-
-        return json.dumps({"error": f"Không thể {react_upper}"})
-    except Exception as e:
-        return json.dumps({"error": str(e)[:40]})
-    finally:
-        if own_sess:
-            try:
-                sess.close()
-            except Exception:
-                pass
-
-
 # ==============================================================================
-# PHẦN 2: GIAO DIỆN CHÍNH MMOApp & LUỒNG CHẠY TTC CHUẨN MTOOL MAX (ĐẦY ĐỦ 100%)
+# PHẦN 2: GIAO DIỆN CHÍNH MMOApp & LUỒNG CHẠY TTC ĐỒNG BỘ COOKIE / ACTOR ID
+# (Dán nối tiếp ngay bên dưới hàm fb_page_share của Phần 1)
 # ==============================================================================
 
 class MMOApp(ctk.CTk):
@@ -1832,7 +1888,7 @@ class MMOApp(ctk.CTk):
         self.lbl_xsmm_balance = ctk.CTkLabel(self.status_bar, text="💰 TỔNG XU KIẾM ĐƯỢC TRONG PHIÊN: +0 XU", font=ctk.CTkFont(size=11, weight="bold"), text_color="#059669")
         self.lbl_xsmm_balance.grid(row=0, column=1, padx=16, pady=5, sticky="w")
 
-        self.lbl_status_uptime = ctk.CTkLabel(self.status_bar, text="⏱️ UPTIME: 00:00:00 | Luồng chạy độc lập - Không bao giờ tự ngắt lệnh", font=ctk.CTkFont(size=10, weight="bold"), text_color="#64748b")
+        self.lbl_status_uptime = ctk.CTkLabel(self.status_bar, text="⏱️ UPTIME: 00:00:00 | Luồng chạy chuẩn MTool Max", font=ctk.CTkFont(size=10, weight="bold"), text_color="#64748b")
         self.lbl_status_uptime.grid(row=0, column=2, padx=16, pady=5, sticky="e")
 
         self.load_config()
@@ -2742,8 +2798,11 @@ class MMOApp(ctk.CTk):
             rows = cursor.fetchall()
             conn.close()
             for parent, pid, pname, ptok, proxy, status, db_coins, max_j, p_ck, u_tok, ass_ttc in rows:
+                parent_str = str(parent or "Main")
+                if not p_ck and parent_str in self.fb_parent_sections:
+                    p_ck = self.fb_parent_sections[parent_str].get("cookie", "")
                 page_data = {
-                    "parent": parent or "Main",
+                    "parent": parent_str,
                     "page_id": str(pid),
                     "page_name": pname,
                     "page_token": ptok,
@@ -2840,7 +2899,7 @@ class MMOApp(ctk.CTk):
         }
 
     # ==========================================================================
-    # KHỞI CHẠY PAGE TTC VỚI 12 CHẾ ĐỘ (XOAY VÒNG ƯU TIÊN CẢM XÚC & NHỊP 6 GIÂY)
+    # KHỞI CHẠY PAGE TTC VỚI 12 CHẾ ĐỘ (ĐỒNG BỘ COOKIE FB MẸ & ACTOR ID)
     # ==========================================================================
     def start_single_page_worker(self, pid, stagger_delay=0.0):
         if pid not in self.page_rows:
@@ -2915,16 +2974,21 @@ class MMOApp(ctk.CTk):
 
     def worker_ttc_page_loop(self, ttc_user, page, stagger_delay=0.0):
         """
-        Luồng chạy Page trên Tương Tác Chéo chuẩn theo MTool Max (Lk2/z.smali & Lk2/x.smali):
-        - Tự động xoay vòng thứ tự các chế độ đã tích (mode_offset) để mục Cảm xúc được gọi đầu tiên,
-          không bao giờ bị kẹt sau mục Like.
-        - Tự động nghỉ đủ 6 giây giữa 2 lần gọi getpost.php để không dính khóa ngầm của TTC.
+        Luồng chạy Page trên Tương Tác Chéo chuẩn thời gian MTool Max trên Điện Thoại (Lk2/x.smali & Lk2/z.smali):
+        - Tự động khôi phục Cookie FB Mẹ nếu dữ liệu Page từ DB cũ bị trống parent_cookie.
+        - Dùng chính xác ID đang cấu hình trên TTC (active_actor_id) để thực hiện tương tác trên FB.
         """
         pid = str(page["page_id"]).strip()
         pname = str(page.get("page_name") or pid)
         ptok = str(page.get("page_token") or "")
-        p_ck = str(page.get("parent_cookie") or "")
         parent_uid = str(page.get("parent") or "").strip()
+        p_ck = str(page.get("parent_cookie") or "").strip()
+
+        # Tự động khôi phục Cookie từ Nick FB Mẹ nếu p_ck trống
+        if not p_ck and parent_uid in self.fb_parent_sections:
+            p_ck = str(self.fb_parent_sections[parent_uid].get("cookie") or "").strip()
+        if not p_ck and "c_user=" in ptok:
+            p_ck = ptok
 
         if stagger_delay > 0:
             if not self.smart_sleep(stagger_delay, pid):
@@ -2947,7 +3011,7 @@ class MMOApp(ctk.CTk):
                 raw_modes = self.get_selected_ttc_modes()
                 if not raw_modes:
                     self.queue_row_ui("page", pid, status_text="⚠️ Hãy tích ít nhất 1 chế độ Job!", status_color="#d97706")
-                    if not self.smart_sleep(5, pid):
+                    if not self.smart_sleep(3, pid):
                         break
                     continue
 
@@ -2969,18 +3033,21 @@ class MMOApp(ctk.CTk):
                         ttc_client = TuongTacCheoTool(ttc_info["ttc_token"], proxy=proxy)
                         ok_log, _, sodu_init, msg_log = ttc_client.login()
                         if not ok_log:
-                            self.log(f"⚠️ [TTC: {ttc_user}] Lỗi đăng nhập ({msg_log}), thử lại sau 8s...")
-                            self.queue_row_ui("page", pid, status_text=f"⚠️ Lỗi mạng/Token TTC, chờ 8s...", status_color="#d97706")
-                            if not self.smart_sleep(8, pid):
+                            self.log(f"⚠️ [TTC: {ttc_user}] Lỗi đăng nhập ({msg_log}), thử lại sau 5s...")
+                            self.queue_row_ui("page", pid, status_text="⚠️ Lỗi mạng/Token TTC, chờ 5s...", status_color="#d97706")
+                            if not self.smart_sleep(5, pid):
                                 break
                             continue
                         self.ttc_clients_cache[ttc_user] = ttc_client
 
+                    # Đặt cấu hình Page trên TTC
                     _, dat_msg = ttc_client.dat_nick(pid, fallback_parent_uid=parent_uid)
-                    ttc_info["active_page_id"] = ttc_client.current_configured_uid or pid
+                    active_actor_id = str(ttc_client.current_configured_uid or pid).strip()
+                    ttc_info["active_page_id"] = active_actor_id
+
                     self.queue_row_ui(
                         "ttc", ttc_user,
-                        status_text=f"🔥 Đang chạy: {pname} ({ttc_info['active_page_id']})",
+                        status_text=f"🔥 Đang chạy: {pname} ({active_actor_id})",
                         status_color="#059669"
                     )
                     self.queue_row_ui(
@@ -2991,10 +3058,10 @@ class MMOApp(ctk.CTk):
                         status_color="#0284c7"
                     )
 
-                    # Xoay vòng danh sách chế độ để mọi mục (đặc biệt là Cảm xúc) đều được ưu tiên gọi đầu tiên
-                    offset = ttc_client.mode_offset % len(raw_modes)
+                    # Xoay vòng thứ tự chế độ để các mục Cảm xúc / Like / Sub đều được ưu tiên
+                    offset = getattr(ttc_client, "mode_offset", 0) % len(raw_modes)
                     active_modes = raw_modes[offset:] + raw_modes[:offset]
-                    ttc_client.mode_offset = (ttc_client.mode_offset + 1) % max(1, len(raw_modes))
+                    ttc_client.mode_offset = (offset + 1) % max(1, len(raw_modes))
 
                     for idx_m, mode_key in enumerate(active_modes):
                         if not self.single_running_threads.get(pid, False) or attempted_jobs >= max_jobs:
@@ -3008,27 +3075,18 @@ class MMOApp(ctk.CTk):
                         tasks, status_msg, wait_api_sec = ttc_client.get_tasks_with_cooldown(mode_key)
 
                         if not tasks and wait_api_sec > 0:
-                            wait_total = min(25, max(2, int(wait_api_sec) + 1))
-                            self.log(f"⏳ [TTC: {ttc_user} | {pname}] [{mode_name}] {status_msg} -> Đợi {wait_total}s...")
-                            for rem in range(wait_total, 0, -1):
+                            for rem in range(int(wait_api_sec), 0, -1):
                                 self.queue_row_ui("page", pid, status_text=f"⏳ Đợi TTC ({rem}s) -> [{mode_name[:14]}]...", status_color="#d97706")
                                 if not self.smart_sleep(1, pid):
                                     break
                             if not self.single_running_threads.get(pid, False):
                                 break
-                            self.queue_row_ui("page", pid, status_text=f"🔍 Quét lại [{mode_name}]...", status_color="#0284c7")
                             tasks, status_msg, _ = ttc_client.get_tasks_with_cooldown(mode_key)
 
                         if not tasks:
-                            if idx_m < len(active_modes) - 1:
-                                next_mode_name = TTC_12_JOB_MODES.get(active_modes[idx_m + 1], {}).get("name", "mục kế tiếp")
-                                self.log(f"📭 [TTC: {ttc_user} | {pname}] Hết nhiệm vụ [{mode_name}] -> Đợi 6s chuyển sang [{next_mode_name}]")
-                                for rem in range(6, 0, -1):
-                                    self.queue_row_ui("page", pid, status_text=f"📭 Hết [{mode_name[:12]}], đợi {rem}s chuyển mục...", status_color="#64748b")
-                                    if not self.smart_sleep(1, pid):
-                                        break
-                            else:
-                                self.log(f"📭 [TTC: {ttc_user} | {pname}] Hết nhiệm vụ [{mode_name}]")
+                            self.queue_row_ui("page", pid, status_text=f"📭 Hết [{mode_name[:16]}], chuyển mục...", status_color="#64748b")
+                            if not self.smart_sleep(1.5, pid):
+                                break
                             continue
 
                         found_any_job = True
@@ -3043,27 +3101,30 @@ class MMOApp(ctk.CTk):
                             task_id = str(nv.get("id", ""))
                             link_job = str(nv.get("target_url", ""))
                             target_id = str(nv.get("target_id", "") or task_id)
-                            loaicx = str(nv.get("loaicx") or "LOVE").upper()
+                            loaicx = str(nv.get("loaicx") or "LIKE").upper()
 
-                            self.queue_row_ui("page", pid, status_text=f"⚡ Làm {mode_name[:14]} ({loaicx}) [{task_id[:6]}]...", status_color="#2563eb")
+                            # Sử dụng đúng Actor ID đang cấu hình trên TTC để tương tác
+                            exec_actor_id = active_actor_id if active_actor_id else pid
+
+                            self.queue_row_ui("page", pid, status_text=f"⚡ Làm {mode_name[:14]} ({loaicx}) [{task_id[:8]}]...", status_color="#2563eb")
                             success = False
                             fail_reason = "Lỗi FB"
 
                             try:
                                 with self.net_semaphore:
                                     if action_type == "like":
-                                        res_raw = fb_page_react_or_like(link_job, ptok, proxy, session=fb_sess, page_id=pid, parent_cookie=p_ck, target_id=target_id, reaction_type="LIKE")
+                                        res_raw = fb_page_react_or_like(link_job, ptok, proxy, session=fb_sess, page_id=exec_actor_id, parent_cookie=p_ck, target_id=target_id, reaction_type="LIKE")
                                     elif action_type in ["react", "react_cmt"]:
-                                        res_raw = fb_page_react_or_like(link_job, ptok, proxy, session=fb_sess, page_id=pid, parent_cookie=p_ck, target_id=target_id, reaction_type=loaicx)
+                                        res_raw = fb_page_react_or_like(link_job, ptok, proxy, session=fb_sess, page_id=exec_actor_id, parent_cookie=p_ck, target_id=target_id, reaction_type=loaicx)
                                     elif action_type in ["follow", "likepage"]:
-                                        res_raw = fb_page_follow(target_id, ptok, proxy, session=fb_sess, page_id=pid, parent_cookie=p_ck)
+                                        res_raw = fb_page_follow(target_id, ptok, proxy, session=fb_sess, page_id=exec_actor_id, parent_cookie=p_ck)
                                     elif action_type == "comment":
                                         cmt_txt = nv.get("msg") or ai_generate_unique_comment()
-                                        res_raw = fb_page_comment(target_id, cmt_txt, ptok, proxy, session=fb_sess, page_id=pid, parent_cookie=p_ck, target_url=link_job)
+                                        res_raw = fb_page_comment(target_id, cmt_txt, ptok, proxy, session=fb_sess, page_id=exec_actor_id, parent_cookie=p_ck, target_url=link_job)
                                     elif action_type == "share":
-                                        res_raw = fb_page_share(target_id or link_job, ptok, proxy, session=fb_sess, page_id=pid, parent_cookie=p_ck)
+                                        res_raw = fb_page_share(target_id or link_job, ptok, proxy, session=fb_sess, page_id=exec_actor_id, parent_cookie=p_ck)
                                     else:
-                                        res_raw = fb_page_like(link_job, ptok, proxy, session=fb_sess, page_id=pid, parent_cookie=p_ck, target_id=target_id)
+                                        res_raw = fb_page_like(link_job, ptok, proxy, session=fb_sess, page_id=exec_actor_id, parent_cookie=p_ck, target_id=target_id)
 
                                     j = json.loads(res_raw)
                                     if j.get("success") or j.get("id"):
@@ -3092,7 +3153,7 @@ class MMOApp(ctk.CTk):
                                     self.log(f"⚠️ [TTC: {ttc_user} | {pname}] Duyệt [{mode_name}] báo: {claim_msg}")
                                     self.queue_row_ui("page", pid, status_text=f"⚠️ {claim_msg[:22]}", status_color="#d97706")
                             else:
-                                self.log(f"❌ [Page {pname}] Lỗi {mode_name} [{task_id}]: {fail_reason}")
+                                self.log(f"❌ [Page {pname}] Lỗi {mode_name} [{task_id} -> {target_id[:15]}]: {fail_reason}")
                                 self.queue_row_ui("page", pid, status_text=f"❌ {fail_reason[:20]}", status_color="#dc2626")
 
                             wait_next = random.randint(delay_min, delay_max)
@@ -3101,24 +3162,16 @@ class MMOApp(ctk.CTk):
                                 if not self.smart_sleep(1, pid):
                                     break
 
-                        if idx_m < len(active_modes) - 1 and self.single_running_threads.get(pid, False):
-                            self.log(f"✅ [Page {pname}] Đã chạy hết mục [{mode_name}] -> Đợi 6s chuyển sang mục tiếp theo...")
-                            for rem_sw in range(6, 0, -1):
-                                self.queue_row_ui("page", pid, status_text=f"🔄 Đợi {rem_sw}s chuyển mục kế tiếp...", status_color="#0284c7")
-                                if not self.smart_sleep(1, pid):
-                                    break
-
                 if self.single_running_threads.get(pid, False) and attempted_jobs < max_jobs:
                     if not found_any_job:
-                        rest_sec = 6
-                        self.log(f"📭 [TTC: {ttc_user} | {pname}] Toàn bộ nhiệm vụ đã hết! Đợi {rest_sec}s để chuyển sang Page/vòng khác...")
+                        rest_sec = 5
+                        self.log(f"📭 [TTC: {ttc_user} | {pname}] Toàn bộ nhiệm vụ đã hết! Đợi {rest_sec}s để chuyển sang cái khác...")
                         for rem_all in range(rest_sec, 0, -1):
                             self.queue_row_ui("page", pid, status_text=f"📭 Toàn bộ nhiệm vụ đã hết! Đợi {rem_all}s...", status_color="#d97706")
                             if not self.smart_sleep(1, pid):
                                 break
                     else:
-                        rest_sec = 5
-                        self.log(f"🔄 [TTC: {ttc_user} | {pname}] Hoàn tất 1 vòng nhiệm vụ, đợi {rest_sec}s chuyển vòng tiếp theo...")
+                        rest_sec = 3
                         for rem_all in range(rest_sec, 0, -1):
                             self.queue_row_ui("page", pid, status_text=f"🔄 Đợi {rem_all}s chuyển vòng mới...", status_color="#059669")
                             if not self.smart_sleep(1, pid):
@@ -3165,6 +3218,9 @@ class MMOApp(ctk.CTk):
                     continue
                 ptok = info["data"].get("page_token", "")
                 p_ck = info["data"].get("parent_cookie", "")
+                parent_uid = str(info["data"].get("parent") or "")
+                if not p_ck and parent_uid in self.fb_parent_sections:
+                    p_ck = self.fb_parent_sections[parent_uid].get("cookie", "")
                 proxy = self.get_effective_proxy(info["data"].get("proxy", ""))
                 self.queue_row_ui("page", pid, status_text="🔄 Đang check live...", status_color="#0284c7")
                 is_live = False
@@ -3474,4 +3530,4 @@ class MMOApp(ctk.CTk):
 
 if __name__ == "__main__":
     app = MMOApp()
-    app.mainloop()
+    app.mainloop()                
