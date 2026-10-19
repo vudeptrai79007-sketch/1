@@ -248,7 +248,7 @@ def lam_sach_key_2fa(raw_key):
 
 def chuyen_doi_2fa_sang_otp(secret_key, doi_chu_ky_moi=True):
     """
-    Chuyển đổi chuỗi Secret Key 2FA (ví dụ: JBSW Y3DP EHPK 3PXP...) thành mã OTP 6 chữ số.
+    Chuyển đổi chuỗi Secret Key 2FA thành mã OTP 6 chữ số.
     Nếu thời gian hiệu lực của mã hiện tại còn dưới 5 giây, tự động chờ sang chu kỳ 30s mới.
     """
     clean_key = lam_sach_key_2fa(secret_key)
@@ -774,21 +774,26 @@ class AutoSMSService:
                 pass
 
 
-def generate_dot_variants(gmail):
+def generate_dot_variants(gmail, max_limit=5000):
+    """Giới hạn số lượng biến thể tránh tràn RAM & đơ CPU khi tên Gmail quá dài"""
     local, sep, domain = gmail.rpartition("@")
     if not sep or domain.lower() != "gmail.com":
         return [gmail]
-    if "." in local:
-        local = local.replace(".", "")
+    local = local.replace(".", "")
+    if not local:
+        return [gmail]
+
     variants = []
-    if local:
-        for mask in range(1 << max(0, len(local) - 1)):
-            value = local[0]
-            for i in range(1, len(local)):
-                if mask & (1 << (i - 1)):
-                    value += "."
-                value += local[i]
-            variants.append(value + "@" + domain)
+    total_masks = 1 << max(0, min(len(local) - 1, 14))
+    for mask in range(total_masks):
+        value = local[0]
+        for i in range(1, len(local)):
+            if mask & (1 << (i - 1)):
+                value += "."
+            value += local[i]
+        variants.append(value + "@" + domain)
+        if len(variants) >= max_limit:
+            break
     random.shuffle(variants)
     return variants
 
@@ -1014,8 +1019,8 @@ def luu_tai_khoan_fb(email_or_phone, password, two_fa):
             f.write(f'{email_or_phone} | {password} | {two_fa_str}\n')
 
 
-def chay_lenh_adb(cmd, serial=None):
-    """Chạy lệnh ADB ẩn hoàn toàn cửa sổ ngầm trên Windows (CREATE_NO_WINDOW) để chống lag CPU"""
+def chay_lenh_adb(cmd, serial=None, timeout=15):
+    """Chạy lệnh ADB ẩn hoàn toàn cửa sổ ngầm trên Windows (CREATE_NO_WINDOW) kèm timeout chống đơ"""
     try:
         full_cmd = f'adb -s {serial} {cmd}' if serial else f'adb {cmd}'
         subprocess.run(
@@ -1024,7 +1029,7 @@ def chay_lenh_adb(cmd, serial=None):
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
             creationflags=ADB_CREATION_FLAGS,
-            timeout=20
+            timeout=timeout
         )
     except KeyboardInterrupt:
         raise KeyboardInterrupt
@@ -1032,7 +1037,7 @@ def chay_lenh_adb(cmd, serial=None):
         pass
 
 
-def chay_lenh_adb_lay_ket_qua(cmd, serial=None, timeout=8):
+def chay_lenh_adb_lay_ket_qua(cmd, serial=None, timeout=5):
     try:
         full_cmd = f'adb -s {serial} {cmd}' if serial else f'adb {cmd}'
         res = subprocess.run(
@@ -1051,10 +1056,14 @@ def chay_lenh_adb_lay_ket_qua(cmd, serial=None, timeout=8):
 
 
 def lay_ip_hien_tai_adb(serial=None):
-    for url in ['https://api.ipify.org', 'https://icanhazip.com', 'https://ifconfig.me/ip']:
-        out = chay_lenh_adb_lay_ket_qua(f'shell curl -s --max-time 4 {url}', serial, timeout=6)
-        if out and re.match(r'^\d{1,3}(\.\d{1,3}){3}$', out.strip()):
-            return out.strip()
+    """Kiểm tra nhanh IP 4G trong tối đa 2 giây để không làm treo luồng"""
+    out = chay_lenh_adb_lay_ket_qua(
+        'shell "curl -s --max-time 2 https://api.ipify.org || wget -qO- -T 2 https://api.ipify.org"',
+        serial,
+        timeout=3
+    )
+    if out and re.match(r'^\d{1,3}(\.\d{1,3}){3}$', out.strip()):
+        return out.strip()
     return None
 
 
@@ -1062,7 +1071,7 @@ def lam_moi_thong_so_thiet_bi_adb(serial=None, config=None):
     if config and not config.get('doi_android_id', True):
         return
     new_android_id = ''.join(random.choices('0123456789abcdef', k=16))
-    chay_lenh_adb(f'shell "settings put secure android_id {new_android_id}; logcat -c"', serial)
+    chay_lenh_adb(f'shell "settings put secure android_id {new_android_id}; logcat -c"', serial, timeout=8)
 
 
 def doi_ip_che_do_may_bay_adb(serial=None, device_name="Device", config=None):
@@ -1072,8 +1081,7 @@ def doi_ip_che_do_may_bay_adb(serial=None, device_name="Device", config=None):
     tg_may_bay = config.get('thoi_gian_bat_may_bay', 5.0) if config else 5.0
     tg_cho_4g = config.get('thoi_gian_cho_4g', 6.0) if config else 6.0
 
-    chay_lenh_adb('shell "svc wifi disable; svc data enable"', serial)
-
+    chay_lenh_adb('shell "svc wifi disable; svc data enable"', serial, timeout=8)
     ip_cu = lay_ip_hien_tai_adb(serial)
 
     update_step(device_name, f"✈️ Đang bật Chế độ máy bay ({tg_may_bay}s) | IP cũ: {ip_cu or 'Đang lấy'}...")
@@ -1082,7 +1090,7 @@ def doi_ip_che_do_may_bay_adb(serial=None, device_name="Device", config=None):
         "settings put global airplane_mode_on 1; "
         "am broadcast -a android.intent.action.AIRPLANE_MODE --ez state true"
     )
-    chay_lenh_adb(f'shell "{lenh_bat_mb}"', serial)
+    chay_lenh_adb(f'shell "{lenh_bat_mb}"', serial, timeout=10)
 
     time.sleep(tg_may_bay)
 
@@ -1094,85 +1102,59 @@ def doi_ip_che_do_may_bay_adb(serial=None, device_name="Device", config=None):
         "svc wifi disable; "
         "svc data enable"
     )
-    chay_lenh_adb(f'shell "{lenh_tat_mb}"', serial)
+    chay_lenh_adb(f'shell "{lenh_tat_mb}"', serial, timeout=10)
 
     time.sleep(tg_cho_4g)
 
-    ip_moi = None
-    for _ in range(3):
-        ip_moi = lay_ip_hien_tai_adb(serial)
-        if ip_moi:
-            break
-        time.sleep(2)
-
+    ip_moi = lay_ip_hien_tai_adb(serial)
     if ip_moi:
         update_step(device_name, f"🌐 Đổi IP 4G thành công: {ip_cu or 'N/A'} -> {ip_moi}")
     else:
-        update_step(device_name, "⚠️ Đã bật/tắt máy bay xong (4G đang ổn định ngầm)")
+        update_step(device_name, "✅ Đã bật/tắt máy bay xong (4G đang kết nối ổn định)")
 
 
 def cap_quyen_bo_nho_fb(serial=None):
-    """
-    Cấp sẵn đầy đủ 5 quyền bộ nhớ/Camera và 4 quyền AppOps qua 1 phiên ADB duy nhất
-    (Giữ nguyên 100% quyền nhưng không mở 9 tiến trình cmd.exe gây lag)
-    """
+    """Cấp quyền bộ nhớ/Camera và chặn quyền đọc danh bạ/tài khoản máy để chống dính vết nick cũ"""
     lenh_gop_quyen = (
         "pm grant com.facebook.katana android.permission.READ_EXTERNAL_STORAGE; "
         "pm grant com.facebook.katana android.permission.WRITE_EXTERNAL_STORAGE; "
         "pm grant com.facebook.katana android.permission.READ_MEDIA_IMAGES; "
-        "pm grant com.facebook.katana android.permission.READ_MEDIA_VISUAL_USER_SELECTED; "
         "pm grant com.facebook.katana android.permission.CAMERA; "
         "cmd appops set com.facebook.katana READ_EXTERNAL_STORAGE allow; "
         "cmd appops set com.facebook.katana WRITE_EXTERNAL_STORAGE allow; "
         "cmd appops set com.facebook.katana READ_MEDIA_IMAGES allow; "
-        "cmd appops set com.facebook.katana MANAGE_EXTERNAL_STORAGE allow"
+        "cmd appops set com.facebook.katana MANAGE_EXTERNAL_STORAGE allow; "
+        "cmd appops set com.facebook.katana GET_ACCOUNTS ignore; "
+        "cmd appops set com.facebook.katana READ_CONTACTS ignore; "
+        "cmd appops set com.facebook.katana READ_PHONE_STATE ignore; "
+        "cmd appops set com.facebook.katana READ_PHONE_NUMBERS ignore"
     )
-    chay_lenh_adb(f'shell "{lenh_gop_quyen}"', serial)
+    chay_lenh_adb(f'shell "{lenh_gop_quyen}"', serial, timeout=10)
 
 
 def khoa_xoay_man_hinh(serial=None):
-    chay_lenh_adb('shell settings put system accelerometer_rotation 0', serial)
+    chay_lenh_adb('shell settings put system accelerometer_rotation 0', serial, timeout=5)
 
 
 def xoa_du_lieu_fb(serial=None):
     """
-    Ngắt nguồn tự động khôi phục tài khoản trên máy Xiaomi (Gộp toàn bộ vào 1 phiên ADB duy nhất chống lag):
-    1. Tắt đồng bộ hệ thống Xiaomi (auto_sync) & Tắt dịch vụ Sao lưu đám mây (bmgr / Blockstore / Autofill)
-    2. Xóa sạch dữ liệu các ứng dụng cùng hệ Meta (Messenger, FB Lite, Messenger Lite, Instagram, Threads)
-    3. Xóa sạch dữ liệu các gói hệ thống Meta & bộ nhớ đệm ngoài
+    Làm sạch dữ liệu Facebook như máy mới nhưng KHÔNG làm đơ PackageManager của điện thoại:
+    - Tắt tự động đồng bộ & hủy bộ nhớ Autofill/SmartLock
+    - Chỉ xóa sạch dữ liệu com.facebook.katana và các thư mục rác ẩn trên thẻ nhớ
     """
     lenh_gop_xoa = (
         "settings put global auto_sync 0; "
-        "bmgr enable false; "
-        "bmgr cancel backups; "
-        "bmgr wipe com.android.providers.settings; "
-        "bmgr wipe com.facebook.katana; "
-        "settings put secure backup_enabled 0; "
         "settings put secure backup_auto_restore 0; "
         "settings put secure autofill_service null; "
         "settings put secure credential_service null; "
-        "settings put secure credential_service_primary null; "
         "cmd autofill destroy; "
-        "am force-stop com.facebook.orca; pm clear com.facebook.orca; "
-        "am force-stop com.facebook.lite; pm clear com.facebook.lite; "
-        "am force-stop com.facebook.mlite; pm clear com.facebook.mlite; "
-        "am force-stop com.instagram.android; pm clear com.instagram.android; "
-        "am force-stop com.instagram.barcelona; pm clear com.instagram.barcelona; "
-        "am force-stop com.facebook.katana; pm clear com.facebook.katana; "
-        "am force-stop com.facebook.services; pm clear com.facebook.services; "
-        "am force-stop com.facebook.appmanager; pm clear com.facebook.appmanager; "
-        "am force-stop com.facebook.system; pm clear com.facebook.system; "
-        "cmd appops set com.facebook.katana GET_ACCOUNTS ignore; "
-        "cmd appops set com.facebook.katana READ_CONTACTS ignore; "
-        "cmd appops set com.facebook.katana WRITE_CONTACTS ignore; "
-        "cmd appops set com.facebook.katana READ_PHONE_STATE ignore; "
-        "cmd appops set com.facebook.katana READ_PHONE_NUMBERS ignore; "
-        "pm revoke com.facebook.katana android.permission.GET_ACCOUNTS; "
+        "am force-stop com.facebook.katana; "
+        "pm clear com.facebook.katana; "
         "rm -rf /sdcard/Android/data/com.facebook.katana /sdcard/Android/media/com.facebook.katana /sdcard/.facebook* /sdcard/facebook*; "
         "am broadcast -a android.intent.action.CLOSE_SYSTEM_DIALOGS"
     )
-    chay_lenh_adb(f'shell "{lenh_gop_xoa}"', serial)
-    time.sleep(0.5)
+    chay_lenh_adb(f'shell "{lenh_gop_xoa}"', serial, timeout=12)
+    time.sleep(0.4)
 
 
 def get_devices():
@@ -1182,7 +1164,8 @@ def get_devices():
             shell=True,
             capture_output=True,
             text=True,
-            creationflags=ADB_CREATION_FLAGS
+            creationflags=ADB_CREATION_FLAGS,
+            timeout=10
         )
         lines = result.stdout.strip().split('\n')[1:]
         devices = []
@@ -1224,11 +1207,11 @@ class FacebookUI:
             print(text)
 
     def chay_shell_nhanh(self, shell_cmd):
-        """Gửi lệnh trực tiếp qua socket u2.shell để không phải bật tiến trình adb.exe mới trên PC"""
+        """Gửi lệnh trực tiếp qua socket u2.shell kèm timeout=5s chống treo cứng luồng"""
         try:
-            self.d.shell(shell_cmd)
+            self.d.shell(shell_cmd, timeout=5)
         except Exception:
-            chay_lenh_adb(f'shell {shell_cmd}', self.serial)
+            chay_lenh_adb(f'shell {shell_cmd}', self.serial, timeout=8)
 
     def click_toa_do_an_toan(self, x, y):
         """Bắn tap trực tiếp qua socket shell để mượt và không bị MIUI chặn ngầm trên Xiaomi"""
@@ -1236,7 +1219,7 @@ class FacebookUI:
         self.chay_shell_nhanh(f'input tap {x} {y}')
 
     def vuot_toa_do_an_toan(self, x1, y1, x2, y2, duration_ms=220):
-        """Vuốt trực tiếp qua socket shell để cuộn mượt 3 cột NumberPicker trên Xiaomi mà không lag PC"""
+        """Vuốt trực tiếp qua socket shell để cuộn mượt không lag PC"""
         x1, y1, x2, y2, duration_ms = int(x1), int(y1), int(x2), int(y2), int(duration_ms)
         self.chay_shell_nhanh(f'input swipe {x1} {y1} {x2} {y2} {duration_ms}')
 
@@ -1374,7 +1357,6 @@ class FacebookUI:
                 or self.click_text('NOT NOW', 'NOT NOW', 1, 0.3)
             ):
                 w, h = self.d.window_size()
-                # Nếu là hộp thoại giữa màn hình (như khi Đăng xuất) hoặc hộp thoại dưới đáy
                 if self.kiem_tra_text(['khôi phục từ bản sao lưu', 'Bạn sẽ không cần nhập lại'], 1, 0.1):
                     self.click_toa_do_an_toan(int(w * 0.59), int(h * 0.58))
                 else:
@@ -1625,9 +1607,8 @@ class FacebookUI:
 
     def day_anh_qua_adb(self):
         """
-        Lấy ngẫu nhiên 1 ảnh từ thư mục trên máy tính (PC), đẩy sang điện thoại qua ADB,
-        cập nhật thời gian thực (touch) và quét MediaScanner để bức ảnh từ PC luôn nằm ở
-        Ô ĐẦU TIÊN (góc trên bên trái, Hàng 1 - Cột 1) trong màn hình 'Thư viện' của điện thoại.
+        Lấy ngẫu nhiên 1 ảnh từ thư mục trên máy tính (PC), đẩy sang điện thoại qua ADB
+        với timeout=15s chống treo, cập nhật thời gian thực để nằm ở ô đầu tiên trong Thư viện.
         """
         folder_pc = self.avatar_folder if (self.avatar_folder and os.path.isdir(self.avatar_folder)) else DEFAULT_AVATAR_DIR
         if not os.path.isdir(folder_pc):
@@ -1656,10 +1637,8 @@ class FacebookUI:
             self.chay_shell_nhanh('mkdir -p /sdcard/DCIM/Camera /sdcard/Pictures; rm -f /sdcard/DCIM/Camera/IMG_*.* /sdcard/Pictures/IMG_*.*')
 
             for r_path in [remote_path_dcim, remote_path_pic]:
-                if self.serial:
-                    subprocess.run(f'adb -s {self.serial} push "{local_path}" "{r_path}"', shell=True, capture_output=True, creationflags=ADB_CREATION_FLAGS)
-                else:
-                    subprocess.run(f'adb push "{local_path}" "{r_path}"', shell=True, capture_output=True, creationflags=ADB_CREATION_FLAGS)
+                cmd_push = f'adb -s {self.serial} push "{local_path}" "{r_path}"' if self.serial else f'adb push "{local_path}" "{r_path}"'
+                subprocess.run(cmd_push, shell=True, capture_output=True, creationflags=ADB_CREATION_FLAGS, timeout=15)
                 self.chay_shell_nhanh(f'touch "{r_path}"; am broadcast -a android.intent.action.MEDIA_SCANNER_SCAN_FILE -d "file://{r_path}"')
 
             time.sleep(1.5)
@@ -1670,14 +1649,7 @@ class FacebookUI:
             return None
 
     def up_avatar_fb(self):
-        """
-        Xử lý chuẩn 5 màn hình Thêm ảnh đại diện ngay sau bước OTP:
-        1. Màn hình 'Thêm ảnh đại diện' -> Đẩy ảnh từ PC sang máy -> Bấm nút xanh 'Thêm ảnh'
-        2. Màn hình 'Cho phép truy cập vào thư viện ảnh' -> Bấm nút xanh 'Cho phép truy cập'
-        3. Popup 'Cho phép Facebook sử dụng bộ nhớ điện thoại?' -> Bấm 'Cho phép'
-        4. Popup Android 'Cho phép Facebook truy cập vào ảnh và nội dung nghe nhìn trên thiết bị?' -> Bấm 'CHO PHÉP'
-        5. Màn hình 'Thư viện' -> Bấm vào ô ảnh đầu tiên góc trên bên trái (ảnh vừa đẩy từ PC) -> Bấm Lưu / Xong
-        """
+        """Xử lý chuẩn 5 màn hình Thêm ảnh đại diện ngay sau bước OTP"""
         self.bo_qua_luu_thong_tin_dang_nhap()
         remote_paths = self.day_anh_qua_adb()
         if not remote_paths:
@@ -1776,31 +1748,27 @@ class FacebookUI:
 # ==================== PHẦN 2/2 (DÁN NỐI TIẾP NGAY DƯỚI PHẦN 1/2) ====================
     def xoa_tab_da_nhiem_va_lam_moi_fb(self):
         """
-        Nhấn nút Đa nhiệm (ô vuông bên trái thanh điều hướng), vuốt xóa tab Facebook,
+        Nhấn nút Đa nhiệm (ô vuông bên trái thanh điều hướng), vuốt đóng tab Facebook,
         xóa sạch dữ liệu ứng dụng và mở lại bản Facebook như mới (Không đổi lại IP).
         """
         w, h = self.d.window_size()
         self.log('🧹 Mở thanh điều hướng Đa nhiệm -> Đóng tab Facebook...')
 
-        # 1. Nhấn nút Đa nhiệm (Recent Apps - ô vuông bên trái thanh điều hướng)
         try:
             self.d.press('recent')
         except Exception:
             self.chay_shell_nhanh('input keyevent KEYCODE_APP_SWITCH')
         time.sleep(1.5)
 
-        # Dự phòng: Nếu chưa vào màn hình đa nhiệm thì tap thẳng vào tọa độ nút vuông góc dưới trái
         if self.d(packageName='com.facebook.katana').exists and not self.d(packageName='com.miui.home').exists:
             self.click_toa_do_an_toan(int(w * 0.27), int(h * 0.96))
             time.sleep(1.5)
 
-        # 2. Xóa tab trên giao diện đa nhiệm Xiaomi (MIUI)
         if self.d(resourceId='com.miui.home:id/clearAnimView').exists:
             self._click_phan_tu_an_toan(self.d(resourceId='com.miui.home:id/clearAnimView')[0])
         elif self.d(descriptionContains='Xóa').exists or self.d(descriptionContains='Clear').exists:
             self.click_text_chua('Xóa', 'Xóa tab', 1, 0.3) or self.click_text_chua('Clear', 'Clear tab', 1, 0.3)
         else:
-            # Vuốt tab Facebook sang ngang để đóng tab, sau đó bấm nút X ở đáy màn hình
             self.vuot_toa_do_an_toan(int(w * 0.50), int(h * 0.50), int(w * 0.95), int(h * 0.50), 180)
             time.sleep(0.5)
             self.click_toa_do_an_toan(int(w * 0.50), int(h * 0.89))
@@ -1809,13 +1777,11 @@ class FacebookUI:
         self.chay_shell_nhanh('input keyevent KEYCODE_HOME')
         time.sleep(0.5)
 
-        # 3. Xóa sạch dữ liệu Facebook qua ADB (Giữ nguyên IP hiện tại)
-        self.log('🗑️ Đang xóa sạch dữ liệu Facebook để mở lại như mới...')
+        self.log('🗑️ Đang làm sạch dữ liệu Facebook để mở lại như máy mới...')
         xoa_du_lieu_fb(self.serial)
         khoa_xoay_man_hinh(self.serial)
         cap_quyen_bo_nho_fb(self.serial)
 
-        # 4. Mở lại ứng dụng Facebook mới tinh
         self.log('🚀 Mở lại Facebook mới...')
         self.chay_shell_nhanh('am start -n com.facebook.katana/com.facebook.katana.LoginActivity')
         nghi_ngau_nhien(self.config['delay_mo_facebook'], 0.1)
@@ -1824,127 +1790,121 @@ class FacebookUI:
 
     def _go_trang_ca_nhan_ngoai_man_hinh_cho(self):
         """
-        Thực hiện Bước 3 tại màn hình chờ bên ngoài:
-        Bấm vào dấu 3 chấm (...) ở góc trên bên phải (hoặc biểu tượng bánh răng)
-        -> Chọn Gỡ trang cá nhân -> Xác nhận Gỡ.
+        Xử lý chuẩn giao diện Gỡ trang cá nhân:
+        1. Bấm dấu 3 chấm (...) hoặc biểu tượng Bánh răng cài đặt ở góc trên phải
+        2. Bấm 'Gỡ trang cá nhân' / nút 'Gỡ' cạnh tên nick
+        3. Khi hiện bảng 'Gỡ <Tên>?' ở đáy màn hình -> Bấm chính xác nút 'Gỡ' màu xanh ở dưới cùng
         """
         w, h = self.d.window_size()
-        self.log('🗑️ [Bước 3] Bấm góc trên phải (3 chấm ...) để gỡ trang cá nhân...')
+        self.log('🗑️ [Bước 3] Mở tùy chọn Gỡ trang cá nhân...')
 
-        # 1. Tìm bấm dấu 3 chấm (...) hoặc biểu tượng Cài đặt ở góc trên bên phải màn hình
-        da_mo_menu_go = False
-        for mo_ta in ['Tùy chọn khác', 'More options', 'Cài đặt', 'Settings', 'Quản lý trang cá nhân', 'Menu']:
-            if self.d(descriptionContains=mo_ta).exists or self.d(textContains=mo_ta).exists:
-                if self.click_text_chua(mo_ta, mo_ta, 1, 0.4):
-                    da_mo_menu_go = True
-                    time.sleep(1.2)
-                    break
-
-        if not da_mo_menu_go:
-            # Quét tìm phần tử nút 3 chấm nằm ở góc trên bên phải (x > 80% chiều ngang, y từ 7% -> 20% chiều cao)
-            try:
-                for cls_name in ['android.widget.ImageView', 'android.widget.Button', 'android.view.ViewGroup']:
-                    for elem in self.d(className=cls_name):
-                        b = elem.info['bounds']
-                        cx = (b['left'] + b['right']) // 2
-                        cy = (b['top'] + b['bottom']) // 2
-                        if cx >= int(w * 0.82) and int(h * 0.07) <= cy <= int(h * 0.20):
-                            self.click_toa_do_an_toan(cx, cy)
-                            da_mo_menu_go = True
-                            time.sleep(1.2)
-                            break
-                    if da_mo_menu_go:
+        if not self.kiem_tra_text(['Gỡ trang cá nhân khỏi thiết bị này', 'Gỡ trang cá nhân', 'Remove profile'], 1, 0.3):
+            da_mo_menu_go = False
+            for mo_ta in ['Tùy chọn khác', 'More options', 'Cài đặt', 'Settings', 'Quản lý trang cá nhân']:
+                if self.d(descriptionContains=mo_ta).exists or self.d(textContains=mo_ta).exists:
+                    if self.click_text_chua(mo_ta, mo_ta, 1, 0.4):
+                        da_mo_menu_go = True
+                        time.sleep(1.2)
                         break
-            except Exception:
-                pass
 
-        if not da_mo_menu_go:
-            # Tọa độ chuẩn của dấu 3 chấm (...) góc trên phải màn hình trang cá nhân ngoài
-            self.click_toa_do_an_toan(int(w * 0.925), int(h * 0.142))
-            time.sleep(1.2)
+            if not da_mo_menu_go:
+                self.click_toa_do_an_toan(int(w * 0.91), int(h * 0.085))
+                time.sleep(1.0)
+                if not self.kiem_tra_text(['Gỡ trang cá nhân', 'Remove profile', 'Quản lý'], 1, 0.3):
+                    self.click_toa_do_an_toan(int(w * 0.92), int(h * 0.14))
+                    time.sleep(1.0)
 
-        # Nếu bấm vị trí 3 chấm chưa lên chữ "Gỡ trang cá nhân", thử thêm tọa độ bánh răng phía trên
-        if not self.kiem_tra_text(['Gỡ trang cá nhân', 'Remove profile', 'Xóa trang cá nhân', 'Gỡ tài khoản'], 1, 0.4):
-            self.click_toa_do_an_toan(int(w * 0.91), int(h * 0.082))
-            time.sleep(1.2)
+        if self.d(textContains='Gỡ trang cá nhân').exists or self.d(descriptionContains='Gỡ trang cá nhân').exists:
+            if not self.d(textContains='Gỡ trang cá nhân khỏi thiết bị này').exists:
+                self.click_text_chua('Gỡ trang cá nhân', 'Gỡ trang cá nhân', 1, 0.5)
+                time.sleep(1.5)
 
-        # 2. Nếu vẫn chưa thấy chữ "Gỡ trang cá nhân" (trường hợp màn hình danh sách nhiều tài khoản), chọn tài khoản đầu tiên
-        if not self.kiem_tra_text(['Gỡ trang cá nhân', 'Remove profile', 'Xóa trang cá nhân', 'Gỡ tài khoản'], 1, 0.4):
-            if not self.kiem_tra_text(['Dùng trang cá nhân khác', 'Tiếp tục'], 1, 0.2):
-                self.log('👤 Chọn tài khoản đang lưu trên máy để gỡ...')
-                self.click_toa_do_an_toan(int(w * 0.50), int(h * 0.27))
-                time.sleep(1.2)
+        if self.kiem_tra_text(['Gỡ trang cá nhân khỏi thiết bị này'], 1, 0.3) and not self.kiem_tra_text(['Hủy', 'lần đăng nhập tiếp theo'], 1, 0.2):
+            self.log('👤 Bấm nút "Gỡ" bên cạnh tên tài khoản...')
+            if not self.click_text('Gỡ', 'Nút Gỡ cạnh tên', 1, 0.4):
+                self.click_toa_do_an_toan(int(w * 0.815), int(h * 0.242))
+            time.sleep(1.5)
 
-        # 3. Bấm "Gỡ trang cá nhân" (Remove profile)
-        if (
-            self.click_text_chua('Gỡ trang cá nhân', 'Gỡ trang cá nhân', 2, 0.5)
-            or self.click_text_chua('Remove profile', 'Remove profile', 2, 0.5)
-            or self.click_text_chua('Xóa trang cá nhân', 'Xóa trang cá nhân', 1, 0.4)
-            or self.click_text_chua('Gỡ tài khoản', 'Gỡ tài khoản', 1, 0.4)
-        ):
-            time.sleep(1.0)
-            # 4. Xác nhận bấm "GỠ" / "Gỡ" (Remove) trên hộp thoại xác nhận
-            self.log('✅ Xác nhận Gỡ trang cá nhân khỏi thiết bị...')
-            if not (
-                self.click_text('GỠ', 'GỠ', 2, 0.5)
-                or self.click_text('Gỡ', 'Gỡ', 2, 0.5)
-                or self.click_text('REMOVE', 'REMOVE', 1, 0.4)
-                or self.click_text('Remove', 'Remove', 1, 0.4)
-                or self.click_text('Xóa', 'Xóa', 1, 0.4)
-                or self.click_text_chua('Gỡ', 'Gỡ', 1, 0.4, click_duoi=True)
-            ):
-                self.click_toa_do_an_toan(int(w * 0.74), int(h * 0.55))
-            time.sleep(2.0)
-            return True
+        for _ in range(3):
+            if self.kiem_tra_text(['lần đăng nhập tiếp theo', 'Hủy', 'Gỡ'], 1, 0.3):
+                self.log('✅ Bấm nút "Gỡ" màu xanh dương dưới đáy màn hình...')
+                da_bam_go_xanh = False
+
+                for sel in [self.d(text='Gỡ'), self.d(description='Gỡ'), self.d(text='GỠ')]:
+                    if sel.exists:
+                        for i in range(sel.count - 1, -1, -1):
+                            try:
+                                b = sel[i].info['bounds']
+                                cy = (b['top'] + b['bottom']) // 2
+                                if cy > int(h * 0.70):
+                                    self._click_phan_tu_an_toan(sel[i])
+                                    da_bam_go_xanh = True
+                                    break
+                            except Exception:
+                                pass
+                    if da_bam_go_xanh:
+                        break
+
+                if not da_bam_go_xanh:
+                    self.click_toa_do_an_toan(int(w * 0.50), int(h * 0.825))
+
+                time.sleep(3.0)
+                if not self.kiem_tra_text(['lần đăng nhập tiếp theo', 'Gỡ trang cá nhân khỏi thiết bị này'], 1, 0.4):
+                    self.log('🎉 Đã gỡ trang cá nhân khỏi thiết bị thành công!')
+                    return True
+            time.sleep(0.8)
 
         return False
 
     def dang_xuat_va_go_trang_ca_nhan(self):
         """
         Thực hiện chuẩn luồng Đăng xuất & Gỡ tài khoản:
-        - Bước 1: Mở Menu (3 gạch ngang) -> Cuộn xuống dưới -> Bấm Đăng xuất.
-        - Bước 2: Hiện bảng 'Lưu thông tin đăng nhập?' -> Bấm 'LÚC KHÁC'
-                  -> Hiện bảng 'Đăng xuất khỏi tài khoản của bạn?' -> Bấm 'ĐĂNG XUẤT'.
-        - Bước 3: Ra màn hình chờ bên ngoài -> Bấm dấu 3 chấm (...) góc trên phải -> Gỡ trang cá nhân -> Xác nhận Gỡ.
+        - Bước 1: Bấm 3 gạch ngang ở GÓC TRÊN BÊN TRÁI (x=0.10, y=0.112) -> Lướt xuống đáy -> Bấm Đăng xuất.
+        - Bước 2: Bấm 'LÚC KHÁC' (Không lưu mật khẩu) -> Bấm 'ĐĂNG XUẤT'.
+        - Bước 3: Ra màn hình chờ bên ngoài -> Gỡ trang cá nhân -> Bấm nút 'Gỡ' màu xanh dưới đáy.
         """
         w, h = self.d.window_size()
 
-        # Nếu đang hiện sẵn bảng "Lưu thông tin đăng nhập?" trên màn hình -> Bấm "LÚC KHÁC"
         self.bo_qua_luu_thong_tin_dang_nhap()
         for nut_phu in ['LÚC KHÁC', 'Lúc khác', 'Not now', 'Bỏ qua', 'Skip', 'Đóng', 'Close']:
             if self.d(text=nut_phu).exists or self.d(description=nut_phu).exists:
                 self.click_text(nut_phu, nut_phu, 1, 0.4)
-                time.sleep(1.0)
+                time.sleep(0.8)
 
-        # Kiểm tra xem đã ở ngoài màn hình chờ (có nút Tạo tài khoản mới / Dùng trang cá nhân khác) chưa
+        if self.kiem_tra_text(['Gỡ trang cá nhân khỏi thiết bị này', 'lần đăng nhập tiếp theo'], 1, 0.3):
+            self._go_trang_ca_nhan_ngoai_man_hinh_cho()
+            return
+
         dang_o_ngoai = self.kiem_tra_text([
             'Tạo tài khoản mới', 'Create new account', 'Dùng trang cá nhân khác',
             'Dùng tài khoản khác', 'Use another account', 'Đăng nhập bằng tài khoản khác', 'Bắt đầu'
         ], 1, 0.4)
 
         if not dang_o_ngoai:
-            self.log('🚪 [Bước 1] Mở Menu (3 gạch ngang) -> Lướt xuống bấm Đăng xuất...')
-            if not (self.d(descriptionContains='Menu').exists or self.d(text='Menu').exists):
-                self.chay_shell_nhanh('am start -n com.facebook.katana/com.facebook.katana.LoginActivity')
-                time.sleep(2.5)
-                self.bo_qua_luu_thong_tin_dang_nhap()
+            self.log('🚪 [Bước 1] Bấm nút 3 gạch ngang (góc trên trái) -> Lướt xuống bấm Đăng xuất...')
 
-            # Bấm biểu tượng Menu (3 gạch ngang) ở góc trên bên phải
-            if not (
-                self.click_text_chua('Menu', 'Menu', 2, 0.5)
-                or self.click_text_chua('Bảng điều khiển', 'Menu', 1, 0.4)
-            ):
-                self.click_toa_do_an_toan(int(w * 0.91), int(h * 0.13))
-            time.sleep(1.5)
+            da_bam_menu = False
+            for sel_menu in [self.d(descriptionContains='Menu'), self.d(text='Menu')]:
+                if sel_menu.exists:
+                    if self._click_phan_tu_an_toan(sel_menu[0]):
+                        da_bam_menu = True
+                        break
 
-            # Lướt xuống dưới cùng của Menu để tìm nút Đăng xuất
-            for _ in range(3):
+            if not da_bam_menu:
+                self.click_toa_do_an_toan(int(w * 0.10), int(h * 0.112))
+
+            time.sleep(1.8)
+
+            if self.kiem_tra_text(['Bạn đang nghĩ gì', 'Tin'], 1, 0.3) and not self.kiem_tra_text(['Cài đặt', 'Đăng xuất', 'Trợ giúp'], 1, 0.2):
+                self.click_toa_do_an_toan(int(w * 0.10), int(h * 0.112))
+                time.sleep(1.5)
+
+            for _ in range(5):
                 if self.kiem_tra_text(['Đăng xuất', 'Log out'], 1, 0.2):
                     break
-                self.vuot_toa_do_an_toan(int(w * 0.50), int(h * 0.82), int(w * 0.50), int(h * 0.18), 220)
+                self.vuot_toa_do_an_toan(int(w * 0.50), int(h * 0.85), int(w * 0.50), int(h * 0.15), 200)
                 time.sleep(0.6)
 
-            # Bấm nút Đăng xuất ở dưới đáy Menu
             if (
                 self.click_text('Đăng xuất', 'Đăng xuất', 2, 0.5)
                 or self.click_text_chua('Đăng xuất', 'Đăng xuất', 2, 0.5, click_duoi=True)
@@ -1952,80 +1912,56 @@ class FacebookUI:
             ):
                 time.sleep(1.2)
 
-                # --- BƯỚC 2A: Bảng 1 "Lưu thông tin đăng nhập?" -> Bấm "LÚC KHÁC" ---
-                if self.kiem_tra_text([
-                    'Lưu thông tin đăng nhập',
-                    'khôi phục từ bản sao lưu',
-                    'LÚC KHÁC',
-                    'Lúc khác',
-                    'Không lưu'
-                ], 2, 0.4):
-                    self.log('🚫 [Bước 2A] Bảng "Lưu thông tin đăng nhập?" -> Bấm "LÚC KHÁC"...')
+                if self.kiem_tra_text(['Lưu thông tin đăng nhập', 'khôi phục từ bản sao lưu', 'LÚC KHÁC', 'Lúc khác', 'Không lưu'], 2, 0.4):
+                    self.log('🚫 [Bước 2A] Bấm "LÚC KHÁC" (Không lưu thông tin đăng nhập)...')
                     if not (
                         self.click_text('LÚC KHÁC', 'LÚC KHÁC', 2, 0.4)
                         or self.click_text('Lúc khác', 'Lúc khác', 2, 0.4)
                         or self.click_text_chua('LÚC KHÁC', 'LÚC KHÁC', 1, 0.4)
-                        or self.click_text_chua('Lúc khác', 'Lúc khác', 1, 0.4)
+                        or self.click_text_chua('Lúc khác', 'Lúc khác', 1, 0.4, click_duoi=True)
                         or self.click_text('Không lưu', 'Không lưu', 1, 0.3)
-                        or self.click_text('NOT NOW', 'NOT NOW', 1, 0.3)
                     ):
-                        # Tọa độ chuẩn nút LÚC KHÁC trên hộp thoại giữa màn hình
                         self.click_toa_do_an_toan(int(w * 0.59), int(h * 0.578))
-                    time.sleep(1.0)
+                    time.sleep(1.2)
 
-                # --- BƯỚC 2B: Bảng 2 "Đăng xuất khỏi tài khoản của bạn?" -> Bấm "ĐĂNG XUẤT" ---
-                if self.kiem_tra_text([
-                    'Đăng xuất khỏi tài khoản của bạn',
-                    'ĐĂNG XUẤT',
-                    'Đăng xuất',
-                    'Log out of your account',
-                    'LOG OUT'
-                ], 2, 0.4):
-                    self.log('🚪 [Bước 2B] Bảng "Đăng xuất khỏi tài khoản của bạn?" -> Bấm "ĐĂNG XUẤT"...')
+                if self.kiem_tra_text(['Đăng xuất khỏi tài khoản', 'ĐĂNG XUẤT', 'Đăng xuất', 'LOG OUT'], 2, 0.4):
+                    self.log('🚪 [Bước 2B] Xác nhận bấm "ĐĂNG XUẤT"...')
                     if not (
                         self.click_text('ĐĂNG XUẤT', 'ĐĂNG XUẤT', 2, 0.4)
-                        or self.click_text('Đăng xuất', 'Đăng xuất', 2, 0.4)
                         or self.click_text_chua('ĐĂNG XUẤT', 'ĐĂNG XUẤT', 1, 0.4, click_duoi=True)
                         or self.click_text_chua('Đăng xuất', 'Đăng xuất', 1, 0.4, click_duoi=True)
                         or self.click_text('LOG OUT', 'LOG OUT', 1, 0.4)
-                        or self.click_text('Log out', 'Log out', 1, 0.4)
                     ):
-                        # Tọa độ chuẩn nút ĐĂNG XUẤT màu xanh bên phải hộp thoại
                         self.click_toa_do_an_toan(int(w * 0.755), int(h * 0.528))
-                    time.sleep(3.0)
+                    time.sleep(3.5)
 
-        # --- BƯỚC 3: Ra màn hình ngoài -> Bấm dấu 3 chấm (...) góc trên phải để Gỡ trang cá nhân ---
         self._go_trang_ca_nhan_ngoai_man_hinh_cho()
 
     def dam_bao_man_hinh_tao_tai_khoan_moi(self):
         """
         Kiểm tra ngay khi vào Facebook:
         - Nếu ở màn hình sạch hoàn toàn (chỉ có Bắt đầu / Tạo tài khoản mới) -> Đi tiếp luôn.
-        - Nếu vẫn còn lưu trang cá nhân cũ (có nút 'Dùng trang cá nhân khác' hoặc đang ở trong acc cũ)
-          -> Thực hiện Đăng xuất (LÚC KHÁC -> ĐĂNG XUẤT) -> Bấm 3 chấm Gỡ trang cá nhân
-          -> Tắt tab đa nhiệm -> Xóa dữ liệu để vào lại app như mới (Không cần đổi lại IP).
+        - Nếu còn nick cũ -> Thực hiện Đăng xuất + Gỡ trang cá nhân hoàn tất rồi mới làm mới App.
         """
         for _ in range(5):
-            # Nếu thấy dấu hiệu đang kẹt trang cá nhân cũ hoặc bảng hỏi lưu đăng nhập -> Xử lý gỡ ngay
             if self.kiem_tra_text([
                 'Lưu thông tin đăng nhập',
                 'Dùng trang cá nhân khác',
                 'Dùng tài khoản khác',
-                'Bạn đang nghĩ gì'
-            ], 1, 0.2):
+                'Bạn đang nghĩ gì',
+                'Gỡ trang cá nhân khỏi thiết bị này'
+            ], 1, 0.3):
                 break
 
-            # Nếu màn hình đã sạch sẽ để tạo tài khoản mới
             if self.kiem_tra_text(['Bắt đầu', 'Tạo tài khoản mới', 'Create new account', 'Tham gia Facebook', 'Bạn tên gì'], 1, 0.3):
                 return True
             time.sleep(0.5)
 
-        self.log('⚠️ Phát hiện còn lưu trang cá nhân cũ trên máy -> Tiến hành Gỡ & Làm mới App...')
-        # 1. Thực hiện thao tác Đăng xuất (LÚC KHÁC -> ĐĂNG XUẤT) & Bấm 3 chấm Gỡ trang cá nhân
+        self.log('⚠️ Phát hiện còn nick cũ trên máy -> Tiến hành Đăng xuất & Gỡ trang cá nhân...')
         self.dang_xuat_va_go_trang_ca_nhan()
 
-        # 2. Nhấn thanh điều hướng đóng tab đa nhiệm, xóa dữ liệu và mở lại FB như mới (giữ nguyên IP vừa đổi)
-        self.xoa_tab_da_nhiem_va_lam_moi_fb()
+        if not self.kiem_tra_text(['Bắt đầu', 'Tạo tài khoản mới', 'Create new account'], 2, 0.5):
+            self.xoa_tab_da_nhiem_va_lam_moi_fb()
         return True
 
     def lay_otp_theo_che_do(self, mode, used_email, mail_service=None, imap_service=None, hotmail_service=None, uid_moc=0, force_8_digits=False):
@@ -2039,9 +1975,11 @@ class FacebookUI:
             if mode == "2" and not (mail_service and mail_service.token):
                 with OTP_LOCK:
                     PAUSE_FOR_INPUT.clear()
-                    built_in_print(f"\n{Colors.color_text(f'[{self.device_name}] Lần {attempt+1}: NHẬP MÃ OTP ({loai_otp_str}) CHO [{used_email}]: ', Colors.SUCCESS)}", end="")
-                    otp_code = input().strip()
-                    PAUSE_FOR_INPUT.set()
+                    try:
+                        built_in_print(f"\n{Colors.color_text(f'[{self.device_name}] Lần {attempt+1}: NHẬP MÃ OTP ({loai_otp_str}) CHO [{used_email}]: ', Colors.SUCCESS)}", end="")
+                        otp_code = input().strip()
+                    finally:
+                        PAUSE_FOR_INPUT.set()
             elif mode == "1" or (mode == "2" and mail_service and mail_service.token):
                 self.log(f'🔢 Đang chờ OTP ({loai_otp_str}) Mail.tm (Lần {attempt+1})...')
                 otp_code = mail_service.get_otp_code(timeout=95, force_8_digits=force_8_digits)
@@ -2095,14 +2033,12 @@ class FacebookUI:
             cac_chuoi = re.findall(r'(?:text|content-desc)="([^"]+)"', xml_dump)
             for s in cac_chuoi:
                 s_clean = s.strip()
-                # Mẫu 1: Có chia nhóm 4 ký tự (VD: JBSW Y3DP EHPK 3PXP ...)
                 m_group = re.search(r'\b(?:[A-Z2-7]{4}[\s-]+){3,7}[A-Z2-7]{4}\b', s_clean)
                 if m_group:
                     key_cand = lam_sach_key_2fa(m_group.group(0))
                     if 16 <= len(key_cand) <= 64:
                         return key_cand
 
-                # Mẫu 2: Chuỗi 16 - 32 ký tự Base32 viết liền hoặc nằm riêng trên 1 dòng
                 if re.fullmatch(r'[A-Z2-7\s-]{16,45}', s_clean):
                     key_cand = lam_sach_key_2fa(s_clean)
                     if len(key_cand) in [16, 24, 32] and any(c.isalpha() for c in key_cand):
@@ -2112,7 +2048,8 @@ class FacebookUI:
         return None
 
     def dieu_huong_vao_man_hinh_2fa(self):
-        """Mở thẳng trang thiết lập 2FA bằng DeepLink hoặc qua Menu Cài đặt"""
+        """Mở thẳng trang thiết lập 2FA bằng DeepLink hoặc qua Menu Cài đặt (không dùng scroll.toEnd tránh đơ)"""
+        w, h = self.d.window_size()
         self.chay_shell_nhanh(
             'am start -a android.intent.action.VIEW -d "fb://faceweb/f?href=%2Fsecurity%2F2fac%2Fsetup%2Fintro"'
         )
@@ -2123,13 +2060,14 @@ class FacebookUI:
             'Bắt đầu', 'Get started', 'Chọn phương thức', 'Bảo vệ tài khoản', 'Google Authenticator'
         ], 2, 0.8):
             self.log('🛡️ Mở 2FA qua Menu Cài đặt...')
-            self.click_text_chua('Menu', 'Menu', 2, 0.5)
+            if not self.click_text_chua('Menu', 'Menu', 1, 0.4):
+                self.click_toa_do_an_toan(int(w * 0.10), int(h * 0.112))
             time.sleep(1.5)
-            try:
-                self.d(scrollable=True).scroll.toEnd()
-            except Exception:
-                pass
-            time.sleep(0.8)
+
+            for _ in range(3):
+                self.vuot_toa_do_an_toan(int(w * 0.50), int(h * 0.82), int(w * 0.50), int(h * 0.20), 200)
+                time.sleep(0.5)
+
             self.click_text_chua('Cài đặt & quyền riêng tư', 'Cài đặt & quyền riêng tư', 2, 0.5) or self.click_text_chua('Settings & privacy', 'Settings', 2, 0.5)
             time.sleep(1.0)
             self.click_text('Cài đặt', 'Cài đặt', 2, 0.5) or self.click_text('Settings', 'Settings', 2, 0.5)
@@ -2141,16 +2079,13 @@ class FacebookUI:
             self.click_text_chua('Xác thực 2 yếu tố', 'Xác thực 2 yếu tố', 2, 0.5) or self.click_text_chua('Two-factor authentication', '2FA', 2, 0.5)
             time.sleep(2.5)
 
-        # Nếu hiện danh sách chọn trang cá nhân trong Trung tâm tài khoản -> Chọn dòng đầu tiên
         if self.kiem_tra_text(['Chọn tài khoản', 'Select an account', 'Chọn trang cá nhân', 'Trang cá nhân'], 2, 0.6):
-            w, h = self.d.window_size()
             if not self.click_text_chua('Facebook', 'Tài khoản FB', 1, 0.4):
                 self.click_toa_do_an_toan(int(w * 0.50), int(h * 0.32))
             time.sleep(2.5)
 
     def _nhap_otp_hoac_mk_phu_2fa(self, used_email, mode, mail_service, imap_service, hotmail_service, autosms_service):
         """Xử lý trường hợp Facebook hỏi lại Mật khẩu hoặc Mã bảo mật Email/SMS trong quá trình bật 2FA"""
-        # 1. Nếu hỏi lại Mật khẩu
         if self.kiem_tra_text(['Nhập lại mật khẩu', 'Re-enter your password', 'Mật khẩu của bạn', 'Nhập mật khẩu'], 1, 0.4):
             self.log('🔑 Nhập mật khẩu xác nhận 2FA...')
             if self.d(className='android.widget.EditText').exists:
@@ -2161,7 +2096,6 @@ class FacebookUI:
             self.click_text_chua('Tiếp tục', 'Tiếp tục', 2, 0.5, click_duoi=True) or self.click_text_chua('Tiếp', 'Tiếp', 2, 0.5, click_duoi=True)
             time.sleep(3.5)
 
-        # 2. Nếu hỏi Mã bảo mật gửi về Email / SMS
         if self.kiem_tra_text(['Kiểm tra email', 'Check your email', 'Kiểm tra tin nhắn', 'Nhập mã gồm', 'chúng tôi đã gửi mã'], 1, 0.5):
             self.log('📧 Phát hiện bước xác minh Email/SMS khi bật 2FA -> Đang lấy mã...')
             uid_moc_2fa = imap_service.get_latest_uid() if (mode in ["3", "4"] and imap_service) else 0
@@ -2195,7 +2129,7 @@ class FacebookUI:
         """
         Luồng bật 2FA chuẩn:
         1. Mở trang bật 2FA -> Chọn cái đầu tiên (Ứng dụng xác thực / Google Auth) -> Bấm Tiếp / Tiếp tục
-        2. Lướt (vuốt) xuống tìm mã 2FA -> Sao chép / Trích xuất mã 2FA -> Bấm Tiếp / Tiếp tục
+        2. Lướt xuống tìm mã 2FA -> Sao chép / Trích xuất mã 2FA -> Bấm Tiếp / Tiếp tục
         3. Nhập mã OTP 6 số (tạo từ mã 2FA) vào ô xác nhận -> Bấm Tiếp tục -> Bấm Xong
         """
         self.log('🛡️ Đang mở cài đặt Xác thực 2 yếu tố (2FA)...')
@@ -2209,7 +2143,6 @@ class FacebookUI:
                     self.click_text(nut_bo_qua, nut_bo_qua, 1, 0.3)
                     time.sleep(0.4)
 
-            # Bước 1: Điều hướng vào trang 2FA
             self.dieu_huong_vao_man_hinh_2fa()
             self._nhap_otp_hoac_mk_phu_2fa(used_email, mode, mail_service, imap_service, hotmail_service, autosms_service)
 
@@ -2219,7 +2152,6 @@ class FacebookUI:
                     time.sleep(2.0)
                     break
 
-            # Bước 2: Bấm chọn mục đầu tiên "Ứng dụng xác thực" (Google Auth) rồi bấm Tiếp / Tiếp tục
             self.log('🛡️ Chọn mục đầu: Ứng dụng xác thực (Google Auth)...')
             da_chon_gg_auth = False
             for ten_opt in ['Ứng dụng xác thực', 'Authentication app', 'Google Authenticator', 'Duo Mobile', 'Đề xuất']:
@@ -2245,7 +2177,6 @@ class FacebookUI:
 
             self._nhap_otp_hoac_mk_phu_2fa(used_email, mode, mail_service, imap_service, hotmail_service, autosms_service)
 
-            # Bước 3: Lướt xuống tìm mã 2FA (Secret Key)
             self.log('📜 Đang lướt tìm mã khóa 2FA trên màn hình...')
             for _ in range(6):
                 two_fa_secret = self.trich_xuat_key_2fa_tu_man_hinh()
@@ -2260,7 +2191,6 @@ class FacebookUI:
 
             self.log(f'🔑 Đã tìm thấy Key 2FA: {two_fa_secret}')
 
-            # Bước 4: Bấm Tiếp / Tiếp tục để sang trang Nhập mã OTP 6 số
             self.log('⏩ Bấm Tiếp / Tiếp tục để sang màn hình nhập OTP 6 số...')
             if not (
                 self.click_text('Tiếp', 'Tiếp', 2, 0.5)
@@ -2271,7 +2201,6 @@ class FacebookUI:
                 self.click_toa_do_an_toan(int(w * 0.50), int(h * 0.91))
             time.sleep(2.5)
 
-            # Bước 5: Chuyển đổi Key 2FA -> Mã OTP 6 số & Nhập vào ô
             ma_otp_6_so = chuyen_doi_2fa_sang_otp(two_fa_secret, doi_chu_ky_moi=True)
             self.log(f'🔢 Mã OTP 6 số từ 2FA: {ma_otp_6_so} -> Đang bấm ô nhập OTP...')
 
@@ -2292,7 +2221,6 @@ class FacebookUI:
                 self.d.press('back')
                 time.sleep(0.6)
 
-                # Bước 6: Bấm Tiếp / Tiếp tục / Xác nhận sau khi điền OTP 6 số
                 self.log('⏩ Bấm Tiếp / Xác nhận mã 2FA...')
                 if not (
                     self.click_text('Tiếp', 'Tiếp', 2, 0.5)
@@ -2305,7 +2233,6 @@ class FacebookUI:
 
                 self._nhap_otp_hoac_mk_phu_2fa(used_email, mode, mail_service, imap_service, hotmail_service, autosms_service)
 
-                # Bước 7: Bấm Xong (Done) hoàn tất bật 2FA
                 for _ in range(3):
                     for nut_xong in ['Xong', 'Done', 'Hoàn tất', 'OK', 'Tiếp tục']:
                         if self.d(text=nut_xong).exists or self.d(description=nut_xong).exists or self.d(textContains=nut_xong).exists:
@@ -2329,7 +2256,7 @@ class FacebookUI:
         - Mật khẩu -> Tiếp
         - Lưu thông tin đăng nhập? -> BẮT BUỘC BẤM 'LÚC KHÁC' (Không lưu đám mây)
         - Tôi đồng ý -> Nhập OTP -> Bấm 'LÚC KHÁC' nếu hỏi lại Lưu thông tin -> Up Avatar -> Bật 2FA
-        - Sau khi xong 2FA -> Chủ động Đăng xuất (LÚC KHÁC -> ĐĂNG XUẤT) & Bấm 3 chấm gỡ trang cá nhân
+        - Sau khi xong 2FA -> Chủ động Đăng xuất & Gỡ trang cá nhân khỏi thiết bị
         """
         mat_khau_fb = self.config['mat_khau_fb']
         da_nhap_otp = False
@@ -2337,11 +2264,9 @@ class FacebookUI:
         for _ in range(14):
             self.tat_quyen_khong_cho_phep()
 
-            # 1. Nếu hiện bảng "Lưu thông tin đăng nhập?" -> Bấm "LÚC KHÁC"
             if self.bo_qua_luu_thong_tin_dang_nhap():
                 continue
 
-            # 2. Nếu đang ở màn hình Tạo mật khẩu
             if self.kiem_tra_text(['Tạo mật khẩu', 'Mật khẩu'], 1, 0.2) and not self.kiem_tra_text(['Mã xác nhận', 'Nhập mã'], 1, 0.1):
                 self.log('🔑 Nhập Mật khẩu...')
                 if self.click_truong('Mật khẩu', False, 2, 0.5) or self.d(className='android.widget.EditText').exists:
@@ -2354,7 +2279,6 @@ class FacebookUI:
                     nghi_ngau_nhien(self.config['delay_click_tiep_sau_mk'])
                     continue
 
-            # 3. Nếu đang ở màn hình Điều khoản & Chính sách (Tôi đồng ý)
             if self.kiem_tra_text(['Tôi đồng ý', 'điều khoản và chính sách'], 1, 0.2):
                 self.log('✅ Bấm Tôi đồng ý')
                 if self.d(textContains='Tôi đồng ý').exists:
@@ -2364,13 +2288,11 @@ class FacebookUI:
                 nghi_ngau_nhien(self.config['delay_cho_toi_dong_y'], 0.15)
                 continue
 
-            # 4. Nếu gặp popup chọn phương thức nhận mã SMS
             if self.kiem_tra_text(['Gửi mã qua SMS', 'Nhận mã qua SMS'], 1, 0.2):
                 self.click_text_chua('Gửi mã qua SMS', 'Gửi mã qua SMS', 2, 0.5)
                 time.sleep(2.0)
                 continue
 
-            # 5. Nếu đã vào màn hình Nhập mã xác nhận (OTP)
             if self.kiem_tra_text(['Mã xác nhận', 'Nhập mã xác nhận', 'Nhập mã gồm', 'Xác nhận tài khoản'], 1, 0.3):
                 self.log('📩 Đã vào trang Nhập mã OTP!')
                 if mode == "6" and autosms_service:
@@ -2414,7 +2336,6 @@ class FacebookUI:
             self.log('❌ Không tìm thấy màn hình nhập OTP!')
             return None
 
-        # Kiểm tra nếu ngay sau khi nhập OTP lại hiện bảng "Lưu thông tin đăng nhập?" -> Bấm "LÚC KHÁC"
         for _ in range(3):
             if self.bo_qua_luu_thong_tin_dang_nhap():
                 break
@@ -2433,7 +2354,6 @@ class FacebookUI:
             autosms_service=autosms_service
         )
 
-        # Chủ động Đăng xuất (LÚC KHÁC -> ĐĂNG XUẤT) & Bấm 3 chấm Gỡ trang cá nhân ngay sau khi xong acc này
         self.log('🧹 Đang Đăng xuất & Gỡ trang cá nhân vừa tạo khỏi thiết bị...')
         self.dang_xuat_va_go_trang_ca_nhan()
 
@@ -2441,13 +2361,13 @@ class FacebookUI:
 
     def chay_dang_ky(self, used_email=None, mode="1", mail_service=None, imap_service=None, hotmail_service=None, autosms_service=None, used_phones=None, used_names=None):
         """
-        Quy trình Đăng ký chuẩn:
-        Xóa sạch dữ liệu & Cloud Backup -> Đổi IP 4G (1 lần duy nhất đầu lượt) -> Mở FB
-        -> Đảm bảo ở trang Bắt đầu/Tạo TK mới (Nếu kẹt acc cũ thì Gỡ 3 chấm + Xóa tab đa nhiệm + Không đổi lại IP)
+        Quy trình Đăng ký chuẩn sạch như máy mới:
+        Xóa sạch dữ liệu FB & Autofill -> Đổi Android ID -> Đổi IP 4G -> Mở FB
+        -> Đảm bảo ở trang Tạo TK mới (Nếu kẹt nick cũ thì Đăng xuất + Gỡ hoàn toàn)
         -> KHÔNG CHO PHÉP -> Họ & Tên -> Ngày sinh (3 cột) -> Giới tính -> Email / SĐT
-        -> Mật khẩu & OTP (Bấm LÚC KHÁC khi hỏi lưu) -> Thêm ảnh đại diện từ PC -> Bật 2FA -> Đăng xuất & Gỡ trang cá nhân
+        -> Mật khẩu & OTP -> Thêm ảnh đại diện từ PC -> Bật 2FA -> Đăng xuất & Gỡ trang cá nhân
         """
-        self.log('🧹 Xóa dữ liệu ngầm FB, tắt Cloud Backup & làm mới thông số máy...')
+        self.log('🧹 Làm sạch dữ liệu FB, tắt Autofill & đổi thông số phần cứng...')
         xoa_du_lieu_fb(self.serial)
         lam_moi_thong_so_thiet_bi_adb(self.serial, self.config)
         doi_ip_che_do_may_bay_adb(self.serial, self.device_name, self.config)
@@ -2486,7 +2406,6 @@ class FacebookUI:
             time.sleep(0.4)
         nghi_ngau_nhien(self.config['delay_chon_khong_cho_phep_lan2'])
 
-        # Nhập Họ & Tên
         self.dong_goi_y_google()
         ho, ten = self.tao_ho_ten(used_names)
         self.log(f'📝 Nhập Họ: {ho} | Tên: {ten}')
@@ -2514,10 +2433,8 @@ class FacebookUI:
         self.click_text('Tiếp', 'Tiếp', 3, 0.8) or self.click_text_chua('Tiếp', 'Tiếp', 2, 0.6)
         nghi_ngau_nhien(self.config['delay_click_tiep_lan1'])
 
-        # Chọn Ngày tháng năm sinh
         self.vuot_chon_ngay_thang_nam_sinh()
 
-        # Chọn Giới tính
         gioi_tinh = random.choice(['Nam', 'Nữ'])
         self.log(f'👤 Chọn giới tính: {gioi_tinh}')
         self.click_text(gioi_tinh, gioi_tinh, 3, 0.8) or self.click_text_chua(gioi_tinh, gioi_tinh, 2, 0.6)
@@ -2527,7 +2444,6 @@ class FacebookUI:
         self.click_text('Tiếp', 'Tiếp', 3, 0.8) or self.click_text_chua('Tiếp', 'Tiếp', 2, 0.6)
         nghi_ngau_nhien(self.config['delay_click_tiep_lan5'])
 
-        # Nhập SĐT (Mode 6) hoặc Email (Mode 1 -> 5)
         self.tat_quyen_khong_cho_phep()
 
         if mode == "6" and autosms_service:
@@ -2659,7 +2575,6 @@ def chay_mot_thiet_bi_loop(serial, device_name, config, mode, data_source, manua
         raw_proxy = proxies_list[device_idx % len(proxies_list)]
         req_proxy = format_proxy(raw_proxy)
 
-    # Khởi tạo kết nối u2 một lần duy nhất ngoài vòng lặp để chống lag atx-agent
     d_conn = None
     try:
         d_conn = u2.connect(serial) if serial else u2.connect()
@@ -2870,7 +2785,6 @@ def main():
         built_in_print(f"{Colors.ERROR}Danh sách đầu vào trống! Thoát chương trình.{Colors.RESET}")
         sys.exit()
 
-    # HƯỚNG DẪN & CHỌN THƯ MỤC ẢNH AVATAR TRÊN MÁY TÍNH (PC)
     saved_avatar_folder = config_data.get("last_avatar_folder", "")
     avatar_folder_input = ""
 
@@ -2953,7 +2867,6 @@ def main():
         lan_chay = 0
         req_proxy = format_proxy(proxies_list[0]) if proxies_list else None
 
-        # Khởi tạo kết nối u2 một lần duy nhất ngoài vòng lặp để chống lag
         d_conn_single = u2.connect(serial) if serial else u2.connect()
 
         while True:
@@ -3005,7 +2918,6 @@ def main():
             else:
                 print('\n❌ Đăng ký thất bại!')
 
-            xoa_du_lieu_fb(serial)
             print(f"\n⏳ CHỜ {config['delay_giua_cac_lan_chay']} GIÂY...")
             nghi_ngau_nhien(config['delay_giua_cac_lan_chay'])
 
