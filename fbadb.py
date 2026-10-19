@@ -1352,19 +1352,33 @@ class FacebookUI:
 
     def bo_qua_luu_thong_tin_dang_nhap(self):
         """
-        Luôn bấm 'Lúc khác' khi hiện bảng 'Lưu thông tin đăng nhập?' vào bản sao lưu đám mây thiết bị.
-        Tuyệt đối KHÔNG bấm 'Lưu' để tránh lần sau mở app bị tự đăng nhập lại acc cũ.
+        Luôn bấm 'LÚC KHÁC' / 'Lúc khác' khi hiện bảng 'Lưu thông tin đăng nhập?' vào bản sao lưu.
+        Tuyệt đối KHÔNG bấm 'LƯU' để tránh lần sau mở app bị tự đăng nhập lại acc cũ.
         """
-        if self.kiem_tra_text(['Lưu thông tin đăng nhập', 'bản sao lưu trên đám mây', 'Lưu thông tin'], 1, 0.2):
-            self.log('🚫 Phát hiện bảng Lưu thông tin đăng nhập -> Bấm "Lúc khác" (Không lưu đám mây)')
+        if self.kiem_tra_text([
+            'Lưu thông tin đăng nhập',
+            'bản sao lưu trên đám mây',
+            'khôi phục từ bản sao lưu',
+            'Lưu thông tin',
+            'LÚC KHÁC'
+        ], 1, 0.2):
+            self.log('🚫 Phát hiện bảng Lưu thông tin đăng nhập -> Bấm "LÚC KHÁC" (Không lưu)')
             if not (
-                self.click_text('Lúc khác', 'Lúc khác', 2, 0.4)
-                or self.click_text_chua('Lúc khác', 'Lúc khác', 2, 0.4, click_duoi=True)
-                or self.click_text('Không', 'Không', 1, 0.3)
+                self.click_text('LÚC KHÁC', 'LÚC KHÁC', 2, 0.4)
+                or self.click_text('Lúc khác', 'Lúc khác', 2, 0.4)
+                or self.click_text_chua('LÚC KHÁC', 'LÚC KHÁC', 1, 0.4)
+                or self.click_text_chua('Lúc khác', 'Lúc khác', 1, 0.4, click_duoi=True)
+                or self.click_text('KHÔNG LƯU', 'KHÔNG LƯU', 1, 0.3)
+                or self.click_text('Không lưu', 'Không lưu', 1, 0.3)
                 or self.click_text('Not now', 'Not now', 1, 0.3)
+                or self.click_text('NOT NOW', 'NOT NOW', 1, 0.3)
             ):
                 w, h = self.d.window_size()
-                self.click_toa_do_an_toan(int(w * 0.50), int(h * 0.885))
+                # Nếu là hộp thoại giữa màn hình (như khi Đăng xuất) hoặc hộp thoại dưới đáy
+                if self.kiem_tra_text(['khôi phục từ bản sao lưu', 'Bạn sẽ không cần nhập lại'], 1, 0.1):
+                    self.click_toa_do_an_toan(int(w * 0.59), int(h * 0.58))
+                else:
+                    self.click_toa_do_an_toan(int(w * 0.50), int(h * 0.885))
             time.sleep(1.0)
             return True
         return False
@@ -1763,10 +1777,10 @@ class FacebookUI:
     def xoa_tab_da_nhiem_va_lam_moi_fb(self):
         """
         Nhấn nút Đa nhiệm (ô vuông bên trái thanh điều hướng), vuốt xóa tab Facebook,
-        xóa sạch dữ liệu ứng dụng và mở lại bản Facebook như mới.
+        xóa sạch dữ liệu ứng dụng và mở lại bản Facebook như mới (Không đổi lại IP).
         """
         w, h = self.d.window_size()
-        self.log('🧹 Mở thanh điều hướng Đa nhiệm -> Xóa tab Facebook...')
+        self.log('🧹 Mở thanh điều hướng Đa nhiệm -> Đóng tab Facebook...')
 
         # 1. Nhấn nút Đa nhiệm (Recent Apps - ô vuông bên trái thanh điều hướng)
         try:
@@ -1781,7 +1795,6 @@ class FacebookUI:
             time.sleep(1.5)
 
         # 2. Xóa tab trên giao diện đa nhiệm Xiaomi (MIUI)
-        # Bấm nút dấu X (Dọn dẹp/Xóa tất cả tab) ở dưới giữa màn hình MIUI hoặc vuốt ngang tab FB
         if self.d(resourceId='com.miui.home:id/clearAnimView').exists:
             self._click_phan_tu_an_toan(self.d(resourceId='com.miui.home:id/clearAnimView')[0])
         elif self.d(descriptionContains='Xóa').exists or self.d(descriptionContains='Clear').exists:
@@ -1796,7 +1809,7 @@ class FacebookUI:
         self.chay_shell_nhanh('input keyevent KEYCODE_HOME')
         time.sleep(0.5)
 
-        # 3. Xóa sạch dữ liệu Facebook qua ADB
+        # 3. Xóa sạch dữ liệu Facebook qua ADB (Giữ nguyên IP hiện tại)
         self.log('🗑️ Đang xóa sạch dữ liệu Facebook để mở lại như mới...')
         xoa_du_lieu_fb(self.serial)
         khoa_xoay_man_hinh(self.serial)
@@ -1811,16 +1824,16 @@ class FacebookUI:
 
     def _go_trang_ca_nhan_ngoai_man_hinh_cho(self):
         """
-        Thực hiện Bước 3 (Phần 1):
-        Tại màn hình danh sách tài khoản bên ngoài -> Bấm biểu tượng bánh răng (Cài đặt) góc trên phải
-        hoặc dấu 3 chấm -> Chọn tài khoản -> Bấm Gỡ trang cá nhân -> Xác nhận Gỡ.
+        Thực hiện Bước 3 tại màn hình chờ bên ngoài:
+        Bấm vào dấu 3 chấm (...) ở góc trên bên phải (hoặc biểu tượng bánh răng)
+        -> Chọn Gỡ trang cá nhân -> Xác nhận Gỡ.
         """
         w, h = self.d.window_size()
-        self.log('🗑️ [Bước 3] Đang gỡ vĩnh viễn trang cá nhân khỏi thiết bị...')
+        self.log('🗑️ [Bước 3] Bấm góc trên phải (3 chấm ...) để gỡ trang cá nhân...')
 
-        # 1. Tìm bấm biểu tượng bánh răng (Cài đặt) góc trên phải hoặc nút 3 chấm
+        # 1. Tìm bấm dấu 3 chấm (...) hoặc biểu tượng Cài đặt ở góc trên bên phải màn hình
         da_mo_menu_go = False
-        for mo_ta in ['Cài đặt', 'Settings', 'Quản lý trang cá nhân', 'Tùy chọn khác', 'More options', 'Menu']:
+        for mo_ta in ['Tùy chọn khác', 'More options', 'Cài đặt', 'Settings', 'Quản lý trang cá nhân', 'Menu']:
             if self.d(descriptionContains=mo_ta).exists or self.d(textContains=mo_ta).exists:
                 if self.click_text_chua(mo_ta, mo_ta, 1, 0.4):
                     da_mo_menu_go = True
@@ -1828,28 +1841,39 @@ class FacebookUI:
                     break
 
         if not da_mo_menu_go:
-            # Tọa độ biểu tượng bánh răng ở góc trên bên phải màn hình danh sách tài khoản
+            # Quét tìm phần tử nút 3 chấm nằm ở góc trên bên phải (x > 80% chiều ngang, y từ 7% -> 20% chiều cao)
+            try:
+                for cls_name in ['android.widget.ImageView', 'android.widget.Button', 'android.view.ViewGroup']:
+                    for elem in self.d(className=cls_name):
+                        b = elem.info['bounds']
+                        cx = (b['left'] + b['right']) // 2
+                        cy = (b['top'] + b['bottom']) // 2
+                        if cx >= int(w * 0.82) and int(h * 0.07) <= cy <= int(h * 0.20):
+                            self.click_toa_do_an_toan(cx, cy)
+                            da_mo_menu_go = True
+                            time.sleep(1.2)
+                            break
+                    if da_mo_menu_go:
+                        break
+            except Exception:
+                pass
+
+        if not da_mo_menu_go:
+            # Tọa độ chuẩn của dấu 3 chấm (...) góc trên phải màn hình trang cá nhân ngoài
+            self.click_toa_do_an_toan(int(w * 0.925), int(h * 0.142))
+            time.sleep(1.2)
+
+        # Nếu bấm vị trí 3 chấm chưa lên chữ "Gỡ trang cá nhân", thử thêm tọa độ bánh răng phía trên
+        if not self.kiem_tra_text(['Gỡ trang cá nhân', 'Remove profile', 'Xóa trang cá nhân', 'Gỡ tài khoản'], 1, 0.4):
             self.click_toa_do_an_toan(int(w * 0.91), int(h * 0.082))
             time.sleep(1.2)
 
-        # 2. Nếu chưa thấy ngay nút "Gỡ trang cá nhân", nghĩa là đang ở danh sách chọn tài khoản cần gỡ
+        # 2. Nếu vẫn chưa thấy chữ "Gỡ trang cá nhân" (trường hợp màn hình danh sách nhiều tài khoản), chọn tài khoản đầu tiên
         if not self.kiem_tra_text(['Gỡ trang cá nhân', 'Remove profile', 'Xóa trang cá nhân', 'Gỡ tài khoản'], 1, 0.4):
-            self.log('👤 Chọn tài khoản đang lưu trên máy để gỡ...')
-            # Bấm vào dòng tài khoản đầu tiên ở giữa màn hình (tránh bấm trúng nút Tạo tài khoản mới ở dưới)
-            da_chon_acc = False
-            for elem in self.d(className='android.view.ViewGroup'):
-                try:
-                    b = elem.info['bounds']
-                    cy = (b['top'] + b['bottom']) // 2
-                    if int(h * 0.18) <= cy <= int(h * 0.42):
-                        self._click_phan_tu_an_toan(elem)
-                        da_chon_acc = True
-                        break
-                except Exception:
-                    pass
-            if not da_chon_acc:
+            if not self.kiem_tra_text(['Dùng trang cá nhân khác', 'Tiếp tục'], 1, 0.2):
+                self.log('👤 Chọn tài khoản đang lưu trên máy để gỡ...')
                 self.click_toa_do_an_toan(int(w * 0.50), int(h * 0.27))
-            time.sleep(1.2)
+                time.sleep(1.2)
 
         # 3. Bấm "Gỡ trang cá nhân" (Remove profile)
         if (
@@ -1859,15 +1883,17 @@ class FacebookUI:
             or self.click_text_chua('Gỡ tài khoản', 'Gỡ tài khoản', 1, 0.4)
         ):
             time.sleep(1.0)
-            # 4. Xác nhận bấm "Gỡ" (Remove) trên hộp thoại cảnh báo
-            self.log('✅ Xác nhận Gỡ (Remove) khỏi Blockstore...')
+            # 4. Xác nhận bấm "GỠ" / "Gỡ" (Remove) trên hộp thoại xác nhận
+            self.log('✅ Xác nhận Gỡ trang cá nhân khỏi thiết bị...')
             if not (
-                self.click_text('Gỡ', 'Gỡ', 2, 0.5)
-                or self.click_text('Remove', 'Remove', 2, 0.5)
+                self.click_text('GỠ', 'GỠ', 2, 0.5)
+                or self.click_text('Gỡ', 'Gỡ', 2, 0.5)
+                or self.click_text('REMOVE', 'REMOVE', 1, 0.4)
+                or self.click_text('Remove', 'Remove', 1, 0.4)
                 or self.click_text('Xóa', 'Xóa', 1, 0.4)
                 or self.click_text_chua('Gỡ', 'Gỡ', 1, 0.4, click_duoi=True)
             ):
-                self.click_toa_do_an_toan(int(w * 0.72), int(h * 0.56))
+                self.click_toa_do_an_toan(int(w * 0.74), int(h * 0.55))
             time.sleep(2.0)
             return True
 
@@ -1875,29 +1901,29 @@ class FacebookUI:
 
     def dang_xuat_va_go_trang_ca_nhan(self):
         """
-        Thực hiện trọn vẹn Phần 1 (3 bước):
-        Bước 1: Nếu đang ở màn hình 'Lưu thông tin đăng nhập?' -> bấm 'Lúc khác' để vào trang chủ.
-        Bước 2: Bấm Menu (3 gạch ngang) góc trên phải -> Cuộn xuống đáy -> Đăng xuất -> Chọn 'Không lưu' -> Xác nhận Đăng xuất.
-        Bước 3: Ra màn hình danh sách tài khoản -> Bấm bánh răng/3 chấm -> Chọn tài khoản -> Gỡ trang cá nhân -> Xác nhận Gỡ.
+        Thực hiện chuẩn luồng Đăng xuất & Gỡ tài khoản:
+        - Bước 1: Mở Menu (3 gạch ngang) -> Cuộn xuống dưới -> Bấm Đăng xuất.
+        - Bước 2: Hiện bảng 'Lưu thông tin đăng nhập?' -> Bấm 'LÚC KHÁC'
+                  -> Hiện bảng 'Đăng xuất khỏi tài khoản của bạn?' -> Bấm 'ĐĂNG XUẤT'.
+        - Bước 3: Ra màn hình chờ bên ngoài -> Bấm dấu 3 chấm (...) góc trên phải -> Gỡ trang cá nhân -> Xác nhận Gỡ.
         """
         w, h = self.d.window_size()
 
-        # --- BƯỚC 1: Vào bên trong tài khoản nếu đang kẹt ở bảng "Lưu thông tin đăng nhập?" ---
+        # Nếu đang hiện sẵn bảng "Lưu thông tin đăng nhập?" trên màn hình -> Bấm "LÚC KHÁC"
         self.bo_qua_luu_thong_tin_dang_nhap()
-        for nut_phu in ['Lúc khác', 'Not now', 'Bỏ qua', 'Skip', 'Đóng', 'Close']:
+        for nut_phu in ['LÚC KHÁC', 'Lúc khác', 'Not now', 'Bỏ qua', 'Skip', 'Đóng', 'Close']:
             if self.d(text=nut_phu).exists or self.d(description=nut_phu).exists:
                 self.click_text(nut_phu, nut_phu, 1, 0.4)
                 time.sleep(1.0)
 
-        # Kiểm tra xem đã ở ngoài màn hình danh sách tài khoản chưa
+        # Kiểm tra xem đã ở ngoài màn hình chờ (có nút Tạo tài khoản mới / Dùng trang cá nhân khác) chưa
         dang_o_ngoai = self.kiem_tra_text([
-            'Tạo tài khoản mới', 'Create new account', 'Dùng tài khoản khác',
-            'Use another account', 'Đăng nhập bằng tài khoản khác', 'Bắt đầu'
+            'Tạo tài khoản mới', 'Create new account', 'Dùng trang cá nhân khác',
+            'Dùng tài khoản khác', 'Use another account', 'Đăng nhập bằng tài khoản khác', 'Bắt đầu'
         ], 1, 0.4)
 
         if not dang_o_ngoai:
-            self.log('🚪 [Bước 2] Mở Menu (3 gạch ngang) để Đăng xuất không lưu...')
-            # Đưa về màn hình chính của Facebook nếu đang ở sâu trong màn hình 2FA
+            self.log('🚪 [Bước 1] Mở Menu (3 gạch ngang) -> Lướt xuống bấm Đăng xuất...')
             if not (self.d(descriptionContains='Menu').exists or self.d(text='Menu').exists):
                 self.chay_shell_nhanh('am start -n com.facebook.katana/com.facebook.katana.LoginActivity')
                 time.sleep(2.5)
@@ -1911,49 +1937,94 @@ class FacebookUI:
                 self.click_toa_do_an_toan(int(w * 0.91), int(h * 0.13))
             time.sleep(1.5)
 
-            # Cuộn xuống dưới cùng của Menu để tìm nút Đăng xuất
+            # Lướt xuống dưới cùng của Menu để tìm nút Đăng xuất
             for _ in range(3):
                 if self.kiem_tra_text(['Đăng xuất', 'Log out'], 1, 0.2):
                     break
                 self.vuot_toa_do_an_toan(int(w * 0.50), int(h * 0.82), int(w * 0.50), int(h * 0.18), 220)
                 time.sleep(0.6)
 
-            # Bấm nút Đăng xuất
-            if self.click_text('Đăng xuất', 'Đăng xuất', 2, 0.5) or self.click_text_chua('Đăng xuất', 'Đăng xuất', 2, 0.5, click_duoi=True) or self.click_text_chua('Log out', 'Log out', 1, 0.5, click_duoi=True):
+            # Bấm nút Đăng xuất ở dưới đáy Menu
+            if (
+                self.click_text('Đăng xuất', 'Đăng xuất', 2, 0.5)
+                or self.click_text_chua('Đăng xuất', 'Đăng xuất', 2, 0.5, click_duoi=True)
+                or self.click_text_chua('Log out', 'Log out', 1, 0.5, click_duoi=True)
+            ):
                 time.sleep(1.2)
 
-                # Nếu hiện bảng hỏi "Lưu thông tin đăng nhập?" trước khi đăng xuất -> Chọn "Không lưu" (Don't save)
-                if self.kiem_tra_text(['Lưu thông tin đăng nhập', 'Save your login info', 'Không lưu', "Don't save"], 2, 0.4):
-                    self.log('🚫 Chọn "Không lưu" thông tin đăng nhập khi Đăng xuất...')
-                    self.click_text('Không lưu', 'Không lưu', 2, 0.4) or self.click_text_chua('Không lưu', 'Không lưu', 1, 0.4) or self.click_text_chua("Don't save", "Don't save", 1, 0.4) or self.click_text('Lúc khác', 'Lúc khác', 1, 0.4)
-                    time.sleep(0.8)
+                # --- BƯỚC 2A: Bảng 1 "Lưu thông tin đăng nhập?" -> Bấm "LÚC KHÁC" ---
+                if self.kiem_tra_text([
+                    'Lưu thông tin đăng nhập',
+                    'khôi phục từ bản sao lưu',
+                    'LÚC KHÁC',
+                    'Lúc khác',
+                    'Không lưu'
+                ], 2, 0.4):
+                    self.log('🚫 [Bước 2A] Bảng "Lưu thông tin đăng nhập?" -> Bấm "LÚC KHÁC"...')
+                    if not (
+                        self.click_text('LÚC KHÁC', 'LÚC KHÁC', 2, 0.4)
+                        or self.click_text('Lúc khác', 'Lúc khác', 2, 0.4)
+                        or self.click_text_chua('LÚC KHÁC', 'LÚC KHÁC', 1, 0.4)
+                        or self.click_text_chua('Lúc khác', 'Lúc khác', 1, 0.4)
+                        or self.click_text('Không lưu', 'Không lưu', 1, 0.3)
+                        or self.click_text('NOT NOW', 'NOT NOW', 1, 0.3)
+                    ):
+                        # Tọa độ chuẩn nút LÚC KHÁC trên hộp thoại giữa màn hình
+                        self.click_toa_do_an_toan(int(w * 0.59), int(h * 0.578))
+                    time.sleep(1.0)
 
-                # Xác nhận bấm "Đăng xuất" (Log out) trên hộp thoại xác nhận
-                if self.kiem_tra_text(['Đăng xuất', 'Log out'], 2, 0.4):
-                    self.click_text('Đăng xuất', 'Xác nhận Đăng xuất', 2, 0.5) or self.click_text_chua('Đăng xuất', 'Xác nhận Đăng xuất', 1, 0.4, click_duoi=True) or self.click_text('Log out', 'Log out', 1, 0.4)
-                time.sleep(3.0)
+                # --- BƯỚC 2B: Bảng 2 "Đăng xuất khỏi tài khoản của bạn?" -> Bấm "ĐĂNG XUẤT" ---
+                if self.kiem_tra_text([
+                    'Đăng xuất khỏi tài khoản của bạn',
+                    'ĐĂNG XUẤT',
+                    'Đăng xuất',
+                    'Log out of your account',
+                    'LOG OUT'
+                ], 2, 0.4):
+                    self.log('🚪 [Bước 2B] Bảng "Đăng xuất khỏi tài khoản của bạn?" -> Bấm "ĐĂNG XUẤT"...')
+                    if not (
+                        self.click_text('ĐĂNG XUẤT', 'ĐĂNG XUẤT', 2, 0.4)
+                        or self.click_text('Đăng xuất', 'Đăng xuất', 2, 0.4)
+                        or self.click_text_chua('ĐĂNG XUẤT', 'ĐĂNG XUẤT', 1, 0.4, click_duoi=True)
+                        or self.click_text_chua('Đăng xuất', 'Đăng xuất', 1, 0.4, click_duoi=True)
+                        or self.click_text('LOG OUT', 'LOG OUT', 1, 0.4)
+                        or self.click_text('Log out', 'Log out', 1, 0.4)
+                    ):
+                        # Tọa độ chuẩn nút ĐĂNG XUẤT màu xanh bên phải hộp thoại
+                        self.click_toa_do_an_toan(int(w * 0.755), int(h * 0.528))
+                    time.sleep(3.0)
 
-        # --- BƯỚC 3: Gỡ vĩnh viễn trang cá nhân ở màn hình danh sách bên ngoài ---
+        # --- BƯỚC 3: Ra màn hình ngoài -> Bấm dấu 3 chấm (...) góc trên phải để Gỡ trang cá nhân ---
         self._go_trang_ca_nhan_ngoai_man_hinh_cho()
 
     def dam_bao_man_hinh_tao_tai_khoan_moi(self):
         """
         Kiểm tra ngay khi vào Facebook:
-        Nếu gặp màn hình 'Lưu thông tin đăng nhập?' hoặc kẹt tài khoản cũ ->
-        Thực hiện gỡ trang cá nhân -> Nhấn thanh điều hướng xóa tab đa nhiệm -> Xóa dữ liệu -> Mở lại FB như mới.
+        - Nếu ở màn hình sạch hoàn toàn (chỉ có Bắt đầu / Tạo tài khoản mới) -> Đi tiếp luôn.
+        - Nếu vẫn còn lưu trang cá nhân cũ (có nút 'Dùng trang cá nhân khác' hoặc đang ở trong acc cũ)
+          -> Thực hiện Đăng xuất (LÚC KHÁC -> ĐĂNG XUẤT) -> Bấm 3 chấm Gỡ trang cá nhân
+          -> Tắt tab đa nhiệm -> Xóa dữ liệu để vào lại app như mới (Không cần đổi lại IP).
         """
         for _ in range(5):
-            # Nếu đã ở màn hình chuẩn để tạo tài khoản mới thì thoát kiểm tra ngay
-            if self.kiem_tra_text(['Bắt đầu', 'Tạo tài khoản mới', 'Create new account', 'Tham gia Facebook', 'Bạn tên gì'], 1, 0.4):
-                if not self.kiem_tra_text(['Lưu thông tin đăng nhập', 'bản sao lưu trên đám mây', 'Dùng tài khoản khác'], 1, 0.2):
-                    return True
-            time.sleep(0.6)
+            # Nếu thấy dấu hiệu đang kẹt trang cá nhân cũ hoặc bảng hỏi lưu đăng nhập -> Xử lý gỡ ngay
+            if self.kiem_tra_text([
+                'Lưu thông tin đăng nhập',
+                'Dùng trang cá nhân khác',
+                'Dùng tài khoản khác',
+                'Bạn đang nghĩ gì'
+            ], 1, 0.2):
+                break
 
-        self.log('⚠️ Phát hiện màn hình "Lưu thông tin đăng nhập?" / Tài khoản cũ -> Tiến hành Gỡ & Xóa tab...')
-        # 1. Thực hiện thao tác Đăng xuất & Gỡ trang cá nhân
+            # Nếu màn hình đã sạch sẽ để tạo tài khoản mới
+            if self.kiem_tra_text(['Bắt đầu', 'Tạo tài khoản mới', 'Create new account', 'Tham gia Facebook', 'Bạn tên gì'], 1, 0.3):
+                return True
+            time.sleep(0.5)
+
+        self.log('⚠️ Phát hiện còn lưu trang cá nhân cũ trên máy -> Tiến hành Gỡ & Làm mới App...')
+        # 1. Thực hiện thao tác Đăng xuất (LÚC KHÁC -> ĐĂNG XUẤT) & Bấm 3 chấm Gỡ trang cá nhân
         self.dang_xuat_va_go_trang_ca_nhan()
 
-        # 2. Nhấn thanh điều hướng đóng tab đa nhiệm, xóa dữ liệu và mở lại FB mới tinh
+        # 2. Nhấn thanh điều hướng đóng tab đa nhiệm, xóa dữ liệu và mở lại FB như mới (giữ nguyên IP vừa đổi)
         self.xoa_tab_da_nhiem_va_lam_moi_fb()
         return True
 
@@ -2133,7 +2204,7 @@ class FacebookUI:
 
         try:
             self.bo_qua_luu_thong_tin_dang_nhap()
-            for nut_bo_qua in ['Bỏ qua', 'Skip', 'Lúc khác', 'Not Now', 'OK']:
+            for nut_bo_qua in ['Bỏ qua', 'Skip', 'LÚC KHÁC', 'Lúc khác', 'Not Now', 'OK']:
                 if self.d(text=nut_bo_qua).exists or self.d(description=nut_bo_qua).exists:
                     self.click_text(nut_bo_qua, nut_bo_qua, 1, 0.3)
                     time.sleep(0.4)
@@ -2257,8 +2328,8 @@ class FacebookUI:
         Xử lý chuỗi màn hình sau khi nhập Email / SĐT:
         - Mật khẩu -> Tiếp
         - Lưu thông tin đăng nhập? -> BẮT BUỘC BẤM 'LÚC KHÁC' (Không lưu đám mây)
-        - Tôi đồng ý -> Nhập OTP -> Bấm 'Lúc khác' nếu hỏi lại Lưu thông tin -> Up Avatar -> Bật 2FA
-        - Sau khi xong 2FA -> Chủ động Đăng xuất & Gỡ trang cá nhân khỏi thiết bị
+        - Tôi đồng ý -> Nhập OTP -> Bấm 'LÚC KHÁC' nếu hỏi lại Lưu thông tin -> Up Avatar -> Bật 2FA
+        - Sau khi xong 2FA -> Chủ động Đăng xuất (LÚC KHÁC -> ĐĂNG XUẤT) & Bấm 3 chấm gỡ trang cá nhân
         """
         mat_khau_fb = self.config['mat_khau_fb']
         da_nhap_otp = False
@@ -2266,7 +2337,7 @@ class FacebookUI:
         for _ in range(14):
             self.tat_quyen_khong_cho_phep()
 
-            # 1. Nếu hiện bảng "Lưu thông tin đăng nhập?" -> Bấm "Lúc khác"
+            # 1. Nếu hiện bảng "Lưu thông tin đăng nhập?" -> Bấm "LÚC KHÁC"
             if self.bo_qua_luu_thong_tin_dang_nhap():
                 continue
 
@@ -2343,7 +2414,7 @@ class FacebookUI:
             self.log('❌ Không tìm thấy màn hình nhập OTP!')
             return None
 
-        # Kiểm tra nếu ngay sau khi nhập OTP lại hiện bảng "Lưu thông tin đăng nhập?" -> Bấm "Lúc khác"
+        # Kiểm tra nếu ngay sau khi nhập OTP lại hiện bảng "Lưu thông tin đăng nhập?" -> Bấm "LÚC KHÁC"
         for _ in range(3):
             if self.bo_qua_luu_thong_tin_dang_nhap():
                 break
@@ -2362,8 +2433,8 @@ class FacebookUI:
             autosms_service=autosms_service
         )
 
-        # Chủ động Đăng xuất & Gỡ trang cá nhân ngay sau khi hoàn tất acc này
-        self.log('🧹 Đang Đăng xuất & Gỡ tài khoản vừa tạo khỏi thiết bị...')
+        # Chủ động Đăng xuất (LÚC KHÁC -> ĐĂNG XUẤT) & Bấm 3 chấm Gỡ trang cá nhân ngay sau khi xong acc này
+        self.log('🧹 Đang Đăng xuất & Gỡ trang cá nhân vừa tạo khỏi thiết bị...')
         self.dang_xuat_va_go_trang_ca_nhan()
 
         return (tai_khoan_lien_he, mat_khau_fb, two_fa_key)
@@ -2371,9 +2442,10 @@ class FacebookUI:
     def chay_dang_ky(self, used_email=None, mode="1", mail_service=None, imap_service=None, hotmail_service=None, autosms_service=None, used_phones=None, used_names=None):
         """
         Quy trình Đăng ký chuẩn:
-        Xóa sạch dữ liệu & Cloud Backup -> Mở FB -> Đảm bảo ở trang Bắt đầu/Tạo TK mới (Nếu kẹt acc cũ thì Gỡ + Xóa tab đa nhiệm)
+        Xóa sạch dữ liệu & Cloud Backup -> Đổi IP 4G (1 lần duy nhất đầu lượt) -> Mở FB
+        -> Đảm bảo ở trang Bắt đầu/Tạo TK mới (Nếu kẹt acc cũ thì Gỡ 3 chấm + Xóa tab đa nhiệm + Không đổi lại IP)
         -> KHÔNG CHO PHÉP -> Họ & Tên -> Ngày sinh (3 cột) -> Giới tính -> Email / SĐT
-        -> Mật khẩu & OTP (Bấm Lúc khác khi hỏi lưu) -> Thêm ảnh đại diện từ PC -> Bật 2FA -> Gỡ trang cá nhân
+        -> Mật khẩu & OTP (Bấm LÚC KHÁC khi hỏi lưu) -> Thêm ảnh đại diện từ PC -> Bật 2FA -> Đăng xuất & Gỡ trang cá nhân
         """
         self.log('🧹 Xóa dữ liệu ngầm FB, tắt Cloud Backup & làm mới thông số máy...')
         xoa_du_lieu_fb(self.serial)
