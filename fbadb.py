@@ -1328,8 +1328,12 @@ class FacebookUI:
         return False
 
     def tat_quyen_khong_cho_phep(self):
-        """Tự động bấm KHÔNG CHO PHÉP khi hiện bảng hỏi quyền danh bạ / cuộc gọi"""
+        """Tự động bấm Lúc khác / KHÔNG CHO PHÉP khi hiện trang hỏi quyền danh bạ hoặc cuộc gọi"""
         cac_nut_tu_choi = [
+            'Lúc khác',
+            'LÚC KHÁC',
+            'Not now',
+            'NOT NOW',
             'KHÔNG CHO PHÉP',
             'Không cho phép',
             'TỪ CHỐI',
@@ -1343,8 +1347,16 @@ class FacebookUI:
                 self._click_phan_tu_an_toan(self.d(text=nut)[0])
                 time.sleep(0.5)
                 return True
+            if self.d(description=nut).exists:
+                self._click_phan_tu_an_toan(self.d(description=nut)[0])
+                time.sleep(0.5)
+                return True
             if self.d(textContains=nut).exists:
                 self._click_phan_tu_an_toan(self.d(textContains=nut)[-1])
+                time.sleep(0.5)
+                return True
+            if self.d(descriptionContains=nut).exists:
+                self._click_phan_tu_an_toan(self.d(descriptionContains=nut)[-1])
                 time.sleep(0.5)
                 return True
         return False
@@ -2067,28 +2079,35 @@ class FacebookUI:
     def dam_bao_man_hinh_tao_tai_khoan_moi(self):
         """
         Kiểm tra ngay khi vào Facebook:
-        - Nếu ở màn hình sạch hoàn toàn (chỉ có Bắt đầu / Tạo tài khoản mới) -> Đi tiếp luôn.
-        - Nếu còn nick cũ -> Thực hiện Đăng xuất + Gỡ trang cá nhân hoàn tất rồi mới làm mới App.
+        - Nếu màn hình đã có nút 'Tạo tài khoản mới' (như Ảnh 1 có danh sách nick cũ kèm nút Tạo tài khoản mới ở dưới)
+          hoặc 'Tham gia Facebook' / 'Bắt đầu' -> Đi tiếp luôn để bấm Tạo tài khoản mới.
+        - Chỉ khi bị kẹt hẳn bên trong trang chủ nick cũ ('Bạn đang nghĩ gì') mới cần Đăng xuất.
         """
         for _ in range(5):
+            self.bo_qua_luu_thong_tin_dang_nhap()
+
             if self.kiem_tra_text([
-                'Lưu thông tin đăng nhập',
-                'Dùng trang cá nhân khác',
-                'Dùng tài khoản khác',
+                'Tạo tài khoản mới',
+                'Create new account',
+                'Tham gia Facebook',
+                'Bắt đầu',
+                'Bạn tên gì'
+            ], 1, 0.3):
+                return True
+
+            if self.kiem_tra_text([
                 'Bạn đang nghĩ gì',
                 'Gỡ trang cá nhân khỏi thiết bị này'
             ], 1, 0.3):
                 break
 
-            if self.kiem_tra_text(['Bắt đầu', 'Tạo tài khoản mới', 'Create new account', 'Tham gia Facebook', 'Bạn tên gì'], 1, 0.3):
-                return True
             time.sleep(0.5)
 
-        self.log('⚠️ Phát hiện còn nick cũ trên máy -> Tiến hành Đăng xuất & Gỡ trang cá nhân...')
-        self.dang_xuat_va_go_trang_ca_nhan(thoat_tab_truoc=False)
+        if self.kiem_tra_text(['Tạo tài khoản mới', 'Create new account', 'Tham gia Facebook', 'Bắt đầu'], 1, 0.2):
+            return True
 
-        if not self.kiem_tra_text(['Bắt đầu', 'Tạo tài khoản mới', 'Create new account'], 2, 0.5):
-            self.xoa_tab_da_nhiem_va_lam_moi_fb()
+        self.log('⚠️ Phát hiện đang kẹt trong nick cũ -> Tiến hành Đăng xuất...')
+        self.dang_xuat_va_go_trang_ca_nhan(thoat_tab_truoc=False)
         return True
 
     def lay_otp_theo_che_do(self, mode, used_email, mail_service=None, imap_service=None, hotmail_service=None, uid_moc=0, force_8_digits=False):
@@ -2542,12 +2561,15 @@ class FacebookUI:
 
     def chay_dang_ky(self, used_email=None, mode="1", mail_service=None, imap_service=None, hotmail_service=None, autosms_service=None, used_phones=None, used_names=None):
         """
-        Quy trình Đăng ký chuẩn sạch như máy mới:
+        Quy trình Đăng ký chuẩn theo đúng 2 ảnh giao diện mới:
         Xóa sạch dữ liệu FB & Autofill -> Đổi Android ID -> Đổi IP 4G -> Mở FB
-        -> Đảm bảo ở trang Tạo TK mới (Nếu kẹt nick cũ thì Đăng xuất + Gỡ hoàn toàn)
-        -> KHÔNG CHO PHÉP -> Họ & Tên -> Ngày sinh (3 cột) -> Giới tính -> Email / SĐT
+        -> Ảnh 1: Màn hình danh sách tài khoản -> Bấm 'Tạo tài khoản mới' ở dưới cùng
+        -> Ảnh 2: Màn hình 'Tham gia Facebook' -> Bấm nút xanh 'Tạo tài khoản mới'
+        -> Trang hỏi quyền -> Bấm 'Lúc khác' (hoặc 'KHÔNG CHO PHÉP')
+        -> Nhập Họ & Tên -> Ngày sinh (3 cột) -> Giới tính -> Email / SĐT
         -> Mật khẩu & OTP -> Thêm ảnh đại diện từ PC -> Bật 2FA -> Thoát tab vào lại FB -> Đăng xuất & Gỡ trang cá nhân
         """
+        w, h = self.d.window_size()
         self.log('🧹 Làm sạch dữ liệu FB, tắt Autofill & đổi thông số phần cứng...')
         xoa_du_lieu_fb(self.serial)
         lam_moi_thong_so_thiet_bi_adb(self.serial, self.config)
@@ -2564,29 +2586,66 @@ class FacebookUI:
         self.dong_goi_y_google()
         self.dam_bao_man_hinh_tao_tai_khoan_moi()
 
-        self.log('🔵 Bấm nút Bắt đầu / Tạo tài khoản mới...')
-        da_bam_bat_dau = (
-            self.click_text('Bắt đầu', 'Bắt đầu', 3, 0.8)
-            or self.click_text_chua('Bắt đầu', 'Bắt đầu', 2, 0.6)
-            or self.click_text_chua('Tạo tài khoản mới', 'Tạo tài khoản mới', 2, 0.6)
-        )
-        if not da_bam_bat_dau:
-            self.dong_goi_y_google()
-            self.click_text_chua('Bắt đầu', 'Bắt đầu', 3, 0.8) or self.click_text_chua('Tạo tài khoản mới', 'Tạo TK mới', 2, 0.6)
+        # ==================== BƯỚC 1 (ẢNH 1): BẤM "TẠO TÀI KHOẢN MỚI" Ở MÀN HÌNH ĐẦU TIÊN ====================
+        if not self.kiem_tra_text(['Tham gia Facebook', 'Tìm tài khoản của tôi', 'Bạn tên gì'], 1, 0.2):
+            self.log('🔵 [Ảnh 1] Bấm nút "Tạo tài khoản mới" ở dưới màn hình...')
+            da_bam_anh_1 = (
+                self.click_text('Tạo tài khoản mới', 'Tạo tài khoản mới', 2, 0.6)
+                or self.click_text_chua('Tạo tài khoản mới', 'Tạo tài khoản mới', 2, 0.6, click_duoi=True)
+                or self.click_text('Create new account', 'Create new account', 1, 0.5)
+                or self.click_text('Bắt đầu', 'Bắt đầu', 1, 0.5)
+            )
+            if not da_bam_anh_1:
+                # Fallback tọa độ nút "Tạo tài khoản mới" dưới đáy ở Ảnh 1
+                self.click_toa_do_an_toan(int(w * 0.50), int(h * 0.84))
 
-        nghi_ngau_nhien(self.config['delay_click_tao_tk_lan1'])
+            nghi_ngau_nhien(self.config['delay_click_tao_tk_lan1'])
 
-        if self.d(text='Bắt đầu').exists or self.d(description='Bắt đầu').exists:
-            self.click_text('Bắt đầu', 'Bắt đầu', 2, 0.5)
-            time.sleep(1.0)
-
-        self.log('❌ Kiểm tra & bấm KHÔNG CHO PHÉP quyền danh bạ...')
+        # ==================== BƯỚC 2 (ẢNH 2): MÀN HÌNH "THAM GIA FACEBOOK" -> BẤM NÚT XANH "TẠO TÀI KHOẢN MỚI" ====================
         for _ in range(3):
-            if self.tat_quyen_khong_cho_phep():
+            if self.kiem_tra_text(['Bạn tên gì', 'Họ', 'Tên'], 1, 0.2):
+                break
+            if self.kiem_tra_text(['Tham gia Facebook', 'Tìm tài khoản của tôi', 'Tạo tài khoản mới', 'Bắt đầu'], 1, 0.3):
+                self.log('🔵 [Ảnh 2] Màn hình Tham gia Facebook -> Bấm nút xanh "Tạo tài khoản mới"...')
+                if not (
+                    self.click_text('Tạo tài khoản mới', 'Tạo tài khoản mới (Ảnh 2)', 2, 0.5)
+                    or self.click_text_chua('Tạo tài khoản mới', 'Tạo tài khoản mới (Ảnh 2)', 2, 0.5)
+                    or self.click_text('Bắt đầu', 'Bắt đầu', 2, 0.5)
+                    or self.click_text_chua('Bắt đầu', 'Bắt đầu', 1, 0.5)
+                ):
+                    # Fallback tọa độ nút màu xanh "Tạo tài khoản mới" ở giữa Ảnh 2
+                    self.click_toa_do_an_toan(int(w * 0.50), int(h * 0.46))
+                nghi_ngau_nhien(self.config.get('delay_click_tao_tk_lan2', 1.0))
                 break
             time.sleep(0.4)
+
+        # ==================== BƯỚC 3: TRANG HỎI QUYỀN -> BẤM "LÚC KHÁC" / "KHÔNG CHO PHÉP" ====================
+        self.log('🚫 Kiểm tra trang hỏi quyền -> Bấm "Lúc khác" / "KHÔNG CHO PHÉP"...')
+        for _ in range(5):
+            if self.kiem_tra_text(['Bạn tên gì'], 1, 0.2):
+                # Ngay cả khi đã thấy "Bạn tên gì", vẫn kiểm tra xem có popup đè lên không
+                self.tat_quyen_khong_cho_phep()
+                break
+
+            da_xu_ly_quyen = False
+            for nut_quyen in ['Lúc khác', 'LÚC KHÁC', 'Not now', 'NOT NOW', 'Bỏ qua', 'Skip']:
+                if self.d(text=nut_quyen).exists or self.d(description=nut_quyen).exists or self.d(textContains=nut_quyen).exists:
+                    self.log(f'🚫 Bấm "{nut_quyen}" trên trang hỏi quyền...')
+                    self.click_text(nut_quyen, nut_quyen, 1, 0.4) or self.click_text_chua(nut_quyen, nut_quyen, 1, 0.4, click_duoi=True)
+                    da_xu_ly_quyen = True
+                    time.sleep(0.8)
+                    break
+
+            if self.tat_quyen_khong_cho_phep():
+                da_xu_ly_quyen = True
+                time.sleep(0.6)
+
+            if not da_xu_ly_quyen:
+                time.sleep(0.4)
+
         nghi_ngau_nhien(self.config['delay_chon_khong_cho_phep_lan2'])
 
+        # ==================== BƯỚC 4: NHẬP HỌ TÊN & TẠO TÀI KHOẢN NHƯ BÌNH THƯỜNG ====================
         self.dong_goi_y_google()
         ho, ten = self.tao_ho_ten(used_names)
         self.log(f'📝 Nhập Họ: {ho} | Tên: {ten}')
