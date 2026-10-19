@@ -160,6 +160,7 @@ CONFIG_GMAIL_FILE = "config_gmail.json"
 GOM_HOTMAIL_FILE = 'Gom_Hotmail_Dongvan.txt'
 FB_ACCOUNT_FILE = 'FB_NhaTrong.txt'
 TELE_FILE = 'Token-ID-Tele.txt'
+DEFAULT_AVATAR_DIR = os.path.join(os.getcwd(), 'avatars')
 
 # CẤU HÌNH THỜI GIAN & ANTI-CHECKPOINT TỐI ƯU NHẤT
 DEFAULT_CONFIG = {
@@ -1083,14 +1084,19 @@ def doi_ip_che_do_may_bay_adb(serial=None, device_name="Device", config=None):
 
 
 def cap_quyen_bo_nho_fb(serial=None):
+    """Cấp sẵn quyền bộ nhớ và Media qua ADB + AppOps để hỗ trợ mở kho ảnh nhanh"""
     permissions = [
         'android.permission.READ_EXTERNAL_STORAGE',
         'android.permission.WRITE_EXTERNAL_STORAGE',
         'android.permission.READ_MEDIA_IMAGES',
+        'android.permission.READ_MEDIA_VISUAL_USER_SELECTED',
         'android.permission.CAMERA'
     ]
     for perm in permissions:
         chay_lenh_adb(f'shell pm grant com.facebook.katana {perm}', serial)
+
+    for op in ['READ_EXTERNAL_STORAGE', 'WRITE_EXTERNAL_STORAGE', 'READ_MEDIA_IMAGES', 'MANAGE_EXTERNAL_STORAGE']:
+        chay_lenh_adb(f'shell cmd appops set com.facebook.katana {op} allow', serial)
 
 
 def khoa_xoay_man_hinh(serial=None):
@@ -1330,7 +1336,6 @@ class FacebookUI:
             return phone
 
     def _dang_hien_bang_chon_ngay(self):
-        """Kiểm tra bảng popup 'Chọn ngày' (có 3 cột NumberPicker hoặc nút HỦY / CHỌN) đã hiện lên chưa"""
         return (
             self.d(text='Chọn ngày').exists
             or self.d(text='CHỌN').exists
@@ -1340,17 +1345,10 @@ class FacebookUI:
         )
 
     def _lay_toa_do_vung_to_do_ngay_sinh(self):
-        """
-        Tính chính xác tọa độ (x, y) của vùng tô đỏ bên phải trong ô 'Ngày sinh (0 tuổi)'
-        trên màn hình 'Ngày sinh của bạn là khi nào?':
-        - Tránh tuyệt đối việc bắt nhầm tiêu đề 'Ngày sinh của bạn là khi nào?' ở trên đầu.
-        - Bấm chuẩn vào vùng trống bên phải trong khung (x = 65% chiều ngang màn hình).
-        """
         w, h = self.d.window_size()
         x_do = int(w * 0.65)
         y_do = None
 
-        # Ưu tiên 1: Tìm phần tử chứa chữ 'Ngày sinh (' hoặc 'tuổi)' hoặc 'tháng' nằm ở vùng giữa (0.22*h -> 0.42*h)
         for dau_hieu in ['Ngày sinh (', 'tuổi)', 'tháng', '2026', '2025']:
             for selector in [self.d(textContains=dau_hieu), self.d(descriptionContains=dau_hieu)]:
                 try:
@@ -1368,7 +1366,6 @@ class FacebookUI:
             if y_do:
                 break
 
-        # Ưu tiên 2: Tính từ mép trên của nút 'Tiếp' màu xanh dịch lên đúng tâm ô Ngày sinh
         if not y_do:
             for sel_tiep in [self.d(text='Tiếp'), self.d(description='Tiếp'), self.d(textContains='Tiếp')]:
                 try:
@@ -1380,20 +1377,14 @@ class FacebookUI:
                 except Exception:
                     pass
 
-        # Ưu tiên 3: Tọa độ tỷ lệ vàng khớp với ảnh màn hình M2007J3SG (x = 65%, y = 30%)
         if not y_do:
             y_do = int(h * 0.30)
 
         return x_do, y_do
 
     def mo_bang_chon_ngay(self):
-        """
-        Đợi màn hình 'Ngày sinh của bạn là khi nào?' tải xong, sau đó bấm thẳng vào
-        vùng tô đỏ bên phải trong ô Ngày sinh cho đến khi bảng 'Chọn ngày' (3 cột) hiện ra.
-        """
         w, h = self.d.window_size()
 
-        # Đợi tối đa 4 giây để màn hình Ngày sinh hiển thị hoàn toàn sau bước Họ Tên
         for _ in range(8):
             if self._dang_hien_bang_chon_ngay():
                 return True
@@ -1406,7 +1397,6 @@ class FacebookUI:
                 return True
 
             x_do, y_do = self._lay_toa_do_vung_to_do_ngay_sinh()
-            # Dịch nhẹ điểm bấm trong vùng tô đỏ (từ 63% đến 68% chiều ngang) nếu lần trước chưa ăn
             x_tap = x_do if lan_bam % 2 == 0 else int(w * 0.68)
             self.log(f'📅 Bấm vào vùng tô đỏ ô Ngày sinh ({x_tap}, {y_do}) để mở bảng 3 cột...')
             self.click_toa_do_an_toan(x_tap, y_do)
@@ -1418,11 +1408,9 @@ class FacebookUI:
         return self._dang_hien_bang_chon_ngay()
 
     def _lay_nam_hien_tai_trong_bang_3_cot(self):
-        """Đọc số năm đang được chọn ở cột thứ 3 (bên phải) của bảng 'Chọn ngày'"""
         try:
             pickers = self.d(className='android.widget.NumberPicker')
             if pickers.count >= 3:
-                # Sắp xếp 3 cột theo tọa độ ngang từ Trái -> Phải, cột Năm là cột cuối cùng (index 2)
                 ds_picker = []
                 for i in range(pickers.count):
                     b = pickers[i].info['bounds']
@@ -1454,10 +1442,6 @@ class FacebookUI:
         return None
 
     def _kiem_tra_tuoi_hop_le_ngoai_man_hinh(self):
-        """
-        Kiểm tra trên màn hình 'Ngày sinh của bạn là khi nào?' sau khi bấm CHỌN
-        xem tuổi đã >= 18 tuổi chưa (ví dụ: 'Ngày sinh (24 tuổi)') và năm không còn là 2025/2026.
-        """
         try:
             xml_dump = self.d.dump_hierarchy()
             match_tuoi = re.search(r'\((\d+)\s*tuổi\)', xml_dump, re.IGNORECASE)
@@ -1465,7 +1449,6 @@ class FacebookUI:
                 so_tuoi = int(match_tuoi.group(1))
                 return so_tuoi >= 18
 
-            # Nếu giao diện chỉ hiện năm dạng '18 tháng 10, 1999'
             match_nam = re.findall(r'\b(19\d\d|20\d\d)\b', xml_dump)
             for nam_str in match_nam:
                 nam_val = int(nam_str)
@@ -1478,28 +1461,15 @@ class FacebookUI:
         return False
 
     def vuot_chon_ngay_thang_nam_sinh(self):
-        """
-        Xử lý chuẩn theo 2 ảnh bạn gửi:
-        1. Bấm đúng vùng tô đỏ bên phải trong ô 'Ngày sinh (0 tuổi)' để hiện bảng 'Chọn ngày' 3 cột.
-        2. Xác định chính xác tọa độ 3 cột:
-           - Cột 1 (Trái - Ngày: 17 / 18 / 19)
-           - Cột 2 (Giữa - Tháng: thg 9 / thg 10 / thg 11)
-           - Cột 3 (Phải - Năm: 2025 / 2026 / 2027)
-        3. Vuốt chọn Ngày (Cột 1), vuốt chọn Tháng (Cột 2), và kéo Cột 3 (Năm) từ trên xuống dưới
-           cho đến khi năm lùi về khoảng 1994 - 2005 (trên 18 tuổi).
-        4. Bấm nút 'CHỌN', kiểm tra tuổi >= 18 rồi bấm nút 'Tiếp'.
-        """
         w, h = self.d.window_size()
 
         for lan_thu in range(4):
-            # Bước 1: Mở bảng 'Chọn ngày' bằng cách bấm vào chỗ tô đỏ
             if not self.mo_bang_chon_ngay():
                 self.log('⚠️ Chưa hiện bảng Chọn ngày, bấm lại vào vùng tô đỏ...')
                 x_do, y_do = self._lay_toa_do_vung_to_do_ngay_sinh()
                 self.click_toa_do_an_toan(x_do, y_do)
                 time.sleep(1.2)
 
-            # Bước 2: Lấy tọa độ chuẩn của 3 cột Ngày (Trái) - Tháng (Giữa) - Năm (Phải)
             x_day = int(w * 0.295)
             x_month = int(w * 0.500)
             x_year = int(w * 0.705)
@@ -1521,7 +1491,6 @@ class FacebookUI:
                 except Exception:
                     pass
 
-            # Bước 3: Vuốt cột 1 (Ngày) và cột 2 (Tháng) để chọn ngày tháng tự nhiên
             self.log('📅 Đang vuốt chọn Cột 1 (Ngày) & Cột 2 (Tháng)...')
             for _ in range(random.randint(2, 4)):
                 if random.choice([True, False]):
@@ -1537,11 +1506,9 @@ class FacebookUI:
                     self.vuot_toa_do_an_toan(x_month, y_bot, x_month, y_top, 180)
                 time.sleep(0.25)
 
-            # Bước 4: Vuốt cột 3 (Năm): Số 2025 nằm ở trên số 2026 -> Kéo từ TRÊN xuống DƯỚI (y_top -> y_bot)
             nam_muc_tieu = random.randint(1994, 2004)
             self.log(f'📅 Đang cuộn Cột 3 (Năm) lùi về khoảng {nam_muc_tieu}...')
             for nhip in range(14):
-                # Kéo dứt khoát từ mép trên xuống mép dưới của cột Năm để bánh xe cuộn nhanh nhiều năm
                 self.vuot_toa_do_an_toan(x_year, y_top, x_year, y_bot, 130)
                 time.sleep(0.28)
                 if nhip >= 4:
@@ -1550,29 +1517,197 @@ class FacebookUI:
                         self.log(f'✅ Đã cuộn Cột 3 tới năm: {nam_hien_tai}')
                         break
 
-            # Bước 5: Bấm nút 'CHỌN' ở góc dưới bên phải bảng Chọn ngày
             time.sleep(0.5)
             self.log('📅 Bấm nút CHỌN trên bảng Chọn ngày')
             if not (self.click_text('CHỌN', 'CHỌN', 2, 0.5) or self.click_text('OK', 'OK', 1, 0.4)):
                 self.click_toa_do_an_toan(int(w * 0.72), int(h * 0.633))
             time.sleep(1.0)
 
-            # Kiểm tra tuổi hiển thị ngoài ô Ngày sinh đã >= 18 tuổi chưa
             if self._kiem_tra_tuoi_hop_le_ngoai_man_hinh():
                 self.log('✅ Ngày tháng năm sinh đã hợp lệ (>= 18 tuổi)!')
                 break
             self.log('⚠️ Năm sinh chưa lùi đủ 18 tuổi, mở lại bảng Chọn ngày để cuộn thêm...')
 
-        # Bước 6: Bấm nút 'Tiếp' màu xanh dưới ô Ngày sinh
         self.log('⏩ Bấm nút Tiếp (sau khi chọn xong Ngày tháng năm sinh)')
         if not (self.click_text('Tiếp', 'Tiếp', 3, 0.8) or self.click_text_chua('Tiếp', 'Tiếp', 2, 0.6)):
             self.click_toa_do_an_toan(int(w * 0.50), int(h * 0.388))
         nghi_ngau_nhien(self.config.get('delay_click_tiep_lan2', 1.0))
 
-        # Nếu hiện thông báo xác nhận tuổi thì bấm OK / Xác nhận
         if self.d(text='OK').exists or self.d(text='Xác nhận').exists:
             self.click_text('OK', 'OK', 1, 0.4) or self.click_text('Xác nhận', 'Xác nhận', 1, 0.4)
             time.sleep(0.8)
+
+    def day_anh_qua_adb(self):
+        """
+        Lấy ngẫu nhiên 1 ảnh từ thư mục trên máy tính (PC), đẩy sang điện thoại qua ADB,
+        cập nhật thời gian thực (touch) và quét MediaScanner để bức ảnh từ PC luôn nằm ở
+        Ô ĐẦU TIÊN (góc trên bên trái, Hàng 1 - Cột 1) trong màn hình 'Thư viện' của điện thoại.
+        """
+        folder_pc = self.avatar_folder if (self.avatar_folder and os.path.isdir(self.avatar_folder)) else DEFAULT_AVATAR_DIR
+        if not os.path.isdir(folder_pc):
+            try:
+                os.makedirs(folder_pc, exist_ok=True)
+            except Exception:
+                pass
+            self.log(f'⚠️ Chưa có thư mục ảnh trên PC: {folder_pc}')
+            return None
+
+        images = [f for f in os.listdir(folder_pc) if f.lower().endswith(('.png', '.jpg', '.jpeg', '.webp'))]
+        if not images:
+            self.log(f'⚠️ Thư mục "{folder_pc}" trên máy tính đang trống! Hãy bỏ ảnh .jpg/.png vào đó.')
+            return None
+
+        chosen_img = random.choice(images)
+        local_path = os.path.abspath(os.path.join(folder_pc, chosen_img))
+        ext = os.path.splitext(chosen_img)[1].lower() or '.jpg'
+        remote_filename = f"IMG_{int(time.time() * 1000)}{ext}"
+        remote_path_dcim = f"/sdcard/DCIM/Camera/{remote_filename}"
+        remote_path_pic = f"/sdcard/Pictures/{remote_filename}"
+
+        try:
+            self.log(f'💻 Chọn ảnh từ PC: {chosen_img} -> Đang bắn sang điện thoại...')
+            cap_quyen_bo_nho_fb(self.serial)
+            chay_lenh_adb('shell mkdir -p /sdcard/DCIM/Camera /sdcard/Pictures', self.serial)
+            chay_lenh_adb('shell rm -f /sdcard/DCIM/Camera/IMG_*.* /sdcard/Pictures/IMG_*.*', self.serial)
+
+            for r_path in [remote_path_dcim, remote_path_pic]:
+                if self.serial:
+                    subprocess.run(f'adb -s {self.serial} push "{local_path}" "{r_path}"', shell=True, capture_output=True)
+                else:
+                    subprocess.run(f'adb push "{local_path}" "{r_path}"', shell=True, capture_output=True)
+                # Cập nhật timestamp của ảnh thành giây hiện tại để nổi lên Ô ĐẦU TIÊN của Thư viện
+                chay_lenh_adb(f'shell touch "{r_path}"', self.serial)
+                chay_lenh_adb(
+                    f'shell am broadcast -a android.intent.action.MEDIA_SCANNER_SCAN_FILE -d "file://{r_path}"',
+                    self.serial
+                )
+
+            time.sleep(1.5)
+            return [remote_path_dcim, remote_path_pic]
+        except KeyboardInterrupt:
+            raise KeyboardInterrupt
+        except Exception:
+            return None
+
+    def up_avatar_fb(self):
+        """
+        Xử lý chuẩn 5 màn hình Thêm ảnh đại diện ngay sau bước OTP:
+        1. Màn hình 'Thêm ảnh đại diện' -> Đẩy ảnh từ PC sang máy -> Bấm nút xanh 'Thêm ảnh'
+        2. Màn hình 'Cho phép truy cập vào thư viện ảnh' -> Bấm nút xanh 'Cho phép truy cập'
+        3. Popup 'Cho phép Facebook sử dụng bộ nhớ điện thoại?' -> Bấm 'Cho phép'
+        4. Popup Android 'Cho phép Facebook truy cập vào ảnh và nội dung nghe nhìn trên thiết bị?' -> Bấm 'CHO PHÉP'
+        5. Màn hình 'Thư viện' -> Bấm vào ô ảnh đầu tiên góc trên bên trái (ảnh vừa đẩy từ PC) -> Bấm Lưu / Xong
+        """
+        remote_paths = self.day_anh_qua_adb()
+        if not remote_paths:
+            # Nếu trên PC chưa bỏ ảnh vào thư mục thì bấm Bỏ qua để tiếp tục sang bước bật 2FA
+            if self.d(text='Bỏ qua').exists or self.d(description='Bỏ qua').exists:
+                self.click_text('Bỏ qua', 'Bỏ qua', 1, 0.5)
+            return False
+
+        w, h = self.d.window_size()
+        try:
+            # Đợi màn hình 'Thêm ảnh đại diện' xuất hiện sau khi nhập OTP
+            for _ in range(6):
+                if self.kiem_tra_text(['Thêm ảnh đại diện', 'Thêm ảnh', 'Add profile picture', 'Add picture'], 1, 0.3):
+                    break
+                time.sleep(0.5)
+
+            # BƯỚC 1 (Ảnh 1): Nhấn nút màu xanh 'Thêm ảnh' ở dưới màn hình
+            self.log('🖼️ [Bước 1/5] Bấm nút "Thêm ảnh"...')
+            if not (self.click_text('Thêm ảnh', 'Thêm ảnh', 2, 0.5) or self.click_text_chua('Thêm ảnh', 'Thêm ảnh', 2, 0.5, click_duoi=True)):
+                self.click_toa_do_an_toan(int(w * 0.50), int(h * 0.82))
+            time.sleep(1.5)
+
+            # BƯỚC 2, 3, 4 (Ảnh 2, 3, 4): Vòng lặp tự động bấm toàn bộ các lớp hỏi quyền cho đến khi vào 'Thư viện'
+            for _ in range(8):
+                # Nếu đã vào màn hình 'Thư viện' (Ảnh 5) thì thoát vòng lặp cấp quyền
+                if self.d(text='Thư viện').exists or self.d(description='Thư viện').exists or self.d(text='Gallery').exists:
+                    break
+
+                # Nếu hiện menu phụ 'Chọn từ thư viện'
+                if self.d(textContains='Chọn từ thư viện').exists or self.d(descriptionContains='Chọn từ thư viện').exists:
+                    self.click_text_chua('Chọn từ thư viện', 'Chọn từ thư viện', 1, 0.4)
+                    time.sleep(1.0)
+                    continue
+
+                # Ảnh 2: Màn hình 'Cho phép truy cập vào thư viện ảnh' -> Bấm nút xanh 'Cho phép truy cập'
+                if self.d(text='Cho phép truy cập').exists or self.d(description='Cho phép truy cập').exists or self.d(textContains='truy cập vào thư viện ảnh').exists:
+                    self.log('🔓 [Bước 2/5] Bấm nút "Cho phép truy cập"...')
+                    if not (self.click_text('Cho phép truy cập', 'Cho phép truy cập', 2, 0.4) or self.click_text_chua('Cho phép truy cập', 'Cho phép truy cập', 1, 0.4)):
+                        self.click_toa_do_an_toan(int(w * 0.46), int(h * 0.59))
+                    time.sleep(1.2)
+                    continue
+
+                # Ảnh 3: Popup 'Cho phép Facebook sử dụng bộ nhớ điện thoại?' -> Bấm chữ 'Cho phép'
+                if self.d(textContains='sử dụng bộ nhớ điện thoại').exists or self.d(text='Cho phép').exists:
+                    self.log('🔓 [Bước 3/5] Bấm "Cho phép" (sử dụng bộ nhớ điện thoại)...')
+                    if not self.click_text('Cho phép', 'Cho phép', 2, 0.4):
+                        self.click_toa_do_an_toan(int(w * 0.78), int(h * 0.56))
+                    time.sleep(1.2)
+                    continue
+
+                # Ảnh 4: Popup hệ thống 'Cho phép Facebook truy cập vào ảnh và nội dung nghe nhìn trên thiết bị?' -> Bấm 'CHO PHÉP'
+                for nut_he_thong in ['CHO PHÉP', 'Cho phép tất cả', 'Allow all', 'ALLOW', 'Allow', 'Trong khi dùng ứng dụng']:
+                    if self.d(text=nut_he_thong).exists or self.d(textContains=nut_he_thong).exists:
+                        self.log(f'🔓 [Bước 4/5] Bấm "{nut_he_thong}" (quyền ảnh hệ thống)...')
+                        if not (self.click_text(nut_he_thong, nut_he_thong, 1, 0.4) or self.click_text_chua(nut_he_thong, nut_he_thong, 1, 0.4)):
+                            self.click_toa_do_an_toan(int(w * 0.50), int(h * 0.53))
+                        time.sleep(1.2)
+                        break
+
+                time.sleep(0.5)
+
+            # Quét lại MediaScanner thêm 1 nhịp ngay khi vừa cấp quyền xong để lưới 'Thư viện' cập nhật ảnh mới nhất từ PC
+            for r_path in remote_paths:
+                chay_lenh_adb(
+                    f'shell am broadcast -a android.intent.action.MEDIA_SCANNER_SCAN_FILE -d "file://{r_path}"',
+                    self.serial
+                )
+            time.sleep(1.5)
+
+            # BƯỚC 5 (Ảnh 5): Đang ở màn hình 'Thư viện' -> Bấm vào ô ảnh đầu tiên góc trên bên trái (Hàng 1 - Cột 1)
+            self.log('🖼️ [Bước 5/5] Đã vào "Thư viện" -> Chọn ảnh vừa đẩy từ PC (ô đầu tiên góc trên trái)...')
+            self.click_toa_do_an_toan(int(w * 0.16), int(h * 0.18))
+            time.sleep(2.0)
+
+            # Nếu ô đầu tiên chưa mở màn hình xác nhận Lưu/Xong, thử bấm sang ô ảnh Hàng 2 - Cột 1
+            if self.d(text='Thư viện').exists or self.d(description='Thư viện').exists:
+                self.log('🖼️ Thử chọn ô ảnh tiếp theo trong Thư viện...')
+                self.click_toa_do_an_toan(int(w * 0.16), int(h * 0.32))
+                time.sleep(2.0)
+
+            # Bấm Lưu / Xong để hoàn tất đặt ảnh đại diện
+            self.log('💾 Bấm Lưu / Xong ảnh đại diện...')
+            da_bam_luu = False
+            for nut_luu in ['Xong', 'Lưu', 'Done', 'Save', 'Áp dụng', 'Apply', 'Tiếp', 'Next', 'Chia sẻ']:
+                if self.d(text=nut_luu).exists or self.d(description=nut_luu).exists or self.d(textContains=nut_luu).exists:
+                    self.click_text(nut_luu, nut_luu, 2, 0.5) or self.click_text_chua(nut_luu, nut_luu, 1, 0.5, click_duoi=True)
+                    da_bam_luu = True
+                    time.sleep(1.5)
+                    # Nếu sau khi bấm Xong hiện thêm nút Lưu lần nữa
+                    if self.d(text='Lưu').exists or self.d(description='Lưu').exists:
+                        self.click_text('Lưu', 'Lưu', 1, 0.5)
+                    break
+
+            if not da_bam_luu:
+                # Dự phòng bấm nút Lưu/Xong ở dưới cùng hoặc góc trên bên phải
+                self.click_toa_do_an_toan(int(w * 0.50), int(h * 0.90))
+                time.sleep(1.0)
+
+            delay_avatar = self.config.get('delay_up_avatar', 8.0)
+            self.log(f'⏳ Chờ {delay_avatar}s tải xong Avatar...')
+            nghi_ngau_nhien(delay_avatar, 0.15)
+            self.log('✅ ĐÃ CẬP NHẬT AVATAR TỪ MÁY TÍNH THÀNH CÔNG!')
+            return True
+        except KeyboardInterrupt:
+            raise KeyboardInterrupt
+        except Exception as e:
+            self.log(f'⚠️ Lỗi up Avatar: {str(e)[:25]}')
+            return False
+        finally:
+            for r_path in remote_paths:
+                chay_lenh_adb(f'shell rm -f "{r_path}"', self.serial)
 # ==================== KẾT THÚC PHẦN 1/2 ====================
 # ==================== PHẦN 2/2 (DÁN NỐI TIẾP NGAY DƯỚI PHẦN 1/2) ====================
     def lay_otp_theo_che_do(self, mode, used_email, mail_service=None, imap_service=None, hotmail_service=None, uid_moc=0, force_8_digits=False):
@@ -1629,7 +1764,6 @@ class FacebookUI:
 
         try:
             xml_dump = self.d.dump_hierarchy()
-            # Bắt chuỗi dạng ABCD EFGH IJKL MNOP... hoặc chuỗi liền 16-32 ký tự Base32
             matches = re.findall(r'\b(?:[A-Z2-7]{4}[\s-]*){4,8}\b', xml_dump, re.IGNORECASE)
             for m in matches:
                 clean_key = lam_sach_key_2fa(m)
@@ -1756,7 +1890,6 @@ class FacebookUI:
 
             if two_fa_secret:
                 self.log(f'🔑 Đã lấy Key 2FA: {two_fa_secret}')
-                # Bấm Tiếp để sang màn hình nhập mã OTP 6 số
                 for nut_tiep in ['Tiếp tục', 'Continue', 'Tiếp', 'Next']:
                     if self.d(textContains=nut_tiep).exists or self.d(descriptionContains=nut_tiep).exists:
                         self.click_text_chua(nut_tiep, nut_tiep, 2, 0.5, click_duoi=True)
@@ -1793,130 +1926,6 @@ class FacebookUI:
             self.log(f'⚠️ Lỗi khi bật 2FA: {str(e)[:30]}')
             return ""
 
-    def day_anh_qua_adb(self):
-        if not self.avatar_folder or not os.path.isdir(self.avatar_folder):
-            return None
-
-        images = [f for f in os.listdir(self.avatar_folder) if f.lower().endswith(('.png', '.jpg', '.jpeg', '.webp'))]
-        if not images:
-            self.log('⚠️ Thư mục Avatar trống, bỏ qua bước up ảnh!')
-            return None
-
-        chosen_img = random.choice(images)
-        local_path = os.path.abspath(os.path.join(self.avatar_folder, chosen_img))
-        ext = os.path.splitext(chosen_img)[1].lower() or '.jpg'
-        remote_filename = f"IMG_{int(time.time() * 1000)}{ext}"
-        remote_path = f"/sdcard/DCIM/Camera/{remote_filename}"
-
-        try:
-            cap_quyen_bo_nho_fb(self.serial)
-            chay_lenh_adb('shell mkdir -p /sdcard/DCIM/Camera', self.serial)
-            chay_lenh_adb('shell rm -f /sdcard/DCIM/Camera/IMG_*.*', self.serial)
-
-            if self.serial:
-                subprocess.run(f'adb -s {self.serial} push "{local_path}" "{remote_path}"', shell=True, capture_output=True)
-            else:
-                subprocess.run(f'adb push "{local_path}" "{remote_path}"', shell=True, capture_output=True)
-
-            chay_lenh_adb(
-                f'shell am broadcast -a android.intent.action.MEDIA_SCANNER_SCAN_FILE -d "file://{remote_path}"',
-                self.serial
-            )
-            time.sleep(1.5)
-            return remote_path
-        except KeyboardInterrupt:
-            raise KeyboardInterrupt
-        except Exception:
-            return None
-
-    def up_avatar_fb(self):
-        """Hỗ trợ up ảnh đại diện cả khi Facebook gợi ý ngay sau bước OTP lẫn khi mở Trang cá nhân"""
-        if not self.avatar_folder or not os.path.isdir(self.avatar_folder):
-            return False
-
-        self.log('🖼️ Đang đẩy ảnh Avatar từ PC vào điện thoại...')
-        remote_path = self.day_anh_qua_adb()
-        if not remote_path:
-            return False
-
-        try:
-            # Trường hợp 1: Ngay sau khi nhập OTP, Facebook hiện sẵn màn hình "Thêm ảnh đại diện" (Add profile picture)
-            dang_o_man_hinh_them_anh = self.kiem_tra_text(['Thêm ảnh đại diện', 'Add profile picture', 'Chọn từ thư viện', 'Choose from Gallery'], 2, 0.6)
-
-            if not dang_o_man_hinh_them_anh:
-                self.log('🖼️ Mở Trang cá nhân để cập nhật Avatar...')
-                chay_lenh_adb('shell am start -a android.intent.action.VIEW -d "fb://profile"', self.serial)
-                time.sleep(4.0)
-
-                for nut_dong in ['Lúc khác', 'Not Now', 'Bỏ qua', 'Skip', 'Đóng', 'Close', 'Hủy']:
-                    if self.d(text=nut_dong).exists or self.d(description=nut_dong).exists:
-                        self.click_text(nut_dong, nut_dong, 1, 0.3)
-                        time.sleep(0.5)
-
-                da_click_khung = False
-                for nhan in ['Chọn ảnh đại diện', 'Select profile picture', 'Thêm ảnh đại diện', 'ảnh đại diện', 'profile picture']:
-                    if self.d(textContains=nhan).exists or self.d(descriptionContains=nhan).exists:
-                        self.click_text_chua(nhan, nhan, 1, 0.5)
-                        da_click_khung = True
-                        time.sleep(2.0)
-                        break
-
-                if not da_click_khung:
-                    w, h = self.d.window_size()
-                    self.click_toa_do_an_toan(int(w * 0.22), int(h * 0.32))
-                    time.sleep(2.0)
-
-            for tuy_chon in ['Chọn từ thư viện', 'Choose from Gallery', 'Chọn ảnh đại diện', 'Select profile picture', 'Chọn trên Thiết bị', 'Thêm ảnh']:
-                if self.d(textContains=tuy_chon).exists or self.d(descriptionContains=tuy_chon).exists:
-                    self.click_text_chua(tuy_chon, tuy_chon, 2, 0.5)
-                    time.sleep(2.0)
-                    break
-
-            for nut_quyen in ['Cho phép tất cả', 'Allow all', 'Cho phép', 'Allow', 'Trong khi dùng ứng dụng']:
-                if self.d(textContains=nut_quyen).exists:
-                    self.click_text_chua(nut_quyen, nut_quyen, 1, 0.5)
-                    time.sleep(1.5)
-
-            self.log('🖼️ Chọn ảnh vừa đẩy vào máy...')
-            da_chon_anh = False
-            if self.d(descriptionContains='Ảnh').exists or self.d(descriptionContains='Photo').exists:
-                phan_tu_anh = self.d(descriptionContains='Ảnh') if self.d(descriptionContains='Ảnh').exists else self.d(descriptionContains='Photo')
-                self._click_phan_tu_an_toan(phan_tu_anh[0])
-                da_chon_anh = True
-            elif self.d(className='android.widget.GridView').exists:
-                grid = self.d(className='android.widget.GridView')[0]
-                if grid.child(clickable=True).exists:
-                    self._click_phan_tu_an_toan(grid.child(clickable=True)[0])
-                    da_chon_anh = True
-
-            if not da_chon_anh:
-                w, h = self.d.window_size()
-                self.click_toa_do_an_toan(int(w * 0.18), int(h * 0.35))
-
-            time.sleep(2.0)
-            self.log('💾 Bấm Lưu / Xong ảnh đại diện...')
-            for nut_luu in ['Lưu', 'Save', 'Xong', 'Done', 'Áp dụng', 'Apply', 'Tiếp', 'Next']:
-                if self.d(text=nut_luu).exists or self.d(description=nut_luu).exists:
-                    self.click_text(nut_luu, nut_luu, 2, 0.5)
-                    time.sleep(1.5)
-                    if self.d(text='Lưu').exists or self.d(description='Lưu').exists:
-                        self.click_text('Lưu', 'Lưu', 1, 0.5)
-                    break
-
-            delay_avatar = self.config.get('delay_up_avatar', 8.0)
-            self.log(f'⏳ Chờ {delay_avatar}s tải xong Avatar...')
-            nghi_ngau_nhien(delay_avatar, 0.15)
-            self.log('✅ ĐÃ CẬP NHẬT AVATAR THÀNH CÔNG!')
-            return True
-        except KeyboardInterrupt:
-            raise KeyboardInterrupt
-        except Exception as e:
-            self.log(f'⚠️ Lỗi up Avatar: {str(e)[:25]}')
-            return False
-        finally:
-            if remote_path:
-                chay_lenh_adb(f'shell rm -f "{remote_path}"', self.serial)
-
     def xu_ly_mat_khau_va_otp(self, tai_khoan_lien_he, mode="1", mail_service=None, imap_service=None, hotmail_service=None, autosms_service=None, uid_moc=0):
         """
         Xử lý thông minh chuỗi màn hình sau khi bấm Tiếp ở bước Email / SĐT:
@@ -1924,6 +1933,7 @@ class FacebookUI:
         - Nếu gặp màn hình 'Lưu thông tin đăng nhập' -> Bấm Lưu / Lúc khác
         - Nếu gặp màn hình 'Đồng ý với điều khoản' -> Bấm Tôi đồng ý
         - Khi tới màn hình 'Nhập mã xác nhận' (OTP) -> Lấy OTP -> Điền OTP -> Bấm Tiếp / Gửi
+        - Ngay sau khi xác nhận OTP xong -> Chạy luồng 5 bước Thêm ảnh đại diện từ PC -> Bật 2FA
         """
         mat_khau_fb = self.config['mat_khau_fb']
         da_nhap_otp = False
@@ -2009,8 +2019,8 @@ class FacebookUI:
             self.log('❌ Không tìm thấy màn hình nhập OTP!')
             return None
 
-        # Bước hoàn thiện sau khi xác nhận OTP: Up Avatar + Bật 2FA (kèm đổi Key 2FA ra OTP 6 số)
-        self.log(f'🎉 XÁC MINH OTP THÀNH CÔNG ({tai_khoan_lien_he}) -> Tiến hành Up Avatar & Bật 2FA...')
+        # Bước hoàn thiện ngay sau khi xác nhận OTP: Up Avatar từ PC (5 bước) + Bật 2FA
+        self.log(f'🎉 XÁC MINH OTP THÀNH CÔNG ({tai_khoan_lien_he}) -> Tiến hành Thêm ảnh đại diện từ PC & Bật 2FA...')
         self.up_avatar_fb()
         two_fa_key = self.bat_2fa_fb(
             used_email=tai_khoan_lien_he,
@@ -2028,7 +2038,7 @@ class FacebookUI:
         Bắt đầu -> KHÔNG CHO PHÉP -> Họ & Tên -> Tiếp
         -> Bấm vùng tô đỏ trong ô Ngày sinh -> Mở bảng 3 cột Chọn ngày -> Vuốt Ngày/Tháng/Năm -> CHỌN -> Tiếp
         -> Giới tính -> Tiếp -> Đăng ký bằng Email / SĐT -> Tiếp
-        -> Mật khẩu & OTP -> Up Avatar & Bật 2FA
+        -> Mật khẩu & OTP -> Thêm ảnh đại diện (5 bước) -> Bật 2FA
         """
         # 1. Xóa sạch dữ liệu ngầm để vào thẳng giao diện "Tham gia Facebook - Bắt đầu"
         self.log('🧹 Xóa dữ liệu ngầm FB & làm mới thông số máy...')
@@ -2296,6 +2306,7 @@ def chay_mot_thiet_bi_loop(serial, device_name, config, mode, data_source, manua
 
 def main():
     global multi_mode
+    os.makedirs(DEFAULT_AVATAR_DIR, exist_ok=True)
     print('\n──────────────────────────────────────────────────────────────────────')
     print(f'{trang}🤖 𝗧𝗢𝗢𝗟 𝗖𝗥𝗘𝗔𝗧𝗘 𝗔𝗖𝗖𝗢𝗨𝗡𝗧 𝗙𝗔𝗖𝗘𝗕𝗢𝗢𝗞 𝗔𝗗𝗕 (𝗡𝗘𝗪 𝗨𝗜 + 𝗔𝗨𝗧𝗢 𝟮𝗙𝗔 𝗧𝗢𝗧𝗣){trang}')
     print('──────────────────────────────────────────────────────────────────────')
@@ -2440,21 +2451,32 @@ def main():
         built_in_print(f"{Colors.ERROR}Danh sách đầu vào trống! Thoát chương trình.{Colors.RESET}")
         sys.exit()
 
+    # HƯỚNG DẪN & CHỌN THƯ MỤC ẢNH AVATAR TRÊN MÁY TÍNH (PC)
     saved_avatar_folder = config_data.get("last_avatar_folder", "")
     avatar_folder_input = ""
 
+    built_in_print(f"\n{Colors.TITLE}📁 CẤU HÌNH THƯ MỤC ẢNH AVATAR TRÊN MÁY TÍNH:{Colors.RESET}")
+    built_in_print(f"   • Tool đã tạo sẵn thư mục mặc định tại: {Colors.VALUE}{DEFAULT_AVATAR_DIR}{Colors.RESET}")
+    built_in_print(f"   • Bạn chỉ cần copy các ảnh (.jpg, .png) trên máy tính bỏ vào thư mục đó (hoặc nhập đường dẫn thư mục bất kỳ trên PC).")
+
     if saved_avatar_folder and os.path.isdir(saved_avatar_folder):
-        built_in_print(f"\n{Colors.INFO}Phát hiện thư mục Avatar cũ: {Colors.VALUE}{saved_avatar_folder}{Colors.RESET}")
-        use_old_avatar = input(f"{Colors.KEY}Bạn có muốn dùng lại thư mục này không? (y/n): {Colors.RESET}").strip().lower()
-        if use_old_avatar == 'y':
+        built_in_print(f"   • Phát hiện thư mục Avatar lần trước: {Colors.VALUE}{saved_avatar_folder}{Colors.RESET}")
+        use_old_avatar = input(f"{Colors.KEY}Bạn có muốn dùng lại thư mục này không? (y/n, Enter=y): {Colors.RESET}").strip().lower()
+        if use_old_avatar in ['', 'y']:
             avatar_folder_input = saved_avatar_folder
 
     if not avatar_folder_input:
-        built_in_print(f"\n{Colors.KEY}Nhập đường dẫn thư mục chứa ảnh làm Avatar (Bỏ trống nếu không muốn up): {Colors.RESET}", end="")
-        avatar_folder_input = input().strip().strip('"').strip("'")
-        if avatar_folder_input and os.path.isdir(avatar_folder_input):
+        built_in_print(f"{Colors.KEY}Nhập đường dẫn thư mục chứa ảnh trên PC (Nhấn Enter để dùng thư mục '{DEFAULT_AVATAR_DIR}'): {Colors.RESET}", end="")
+        nhap_folder = input().strip().strip('"').strip("'")
+        avatar_folder_input = nhap_folder if nhap_folder else DEFAULT_AVATAR_DIR
+        if os.path.isdir(avatar_folder_input):
             config_data["last_avatar_folder"] = avatar_folder_input
             save_config(config_data)
+
+    so_anh_pc = 0
+    if os.path.isdir(avatar_folder_input):
+        so_anh_pc = len([f for f in os.listdir(avatar_folder_input) if f.lower().endswith(('.png', '.jpg', '.jpeg', '.webp'))])
+    built_in_print(f"{Colors.SUCCESS}=> Đang dùng thư mục PC: {avatar_folder_input} (Tìm thấy {so_anh_pc} ảnh){Colors.RESET}")
 
     built_in_print(f"\n{Colors.KEY}Nhập đường dẫn file Proxy (.txt) cho API Mail/SMS (Bỏ trống nếu không dùng): {Colors.RESET}", end="")
     proxy_file_input = input().strip().strip('"').strip("'")
