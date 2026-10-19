@@ -158,12 +158,15 @@ class Colors:
         return f"{color}{text}{Colors.RESET}"
 
 
-CONFIG_FILE = 'config_reg_fb.json'
-CONFIG_GMAIL_FILE = "config_gmail.json"
-GOM_HOTMAIL_FILE = 'Gom_Hotmail_Dongvan.txt'
-FB_ACCOUNT_FILE = 'FB_NhaTrong.txt'
-TELE_FILE = 'Token-ID-Tele.txt'
-DEFAULT_AVATAR_DIR = os.path.join(os.getcwd(), 'avatars')
+# CỐ ĐỊNH THƯ MỤC GỐC TẠI NƠI ĐẶT FILE TOOL (.PY)
+BASE_DIR = os.path.dirname(os.path.abspath(__file__)) if '__file__' in globals() else os.getcwd()
+
+CONFIG_FILE = os.path.join(BASE_DIR, 'config_reg_fb.json')
+CONFIG_GMAIL_FILE = os.path.join(BASE_DIR, 'config_gmail.json')
+GOM_HOTMAIL_FILE = os.path.join(BASE_DIR, 'Gom_Hotmail_Dongvan.txt')
+FB_ACCOUNT_FILE = os.path.join(BASE_DIR, 'FB_NhaTrong.txt')
+TELE_FILE = os.path.join(BASE_DIR, 'Token-ID-Tele.txt')
+DEFAULT_AVATAR_DIR = os.path.join(BASE_DIR, 'avatars')
 
 # CẤU HÌNH THỜI GIAN & ANTI-CHECKPOINT TỐI ƯU NHẤT
 DEFAULT_CONFIG = {
@@ -827,7 +830,7 @@ def process_file_input(config_key, default_prompt):
         built_in_print(default_prompt, end="")
         file_path = input().strip().strip('"')
         if os.path.isfile(file_path):
-            config_data[config_key] = file_path
+            config_data[config_key] = os.path.abspath(file_path)
             save_config(config_data)
 
     if os.path.isfile(file_path):
@@ -1012,11 +1015,25 @@ def gui_tele(token, id_tele, noi_dung):
 
 
 def luu_tai_khoan_fb(email_or_phone, password, two_fa):
-    """Lưu thẳng thông tin Email/SĐT, Mật khẩu và 2FA vào FB_NhaTrong.txt"""
+    """
+    Lưu thẳng thông tin Email/SĐT, Mật khẩu và 2FA vào FB_NhaTrong.txt
+    nằm ngay tại thư mục chứa file Tool và hiển thị nổi bật lên màn hình.
+    """
     two_fa_str = two_fa if two_fa else 'NO_2FA'
+    dong_luu = f'{email_or_phone} | {password} | {two_fa_str}'
     with DATA_LOCK:
         with open(FB_ACCOUNT_FILE, 'a', encoding='utf-8') as f:
-            f.write(f'{email_or_phone} | {password} | {two_fa_str}\n')
+            f.write(dong_luu + '\n')
+            f.flush()
+
+    if not multi_mode:
+        print(f"\n{xanh}╔══════════════════════════════════════════════════════════════════════╗{trang}")
+        print(f"{xanh}║ 🎉 ĐÃ REG & LẤY 2FA THÀNH CÔNG:                                      ║{trang}")
+        print(f"{xanh}║ 📧 Mail/SĐT : {vang}{email_or_phone}{trang}")
+        print(f"{xanh}║ 🔑 Mật khẩu : {xanh_duong}{password}{trang}")
+        print(f"{xanh}║ 🛡️ Mã 2FA   : {xanh}{two_fa_str}{trang}")
+        print(f"{xanh}║ 💾 File lưu : {trang}{FB_ACCOUNT_FILE}")
+        print(f"{xanh}╚══════════════════════════════════════════════════════════════════════╝{trang}\n")
 
 
 def chay_lenh_adb(cmd, serial=None, timeout=15):
@@ -1114,11 +1131,12 @@ def doi_ip_che_do_may_bay_adb(serial=None, device_name="Device", config=None):
 
 
 def cap_quyen_bo_nho_fb(serial=None):
-    """Cấp quyền bộ nhớ/Camera và chặn quyền đọc danh bạ/tài khoản máy để chống dính vết nick cũ"""
+    """Cấp quyền bộ nhớ/Camera và chặn quyền đọc danh bạ/vị trí/thông báo để hạn chế hỏi quyền"""
     lenh_gop_quyen = (
         "pm grant com.facebook.katana android.permission.READ_EXTERNAL_STORAGE; "
         "pm grant com.facebook.katana android.permission.WRITE_EXTERNAL_STORAGE; "
         "pm grant com.facebook.katana android.permission.READ_MEDIA_IMAGES; "
+        "pm grant com.facebook.katana android.permission.READ_MEDIA_VISUAL_USER_SELECTED; "
         "pm grant com.facebook.katana android.permission.CAMERA; "
         "cmd appops set com.facebook.katana READ_EXTERNAL_STORAGE allow; "
         "cmd appops set com.facebook.katana WRITE_EXTERNAL_STORAGE allow; "
@@ -1127,7 +1145,9 @@ def cap_quyen_bo_nho_fb(serial=None):
         "cmd appops set com.facebook.katana GET_ACCOUNTS ignore; "
         "cmd appops set com.facebook.katana READ_CONTACTS ignore; "
         "cmd appops set com.facebook.katana READ_PHONE_STATE ignore; "
-        "cmd appops set com.facebook.katana READ_PHONE_NUMBERS ignore"
+        "cmd appops set com.facebook.katana READ_PHONE_NUMBERS ignore; "
+        "cmd appops set com.facebook.katana ACCESS_FINE_LOCATION ignore; "
+        "cmd appops set com.facebook.katana ACCESS_COARSE_LOCATION ignore"
     )
     chay_lenh_adb(f'shell "{lenh_gop_quyen}"', serial, timeout=10)
 
@@ -1311,27 +1331,86 @@ class FacebookUI:
             time.sleep(delay)
         return False
 
-    def tat_quyen_khong_cho_phep(self):
-        """Tự động bấm KHÔNG CHO PHÉP khi hiện bảng hỏi quyền danh bạ / cuộc gọi"""
+    def tat_quyen_khong_cho_phep(self, so_vong_quet=6):
+        """
+        Tự động quét và từ chối sạch hàng loạt quyền hệ thống (Danh bạ, Vị trí, Thông báo,
+        Cuộc gọi, Thiết bị lân cận...) và các bảng hỏi phụ khi mở lại Facebook.
+        """
+        da_tat_it_nhat_1_lan = False
+        ds_res_id_tu_choi = [
+            'com.android.permissioncontroller:id/permission_deny_button',
+            'com.android.permissioncontroller:id/permission_deny_and_dont_ask_again_button',
+            'com.android.packageinstaller:id/permission_deny_button',
+            'com.lbe.security.miui:id/permission_deny_button',
+            'android:id/button2'
+        ]
         cac_nut_tu_choi = [
             'KHÔNG CHO PHÉP',
             'Không cho phép',
+            'Không cho phép và không hỏi lại',
             'TỪ CHỐI',
             'Từ chối',
             "DON'T ALLOW",
+            "Don't allow",
             'Don’t allow',
-            'Deny'
+            'Deny',
+            'DENY',
+            'LÚC KHÁC',
+            'Lúc khác',
+            'Không, cảm ơn',
+            'Bỏ qua',
+            'Skip',
+            'Not now',
+            'NOT NOW'
         ]
-        for nut in cac_nut_tu_choi:
-            if self.d(text=nut).exists:
-                self._click_phan_tu_an_toan(self.d(text=nut)[0])
-                time.sleep(0.5)
-                return True
-            if self.d(textContains=nut).exists:
-                self._click_phan_tu_an_toan(self.d(textContains=nut)[-1])
-                time.sleep(0.5)
-                return True
-        return False
+
+        for _ in range(so_vong_quet):
+            da_bam_trong_vong = False
+
+            # 1. Bắt theo Resource ID của bảng hỏi quyền Android / MIUI
+            for rid in ds_res_id_tu_choi:
+                try:
+                    if self.d(resourceId=rid).exists:
+                        self._click_phan_tu_an_toan(self.d(resourceId=rid)[0])
+                        da_bam_trong_vong = True
+                        da_tat_it_nhat_1_lan = True
+                        time.sleep(0.55)
+                        break
+                except Exception:
+                    pass
+
+            if da_bam_trong_vong:
+                continue
+
+            # 2. Bắt theo chữ trên các bảng hỏi quyền liên hoàn
+            for nut in cac_nut_tu_choi:
+                try:
+                    if self.d(text=nut).exists:
+                        self._click_phan_tu_an_toan(self.d(text=nut)[-1])
+                        da_bam_trong_vong = True
+                        da_tat_it_nhat_1_lan = True
+                        time.sleep(0.55)
+                        break
+                    if self.d(description=nut).exists:
+                        self._click_phan_tu_an_toan(self.d(description=nut)[-1])
+                        da_bam_trong_vong = True
+                        da_tat_it_nhat_1_lan = True
+                        time.sleep(0.55)
+                        break
+                    if nut in ['KHÔNG CHO PHÉP', 'Không cho phép', 'TỪ CHỐI', 'Từ chối', "Don't allow", 'Deny']:
+                        if self.d(textContains=nut).exists:
+                            self._click_phan_tu_an_toan(self.d(textContains=nut)[-1])
+                            da_bam_trong_vong = True
+                            da_tat_it_nhat_1_lan = True
+                            time.sleep(0.55)
+                            break
+                except Exception:
+                    pass
+
+            if not da_bam_trong_vong:
+                break
+
+        return da_tat_it_nhat_1_lan
 
     def bo_qua_luu_thong_tin_dang_nhap(self):
         """
@@ -1607,8 +1686,10 @@ class FacebookUI:
 
     def day_anh_qua_adb(self):
         """
-        Lấy ngẫu nhiên 1 ảnh từ thư mục trên máy tính (PC), đẩy sang điện thoại qua ADB
-        với timeout=15s chống treo, cập nhật thời gian thực để nằm ở ô đầu tiên trong Thư viện.
+        Đẩy ảnh từ thư mục trên PC sang điện thoại bằng cả 2 cơ chế:
+        1. Truyền trực tiếp qua socket uiautomator2 (self.d.push) - bất chấp đường dẫn có dấu tiếng Việt hay khoảng trắng.
+        2. Fallback bằng subprocess.run dạng mảng tham số chuẩn.
+        3. Quét lại MediaStore trên cả /sdcard/ và /storage/emulated/0/ để hiện ngay ở đầu Thư viện.
         """
         folder_pc = self.avatar_folder if (self.avatar_folder and os.path.isdir(self.avatar_folder)) else DEFAULT_AVATAR_DIR
         if not os.path.isdir(folder_pc):
@@ -1621,31 +1702,72 @@ class FacebookUI:
 
         images = [f for f in os.listdir(folder_pc) if f.lower().endswith(('.png', '.jpg', '.jpeg', '.webp'))]
         if not images:
-            self.log(f'⚠️ Thư mục "{folder_pc}" trên máy tính đang trống! Hãy bỏ ảnh .jpg/.png vào đó.')
+            self.log(f'⚠️ Thư mục "{folder_pc}" đang trống! Hãy bỏ ảnh .jpg/.png vào đó.')
             return None
 
         chosen_img = random.choice(images)
         local_path = os.path.abspath(os.path.join(folder_pc, chosen_img))
         ext = os.path.splitext(chosen_img)[1].lower() or '.jpg'
         remote_filename = f"IMG_{int(time.time() * 1000)}{ext}"
-        remote_path_dcim = f"/sdcard/DCIM/Camera/{remote_filename}"
-        remote_path_pic = f"/sdcard/Pictures/{remote_filename}"
+        target_dirs = ["/sdcard/DCIM/Camera", "/sdcard/Pictures", "/sdcard/Download"]
+        remote_paths = [f"{d_path}/{remote_filename}" for d_path in target_dirs]
 
         try:
-            self.log(f'💻 Chọn ảnh từ PC: {chosen_img} -> Đang bắn sang điện thoại...')
+            self.log(f'💻 Chọn ảnh từ PC: {chosen_img} -> Đang truyền sang điện thoại...')
             cap_quyen_bo_nho_fb(self.serial)
-            self.chay_shell_nhanh('mkdir -p /sdcard/DCIM/Camera /sdcard/Pictures; rm -f /sdcard/DCIM/Camera/IMG_*.* /sdcard/Pictures/IMG_*.*')
+            self.chay_shell_nhanh(
+                'mkdir -p /sdcard/DCIM/Camera /sdcard/Pictures /sdcard/Download; '
+                'rm -f /sdcard/DCIM/Camera/IMG_*.* /sdcard/Pictures/IMG_*.* /sdcard/Download/IMG_*.*'
+            )
 
-            for r_path in [remote_path_dcim, remote_path_pic]:
-                cmd_push = f'adb -s {self.serial} push "{local_path}" "{r_path}"' if self.serial else f'adb push "{local_path}" "{r_path}"'
-                subprocess.run(cmd_push, shell=True, capture_output=True, creationflags=ADB_CREATION_FLAGS, timeout=15)
-                self.chay_shell_nhanh(f'touch "{r_path}"; am broadcast -a android.intent.action.MEDIA_SCANNER_SCAN_FILE -d "file://{r_path}"')
+            pushed_ok = []
+            for r_path in remote_paths:
+                da_day = False
+                # Cách 1: Dùng trực tiếp uiautomator2 push qua socket HTTP (ổn định 100% với đường dẫn tiếng Việt)
+                try:
+                    self.d.push(local_path, r_path)
+                    da_day = True
+                except Exception:
+                    da_day = False
 
-            time.sleep(1.5)
-            return [remote_path_dcim, remote_path_pic]
+                # Cách 2: Fallback dùng subprocess mảng tham số nếu u2.push lỗi
+                if not da_day:
+                    try:
+                        adb_args = ['adb']
+                        if self.serial:
+                            adb_args.extend(['-s', self.serial])
+                        adb_args.extend(['push', local_path, r_path])
+                        res = subprocess.run(
+                            adb_args,
+                            capture_output=True,
+                            creationflags=ADB_CREATION_FLAGS,
+                            timeout=15
+                        )
+                        if res.returncode == 0:
+                            da_day = True
+                    except Exception:
+                        pass
+
+                if da_day:
+                    pushed_ok.append(r_path)
+                    real_storage_path = r_path.replace('/sdcard/', '/storage/emulated/0/')
+                    self.chay_shell_nhanh(
+                        f'touch "{r_path}"; '
+                        f'am broadcast -a android.intent.action.MEDIA_SCANNER_SCAN_FILE -d "file://{r_path}"; '
+                        f'am broadcast -a android.intent.action.MEDIA_SCANNER_SCAN_FILE -d "file://{real_storage_path}"'
+                    )
+
+            if not pushed_ok:
+                self.log('❌ Lỗi: Không thể truyền file ảnh từ PC sang điện thoại!')
+                return None
+
+            self.log(f'✅ Đã truyền thành công ảnh sang điện thoại ({len(pushed_ok)} vị trí)!')
+            time.sleep(1.8)
+            return pushed_ok
         except KeyboardInterrupt:
             raise KeyboardInterrupt
-        except Exception:
+        except Exception as e:
+            self.log(f'⚠️ Lỗi truyền ảnh: {str(e)[:30]}')
             return None
 
     def up_avatar_fb(self):
@@ -1704,8 +1826,12 @@ class FacebookUI:
                 time.sleep(0.5)
 
             for r_path in remote_paths:
-                self.chay_shell_nhanh(f'am broadcast -a android.intent.action.MEDIA_SCANNER_SCAN_FILE -d "file://{r_path}"')
-            time.sleep(1.5)
+                real_storage_path = r_path.replace('/sdcard/', '/storage/emulated/0/')
+                self.chay_shell_nhanh(
+                    f'am broadcast -a android.intent.action.MEDIA_SCANNER_SCAN_FILE -d "file://{r_path}"; '
+                    f'am broadcast -a android.intent.action.MEDIA_SCANNER_SCAN_FILE -d "file://{real_storage_path}"'
+                )
+            time.sleep(1.8)
 
             self.log('🖼️ [Bước 5/5] Đã vào "Thư viện" -> Chọn ảnh vừa đẩy từ PC (ô đầu tiên góc trên trái)...')
             self.click_toa_do_an_toan(int(w * 0.16), int(h * 0.18))
@@ -1746,10 +1872,55 @@ class FacebookUI:
                 self.chay_shell_nhanh(f'rm -f "{r_path}"')
 # ==================== KẾT THÚC PHẦN 1/2 ====================
 # ==================== PHẦN 2/2 (DÁN NỐI TIẾP NGAY DƯỚI PHẦN 1/2) ====================
+    def quet_tat_het_bang_hoi_quyen_khi_vao_lai_fb(self):
+        """
+        Khi vừa mở lại Facebook sau khi Reg xong, liên tục quét và từ chối sạch
+        hàng loạt bảng hỏi quyền của Android & Facebook (Thông báo, Danh bạ, Vị trí,
+        Micro, Cuộc gọi, Lưu thông tin đăng nhập, Tìm bạn bè...) cho đến khi ra màn hình chính.
+        """
+        self.log('🛡️ Đang quét và từ chối toàn bộ các bảng hỏi quyền khi mở lại FB...')
+        cac_nut_bo_qua_fb = [
+            'KHÔNG CHO PHÉP', 'Không cho phép', 'Không cho phép và không hỏi lại',
+            'TỪ CHỐI', 'Từ chối', "DON'T ALLOW", "Don't allow", 'Don’t allow', 'Deny', 'DENY',
+            'LÚC KHÁC', 'Lúc khác', 'Không, cảm ơn', 'Bỏ qua', 'BỎ QUA', 'Skip', 'SKIP',
+            'Not now', 'NOT NOW', 'Không lưu', 'KHÔNG LƯU', 'Đóng', 'Close', 'Để sau'
+        ]
+
+        for _ in range(10):
+            da_xu_ly = False
+
+            if self.tat_quyen_khong_cho_phep(so_vong_quet=5):
+                da_xu_ly = True
+
+            if self.bo_qua_luu_thong_tin_dang_nhap():
+                da_xu_ly = True
+
+            for nut in cac_nut_bo_qua_fb:
+                try:
+                    if self.d(text=nut).exists:
+                        self._click_phan_tu_an_toan(self.d(text=nut)[-1])
+                        da_xu_ly = True
+                        time.sleep(0.5)
+                        break
+                    if self.d(description=nut).exists:
+                        self._click_phan_tu_an_toan(self.d(description=nut)[-1])
+                        da_xu_ly = True
+                        time.sleep(0.5)
+                        break
+                except Exception:
+                    pass
+
+            if not da_xu_ly:
+                time.sleep(0.6)
+                if not self.tat_quyen_khong_cho_phep(so_vong_quet=2) and not self.bo_qua_luu_thong_tin_dang_nhap():
+                    break
+            else:
+                time.sleep(0.5)
+
     def dong_tab_va_mo_lai_fb_giu_nick(self):
         """
-        Mở Đa nhiệm vuốt đóng tab Facebook hiện tại rồi mở lại Facebook (KHÔNG xóa data)
-        để thoát hoàn toàn khỏi màn hình cài đặt 2FA và quay về trang chủ có nút 3 gạch.
+        Mở Đa nhiệm vuốt đóng tab Facebook hiện tại rồi mở lại Facebook (KHÔNG xóa data),
+        tự động từ chối sạch mọi bảng hỏi quyền rồi mới vào Trang cá nhân / Menu 3 gạch để đăng xuất.
         """
         w, h = self.d.window_size()
         self.log('🔄 Thoát tab Facebook hiện tại rồi mở lại để ra màn hình chính...')
@@ -1773,11 +1944,12 @@ class FacebookUI:
         self.chay_shell_nhanh('am force-stop com.facebook.katana; input keyevent KEYCODE_HOME')
         time.sleep(1.0)
 
-        self.log('🚀 Đang mở lại Facebook để thực hiện Đăng xuất & Gỡ trang cá nhân...')
+        self.log('🚀 Đang mở lại Facebook -> Chặn toàn bộ quyền -> Vào trang cá nhân đăng xuất...')
         self.chay_shell_nhanh('am start -n com.facebook.katana/com.facebook.katana.LoginActivity')
         nghi_ngau_nhien(self.config.get('delay_mo_lai_fb', 6.5), 0.1)
-        self.tat_quyen_khong_cho_phep()
-        self.bo_qua_luu_thong_tin_dang_nhap()
+
+        # Quét sạch liên hoàn các bảng hỏi quyền vừa bật lên khi vào lại app
+        self.quet_tat_het_bang_hoi_quyen_khi_vao_lai_fb()
 
     def xoa_tab_da_nhiem_va_lam_moi_fb(self):
         """
@@ -1823,12 +1995,14 @@ class FacebookUI:
 
     def _bam_nut_3_gach_goc_trai(self):
         """
-        Tìm và bấm chính xác nút 3 gạch ngang ở góc trên bên trái (hoặc mở thẳng tab Menu).
-        Trả về True nếu đã mở được trang Menu (có chữ Cài đặt / Đăng xuất / Trợ giúp).
+        Dọn sạch các bảng hỏi quyền còn sót, sau đó tìm và bấm chính xác
+        nút 3 gạch ngang / Trang cá nhân & Menu (góc trên trái hoặc góc trên phải)
+        để mở trang Menu có nút Đăng xuất.
         """
         w, h = self.d.window_size()
+        self.quet_tat_het_bang_hoi_quyen_khi_vao_lai_fb()
 
-        # 1. Tìm phần tử Menu nằm ở vùng góc trên màn hình (tránh bấm nhầm node ẩn)
+        # 1. Tìm phần tử Menu nằm ở vùng thanh điều hướng phía trên màn hình
         for sel in [
             self.d(descriptionContains='Menu'),
             self.d(descriptionContains='menu'),
@@ -1840,23 +2014,28 @@ class FacebookUI:
                         b = sel[i].info['bounds']
                         cx = (b['left'] + b['right']) // 2
                         cy = (b['top'] + b['bottom']) // 2
-                        if 0 < cy < int(h * 0.22):
+                        if 0 < cy < int(h * 0.25):
                             self.click_toa_do_an_toan(cx, cy)
                             time.sleep(1.5)
+                            self.tat_quyen_khong_cho_phep(so_vong_quet=3)
                             if self.kiem_tra_text(['Đăng xuất', 'Log out', 'Cài đặt và quyền riêng tư', 'Trợ giúp và hỗ trợ', 'Cài đặt'], 1, 0.3):
                                 return True
                     except Exception:
                         pass
 
-        # 2. Bấm dải tọa độ nút 3 gạch ở GÓC TRÊN BÊN TRÁI (tương thích mọi tỷ lệ màn hình)
-        ds_toa_do_goc_trai = [
+        # 2. Bấm dải tọa độ nút 3 gạch ở GÓC TRÊN BÊN TRÁI & GÓC TRÊN BÊN PHẢI
+        ds_toa_do_menu = [
             (int(w * 0.085), int(h * 0.112)),
             (int(w * 0.100), int(h * 0.135)),
             (int(w * 0.085), int(h * 0.082)),
+            (int(w * 0.915), int(h * 0.135)),
+            (int(w * 0.915), int(h * 0.112)),
         ]
-        for tx, ty in ds_toa_do_goc_trai:
+        for tx, ty in ds_toa_do_menu:
+            self.tat_quyen_khong_cho_phep(so_vong_quet=2)
             self.click_toa_do_an_toan(tx, ty)
             time.sleep(1.5)
+            self.tat_quyen_khong_cho_phep(so_vong_quet=2)
             if self.kiem_tra_text(['Đăng xuất', 'Log out', 'Cài đặt và quyền riêng tư', 'Trợ giúp và hỗ trợ', 'Cài đặt'], 1, 0.3):
                 return True
 
@@ -1864,6 +2043,7 @@ class FacebookUI:
         self.log('⚡ Mở trực tiếp trang Menu 3 gạch bằng DeepLink...')
         self.chay_shell_nhanh('am start -a android.intent.action.VIEW -d "fb://bookmarks"')
         time.sleep(2.2)
+        self.tat_quyen_khong_cho_phep(so_vong_quet=3)
         return self.kiem_tra_text(['Đăng xuất', 'Log out', 'Cài đặt và quyền riêng tư', 'Trợ giúp và hỗ trợ'], 1, 0.3)
 
     def _go_trang_ca_nhan_ngoai_man_hinh_cho(self):
@@ -1874,6 +2054,7 @@ class FacebookUI:
         3. Khi hiện bảng 'Gỡ <Tên>?' ở đáy màn hình -> Bấm chính xác nút 'Gỡ' màu xanh ở dưới cùng
         """
         w, h = self.d.window_size()
+        self.tat_quyen_khong_cho_phep(so_vong_quet=3)
         self.log('🗑️ [Bước 3] Mở tùy chọn Gỡ trang cá nhân...')
 
         if not self.kiem_tra_text(['Gỡ trang cá nhân khỏi thiết bị này', 'Gỡ trang cá nhân', 'Remove profile'], 1, 0.3):
@@ -1937,8 +2118,8 @@ class FacebookUI:
     def dang_xuat_va_go_trang_ca_nhan(self, thoat_tab_truoc=False):
         """
         Thực hiện chuẩn luồng Đăng xuất & Gỡ tài khoản:
-        - Nếu thoat_tab_truoc=True (sau khi bật 2FA): Đóng tab đa nhiệm -> Mở lại FB từ đầu.
-        - Bước 1: Bấm 3 gạch ngang ở GÓC TRÊN BÊN TRÁI -> Lướt xuống đáy -> Bấm Đăng xuất.
+        - Nếu thoat_tab_truoc=True (sau khi bật 2FA): Đóng tab đa nhiệm -> Mở lại FB từ đầu -> Từ chối sạch mọi quyền.
+        - Bước 1: Mở Menu 3 gạch / Trang cá nhân -> Lướt xuống đáy -> Bấm Đăng xuất.
         - Bước 2: Bấm 'LÚC KHÁC' (Không lưu mật khẩu) -> Bấm 'ĐĂNG XUẤT'.
         - Bước 3: Ra màn hình chờ bên ngoài -> Gỡ trang cá nhân -> Bấm nút 'Gỡ' màu xanh dưới đáy.
         """
@@ -1946,18 +2127,13 @@ class FacebookUI:
 
         if thoat_tab_truoc:
             self.dong_tab_va_mo_lai_fb_giu_nick()
-
-        self.bo_qua_luu_thong_tin_dang_nhap()
-        for nut_phu in ['Xong', 'Done', 'LÚC KHÁC', 'Lúc khác', 'Not now', 'Bỏ qua', 'Skip', 'Đóng', 'Close']:
-            if self.d(text=nut_phu).exists or self.d(description=nut_phu).exists:
-                self.click_text(nut_phu, nut_phu, 1, 0.4)
-                time.sleep(0.6)
+        else:
+            self.quet_tat_het_bang_hoi_quyen_khi_vao_lai_fb()
 
         if self.kiem_tra_text(['Gỡ trang cá nhân khỏi thiết bị này', 'lần đăng nhập tiếp theo'], 1, 0.3):
             self._go_trang_ca_nhan_ngoai_man_hinh_cho()
             return
 
-        # Không dùng từ khóa 'Bắt đầu' ở đây để tránh nhận nhầm thẻ gợi ý trên trang chủ
         dang_o_ngoai = (
             self.d(text='Tạo tài khoản mới').exists
             or self.d(description='Tạo tài khoản mới').exists
@@ -1971,10 +2147,11 @@ class FacebookUI:
         )
 
         if not dang_o_ngoai:
-            self.log('🚪 [Bước 1] Bấm nút 3 gạch ngang (góc trên trái) -> Lướt xuống bấm Đăng xuất...')
+            self.log('🚪 [Bước 1] Đã từ chối hết quyền -> Mở Menu 3 gạch & lướt xuống bấm Đăng xuất...')
             self._bam_nut_3_gach_goc_trai()
 
             for _ in range(6):
+                self.tat_quyen_khong_cho_phep(so_vong_quet=2)
                 if self.kiem_tra_text(['Đăng xuất', 'Log out'], 1, 0.2):
                     break
                 self.vuot_toa_do_an_toan(int(w * 0.50), int(h * 0.85), int(w * 0.50), int(h * 0.15), 200)
@@ -1983,6 +2160,7 @@ class FacebookUI:
             if not self.kiem_tra_text(['Đăng xuất', 'Log out'], 1, 0.2):
                 self.chay_shell_nhanh('am start -a android.intent.action.VIEW -d "fb://bookmarks"')
                 time.sleep(2.0)
+                self.tat_quyen_khong_cho_phep(so_vong_quet=3)
                 for _ in range(5):
                     if self.kiem_tra_text(['Đăng xuất', 'Log out'], 1, 0.2):
                         break
@@ -2028,6 +2206,7 @@ class FacebookUI:
         - Nếu còn nick cũ -> Thực hiện Đăng xuất + Gỡ trang cá nhân hoàn tất rồi mới làm mới App.
         """
         for _ in range(5):
+            self.tat_quyen_khong_cho_phep(so_vong_quet=3)
             if self.kiem_tra_text([
                 'Lưu thông tin đăng nhập',
                 'Dùng trang cá nhân khác',
@@ -2099,7 +2278,6 @@ class FacebookUI:
             cac_chuoi = re.findall(r'(?:text|content-desc)="([^"]+)"', xml_dump)
             for s in cac_chuoi:
                 s_clean = s.strip()
-                # Bắt chuẩn định dạng 8 cụm 4 ký tự (VD: VAEI HQNR I2PH Z4HZ XV3D IN3M BKL4 6IAS)
                 m_group = re.search(r'\b(?:[A-Z2-7]{4}[\s-]+){3,7}[A-Z2-7]{4}\b', s_clean.upper())
                 if m_group:
                     key_cand = lam_sach_key_2fa(m_group.group(0))
@@ -2140,6 +2318,7 @@ class FacebookUI:
             'am start -a android.intent.action.VIEW -d "fb://faceweb/f?href=%2Fsecurity%2F2fac%2Fsetup%2Fintro"'
         )
         time.sleep(4.5)
+        self.tat_quyen_khong_cho_phep(so_vong_quet=3)
 
         if not self.kiem_tra_text([
             'Xác thực 2 yếu tố', 'Chọn phương thức bảo mật', 'Dùng ứng dụng xác thực',
@@ -2172,9 +2351,6 @@ class FacebookUI:
     def _nhap_mat_khau_xac_nhan_2fa_hinh_2(self):
         """
         Xử lý chuẩn HÌNH 2: Màn hình 'Nhập mật khẩu' ('Vì lý do bảo mật, vui lòng nhập lại mật khẩu của bạn để tiếp tục.')
-        - Bấm vào ô 'Mật khẩu'
-        - Nhập mật khẩu đã tạo tài khoản ở trên
-        - Bấm nút màu xanh 'Tiếp tục'
         """
         w, h = self.d.window_size()
         if self.kiem_tra_text([
@@ -2187,12 +2363,11 @@ class FacebookUI:
             self.log('🔑 [Hình 2] Phát hiện màn hình Nhập mật khẩu -> Đang nhập mật khẩu tài khoản...')
             da_focus_mk = False
             if self.d(className='android.widget.EditText').exists:
-                 da_focus_mk = self._click_phan_tu_an_toan(self.d(className='android.widget.EditText')[0])
+                da_focus_mk = self._click_phan_tu_an_toan(self.d(className='android.widget.EditText')[0])
             elif self.click_truong('Mật khẩu', False, 2, 0.4):
                 da_focus_mk = True
 
             if not da_focus_mk:
-                # Tọa độ chuẩn ô Mật khẩu theo Hình 2
                 self.click_toa_do_an_toan(int(w * 0.45), int(h * 0.193))
 
             time.sleep(0.4)
@@ -2205,7 +2380,6 @@ class FacebookUI:
                 or self.click_text_chua('Tiếp tục', 'Tiếp tục', 2, 0.5)
                 or self.click_text('Continue', 'Continue', 1, 0.4)
             ):
-                # Tọa độ chuẩn nút xanh Tiếp tục theo Hình 2
                 self.click_toa_do_an_toan(int(w * 0.50), int(h * 0.253))
 
             time.sleep(3.5)
@@ -2259,14 +2433,9 @@ class FacebookUI:
 
         try:
             self.bo_qua_luu_thong_tin_dang_nhap()
-            for nut_bo_qua in ['Bỏ qua', 'Skip', 'LÚC KHÁC', 'Lúc khác', 'Not Now', 'OK']:
-                if self.d(text=nut_bo_qua).exists or self.d(description=nut_bo_qua).exists:
-                    self.click_text(nut_bo_qua, nut_bo_qua, 1, 0.3)
-                    time.sleep(0.4)
+            self.tat_quyen_khong_cho_phep(so_vong_quet=3)
 
             self.dieu_huong_vao_man_hinh_2fa()
-
-            # Nếu hỏi mật khẩu ngay khi vừa vào
             self._nhap_mat_khau_xac_nhan_2fa_hinh_2()
 
             # ==================== BƯỚC 1 (HÌNH 1): BẤM NÚT MÀU XANH "DÙNG ỨNG DỤNG XÁC THỰC" ====================
@@ -2284,12 +2453,10 @@ class FacebookUI:
                         break
 
             if not da_bam_nut_xanh_hinh_1:
-                # Tọa độ chuẩn nút màu xanh "Dùng ứng dụng xác thực" trên Hình 1
                 self.click_toa_do_an_toan(int(w * 0.464), int(h * 0.436))
 
             time.sleep(2.5)
 
-            # Nếu giao diện nào vẫn còn nút Tiếp tục ở dưới thì bấm thêm
             if self.kiem_tra_text(['Chọn phương thức bảo mật'], 1, 0.2):
                 self.click_toa_do_an_toan(int(w * 0.464), int(h * 0.436))
                 time.sleep(2.0)
@@ -2303,7 +2470,6 @@ class FacebookUI:
                 two_fa_secret = self.trich_xuat_key_2fa_tu_man_hinh()
                 if two_fa_secret:
                     break
-                # Nếu chưa tới Hình 3 vì vẫn đang ở Hình 2 (mật khẩu) thì xử lý lại Hình 2
                 if self.kiem_tra_text(['Nhập mật khẩu', 'Vì lý do bảo mật'], 1, 0.2):
                     self._nhap_mat_khau_xac_nhan_2fa_hinh_2()
                     continue
@@ -2324,7 +2490,6 @@ class FacebookUI:
                 or self.click_text('Tiếp', 'Tiếp', 1, 0.4)
                 or self.click_text_chua('Continue', 'Continue', 1, 0.4, click_duoi=True)
             ):
-                # Tọa độ chuẩn nút xanh "Tiếp tục" ở đáy Hình 3
                 self.click_toa_do_an_toan(int(w * 0.50), int(h * 0.869))
             time.sleep(2.5)
 
@@ -2343,17 +2508,13 @@ class FacebookUI:
                     da_bam_o_ma = True
 
                 if not da_bam_o_ma:
-                    # Tọa độ chuẩn ô "Mã xác nhận" trên Hình 4
                     self.click_toa_do_an_toan(int(w * 0.50), int(h * 0.369))
 
                 time.sleep(0.5)
                 self.nhap_text(ma_otp_6_so)
                 time.sleep(1.0)
 
-                # Ẩn bàn phím nếu bàn phím che nút Tiếp tục
-                if self.d(text='Tiếp tục').exists or self.d(description='Tiếp tục').exists:
-                    pass
-                else:
+                if not (self.d(text='Tiếp tục').exists or self.d(description='Tiếp tục').exists):
                     self.d.press('back')
                     time.sleep(0.6)
 
@@ -2364,13 +2525,11 @@ class FacebookUI:
                     or self.click_text('Tiếp', 'Tiếp', 1, 0.4)
                     or self.click_text('Xác nhận', 'Xác nhận', 1, 0.4)
                 ):
-                    # Tọa độ chuẩn nút "Tiếp tục" trên Hình 4
                     self.click_toa_do_an_toan(int(w * 0.50), int(h * 0.450))
                 time.sleep(3.5)
 
                 self._nhap_otp_hoac_mk_phu_2fa(used_email, mode, mail_service, imap_service, hotmail_service, autosms_service)
 
-                # Bấm nút Xong / Hoàn tất ở màn hình thông báo 2FA đã bật
                 for _ in range(3):
                     for nut_xong in ['Xong', 'Done', 'Hoàn tất', 'OK', 'Tiếp tục']:
                         if self.d(text=nut_xong).exists or self.d(description=nut_xong).exists or self.d(textContains=nut_xong).exists:
@@ -2378,7 +2537,7 @@ class FacebookUI:
                             time.sleep(1.5)
                             break
 
-                self.log(f'✅ ĐÃ BẬT 2FA HOÀN TẤT! Key: {two_fa_secret[:12]}... (OTP: {ma_otp_6_so})')
+                self.log(f'✅ ĐÃ BẬT 2FA HOÀN TẤT! Key: {two_fa_secret} (OTP: {ma_otp_6_so})')
                 return two_fa_secret
 
             return ""
@@ -2391,10 +2550,10 @@ class FacebookUI:
     def xu_ly_mat_khau_va_otp(self, tai_khoan_lien_he, mode="1", mail_service=None, imap_service=None, hotmail_service=None, autosms_service=None, uid_moc=0):
         """
         Xử lý chuỗi màn hình sau khi nhập Email / SĐT:
-        - Mật khẩu -> Tiếp
-        - Lưu thông tin đăng nhập? -> BẮT BUỘC BẤM 'LÚC KHÁC' (Không lưu đám mây)
-        - Tôi đồng ý -> Nhập OTP -> Bấm 'LÚC KHÁC' nếu hỏi lại Lưu thông tin -> Up Avatar -> Bật 2FA
-        - Sau khi xong 2FA -> Thoát tab Facebook hiện tại, vào lại FB và thực hiện Đăng xuất & Gỡ trang cá nhân
+        - Mật khẩu -> Tiếp -> Bấm 'LÚC KHÁC' (Không lưu đám mây) -> Tôi đồng ý -> Nhập OTP
+        - Up Avatar -> Bật 2FA
+        - HIỆN NGAY MAIL + 2FA LÊN MÀN HÌNH VÀ LƯU VÀO FILE FB_NhaTrong.txt TẠI THƯ MỤC TOOL
+        - Thoát tab FB, mở lại FB -> Từ chối sạch mọi quyền -> Vào trang cá nhân / Menu 3 gạch -> Đăng xuất & Gỡ trang cá nhân
         """
         mat_khau_fb = self.config['mat_khau_fb']
         da_nhap_otp = False
@@ -2492,18 +2651,26 @@ class FacebookUI:
             autosms_service=autosms_service
         )
 
-        self.log('🧹 Đang thoát tab FB, vào lại FB để Đăng xuất & Gỡ trang cá nhân khỏi thiết bị...')
+        # HIỆN NGAY MAIL + 2FA LÊN MÀN HÌNH VÀ LƯU VÀO FILE TRONG THƯ MỤC TOOL TRƯỚC KHI ĐĂNG XUẤT
+        luu_tai_khoan_fb(tai_khoan_lien_he, mat_khau_fb, two_fa_key)
+        token_tele, id_tele = doc_tele()
+        if token_tele and id_tele:
+            two_fa_display = two_fa_key if two_fa_key else 'NO_2FA'
+            noi_dung = (
+                f'<code>{html.escape(str(tai_khoan_lien_he))}</code> | '
+                f'<code>{html.escape(mat_khau_fb)}</code> | '
+                f'<code>{html.escape(two_fa_display)}</code>'
+            )
+            gui_tele(token_tele, id_tele, noi_dung)
+
+        self.log('🧹 Đang thoát tab FB, vào lại FB -> Từ chối sạch quyền -> Đăng xuất & Gỡ trang cá nhân...')
         self.dang_xuat_va_go_trang_ca_nhan(thoat_tab_truoc=True)
 
         return (tai_khoan_lien_he, mat_khau_fb, two_fa_key)
 
     def chay_dang_ky(self, used_email=None, mode="1", mail_service=None, imap_service=None, hotmail_service=None, autosms_service=None, used_phones=None, used_names=None):
         """
-        Quy trình Đăng ký chuẩn sạch như máy mới:
-        Xóa sạch dữ liệu FB & Autofill -> Đổi Android ID -> Đổi IP 4G -> Mở FB
-        -> Đảm bảo ở trang Tạo TK mới (Nếu kẹt nick cũ thì Đăng xuất + Gỡ hoàn toàn)
-        -> KHÔNG CHO PHÉP -> Họ & Tên -> Ngày sinh (3 cột) -> Giới tính -> Email / SĐT
-        -> Mật khẩu & OTP -> Thêm ảnh đại diện từ PC -> Bật 2FA -> Thoát tab vào lại FB -> Đăng xuất & Gỡ trang cá nhân
+        Quy trình Đăng ký chuẩn sạch như máy mới
         """
         self.log('🧹 Làm sạch dữ liệu FB, tắt Autofill & đổi thông số phần cứng...')
         xoa_du_lieu_fb(self.serial)
@@ -2538,10 +2705,7 @@ class FacebookUI:
             time.sleep(1.0)
 
         self.log('❌ Kiểm tra & bấm KHÔNG CHO PHÉP quyền danh bạ...')
-        for _ in range(3):
-            if self.tat_quyen_khong_cho_phep():
-                break
-            time.sleep(0.4)
+        self.tat_quyen_khong_cho_phep(so_vong_quet=4)
         nghi_ngau_nhien(self.config['delay_chon_khong_cho_phep_lan2'])
 
         self.dong_goi_y_google()
@@ -2582,7 +2746,7 @@ class FacebookUI:
         self.click_text('Tiếp', 'Tiếp', 3, 0.8) or self.click_text_chua('Tiếp', 'Tiếp', 2, 0.6)
         nghi_ngau_nhien(self.config['delay_click_tiep_lan5'])
 
-        self.tat_quyen_khong_cho_phep()
+        self.tat_quyen_khong_cho_phep(so_vong_quet=4)
 
         if mode == "6" and autosms_service:
             self.log('📞 [Mode 6] Đang thuê SĐT từ AutoSMS.site...')
@@ -2615,7 +2779,7 @@ class FacebookUI:
             self.click_text_chua('Đăng ký bằng email', 'Đăng ký bằng email', 3, 0.6)
             time.sleep(1.5)
 
-        self.tat_quyen_khong_cho_phep()
+        self.tat_quyen_khong_cho_phep(so_vong_quet=3)
         self.dong_goi_y_google()
 
         uid_moc = 0
@@ -2753,17 +2917,7 @@ def chay_mot_thiet_bi_loop(serial, device_name, config, mode, data_source, manua
 
             if ket_qua:
                 email_or_phone, mat_khau_fb, two_fa_key = ket_qua
-                luu_tai_khoan_fb(email_or_phone, mat_khau_fb, two_fa_key)
-                token_tele, id_tele = doc_tele()
-                if token_tele and id_tele:
-                    two_fa_display = two_fa_key if two_fa_key else 'NO_2FA'
-                    noi_dung = (
-                        f'<code>{html.escape(str(email_or_phone))}</code> | '
-                        f'<code>{html.escape(mat_khau_fb)}</code> | '
-                        f'<code>{html.escape(two_fa_display)}</code>'
-                    )
-                    gui_tele(token_tele, id_tele, noi_dung)
-                update_step(device_name, f'✅ THÀNH CÔNG: {email_or_phone} (2FA: {two_fa_key[:8] if two_fa_key else "None"})')
+                update_step(device_name, f'✅ ĐÃ LƯU: {email_or_phone} | 2FA: {two_fa_key if two_fa_key else "NO_2FA"}')
             else:
                 update_step(device_name, '❌ ĐĂNG KÝ THẤT BẠI')
 
@@ -2781,6 +2935,8 @@ def main():
     os.makedirs(DEFAULT_AVATAR_DIR, exist_ok=True)
     print('\n──────────────────────────────────────────────────────────────────────')
     print(f'{trang}🤖 𝗧𝗢𝗢𝗟 𝗖𝗥𝗘𝗔𝗧𝗘 𝗔𝗖𝗖𝗢𝗨𝗡𝗧 𝗙𝗔𝗖𝗘𝗕𝗢𝗢𝗞 𝗔𝗗𝗕 (𝗡𝗘𝗪 𝗨𝗜 + 𝗔𝗨𝗧𝗢 𝟮𝗙𝗔 𝗧𝗢𝗧𝗣){trang}')
+    print(f'📂 Thư mục Tool & Lưu File: {xanh}{BASE_DIR}{trang}')
+    print(f'💾 File lưu Acc & 2FA     : {vang}{FB_ACCOUNT_FILE}{trang}')
     print('──────────────────────────────────────────────────────────────────────')
 
     if os.path.exists(CONFIG_FILE):
@@ -2939,7 +3095,7 @@ def main():
     if not avatar_folder_input:
         built_in_print(f"{Colors.KEY}Nhập đường dẫn thư mục chứa ảnh trên PC (Nhấn Enter để dùng thư mục '{DEFAULT_AVATAR_DIR}'): {Colors.RESET}", end="")
         nhap_folder = input().strip().strip('"').strip("'")
-        avatar_folder_input = nhap_folder if nhap_folder else DEFAULT_AVATAR_DIR
+        avatar_folder_input = os.path.abspath(nhap_folder) if nhap_folder else DEFAULT_AVATAR_DIR
         if os.path.isdir(avatar_folder_input):
             config_data["last_avatar_folder"] = avatar_folder_input
             save_config(config_data)
@@ -3042,17 +3198,7 @@ def main():
 
             if ket_qua_dang_ky:
                 email_or_phone, mat_khau_fb, two_fa_key = ket_qua_dang_ky
-                print(f'\n✅ Đăng ký thành công! Tài khoản: {email_or_phone} | 2FA: {two_fa_key if two_fa_key else "Chưa bật"}')
-                luu_tai_khoan_fb(email_or_phone, mat_khau_fb, two_fa_key)
-                token_tele, id_tele = doc_tele()
-                if token_tele and id_tele:
-                    two_fa_display = two_fa_key if two_fa_key else 'NO_2FA'
-                    noi_dung = (
-                        f'<code>{html.escape(str(email_or_phone))}</code> | '
-                        f'<code>{html.escape(mat_khau_fb)}</code> | '
-                        f'<code>{html.escape(two_fa_display)}</code>'
-                    )
-                    gui_tele(token_tele, id_tele, noi_dung)
+                print(f'\n✅ Hoàn tất chu trình! Đã lưu vào: {FB_ACCOUNT_FILE}')
             else:
                 print('\n❌ Đăng ký thất bại!')
 
