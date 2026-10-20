@@ -1410,10 +1410,11 @@ class FacebookUI:
 
     def quet_va_xoa_man_hinh_chan(self, so_vong_quet=6):
         """
-        Quét màn hình và dọn sạch các bảng chắn ngang (Danh bạ, Gợi ý kết bạn, Lưu đăng nhập...)
+        Quét màn hình và dọn sạch các bảng chắn ngang (Danh bạ, Gợi ý kết bạn, Xin quyền, Lưu đăng nhập...)
         theo đúng thứ tự ưu tiên:
-        - Ưu tiên 1: Bấm 'Bỏ qua' (trên hộp thoại xác nhận nổi lên)
-        - Ưu tiên 2: Bấm 'Lúc khác' (ở màn hình nền, sau đó vòng lặp tự quét lại để bấm 'Bỏ qua' nếu bảng xác nhận hiện ra)
+        - Ưu tiên 1: Bấm 'Bỏ qua' / 'BỎ QUA' (trên hộp thoại xác nhận nổi lên)
+        - Ưu tiên 2: Bấm 'Lúc khác' / 'LÚC KHÁC' (ở màn hình nền, sau đó vòng lặp tự quét lại để bấm 'Bỏ qua' nếu bảng xác nhận hiện ra)
+        - Ưu tiên 3: Bấm 'Không cho phép' / 'KHÔNG CHO PHÉP' / 'Từ chối' (nếu hiện bảng xin quyền danh bạ, cuộc gọi, thông báo...)
         Chỉ khi xử lý xong hết các bảng chắn này mới thực hiện tiếp lệnh sau.
         """
         w, h = self.d.window_size()
@@ -1451,6 +1452,8 @@ class FacebookUI:
                 or self.d(description='LÚC KHÁC').exists
                 or self.d(text='Not now').exists
                 or self.d(description='Not now').exists
+                or self.d(text='NOT NOW').exists
+                or self.d(description='NOT NOW').exists
                 or self.d(textContains='cấp quyền truy cập vào danh bạ').exists
                 or self.d(textContains='Để tìm bạn bè nhanh hơn').exists
             ):
@@ -1459,12 +1462,65 @@ class FacebookUI:
                     self.click_text('Lúc khác', 'Lúc khác', 1, 0.3)
                     or self.click_text('LÚC KHÁC', 'LÚC KHÁC', 1, 0.3)
                     or self.click_text('Not now', 'Not now', 1, 0.3)
+                    or self.click_text('NOT NOW', 'NOT NOW', 1, 0.3)
                     or self.click_text_chua('Lúc khác', 'Lúc khác', 1, 0.3, click_duoi=True)
                 )
                 if not da_bam_luc_khac:
                     self.click_toa_do_an_toan(int(w * 0.50), int(h * 0.91))
                 da_xu_ly = True
                 time.sleep(1.0)
+                continue
+
+            # ================= ƯU TIÊN 3: KIỂM TRA VÀ BẤM "KHÔNG CHO PHÉP" / "TỪ CHỐI" =================
+            da_bam_khong_cho_phep = False
+            for res_deny in [
+                'com.android.permissioncontroller:id/permission_deny_button',
+                'com.android.permissioncontroller:id/permission_deny_and_dont_ask_again_button',
+                'com.lbe.security.miui:id/permission_deny_button_1'
+            ]:
+                if self.d(resourceId=res_deny).exists:
+                    self.log('🛡️ [Ưu tiên 3] Phát hiện bảng hỏi quyền hệ thống -> Bấm "Không cho phép"...')
+                    self._click_phan_tu_an_toan(self.d(resourceId=res_deny)[0])
+                    da_bam_khong_cho_phep = True
+                    da_xu_ly = True
+                    time.sleep(1.0)
+                    break
+
+            if da_bam_khong_cho_phep:
+                continue
+
+            for nut_kcp in [
+                'KHÔNG CHO PHÉP',
+                'Không cho phép',
+                "DON'T ALLOW",
+                'Don’t allow',
+                "Don't allow",
+                'TỪ CHỐI',
+                'Từ chối',
+                'DENY',
+                'Deny'
+            ]:
+                # Tránh bấm nhầm "Từ chối" nếu đang ở hộp thoại cấp quyền thư viện ảnh
+                if nut_kcp in ['Từ chối', 'TỪ CHỐI'] and self.d(textContains='thư viện ảnh').exists:
+                    continue
+                if (
+                    self.d(text=nut_kcp).exists
+                    or self.d(description=nut_kcp).exists
+                    or self.d(textContains=nut_kcp).exists
+                    or self.d(descriptionContains=nut_kcp).exists
+                ):
+                    self.log(f'🛡️ [Ưu tiên 3] Phát hiện "{nut_kcp}" -> Bấm "{nut_kcp}"...')
+                    if not (
+                        self.click_text(nut_kcp, nut_kcp, 1, 0.3)
+                        or self.click_text_chua(nut_kcp, nut_kcp, 1, 0.3, click_duoi=True)
+                    ):
+                        self.click_toa_do_an_toan(int(w * 0.50), int(h * 0.62))
+                    da_bam_khong_cho_phep = True
+                    da_xu_ly = True
+                    time.sleep(1.0)
+                    break
+
+            if da_bam_khong_cho_phep:
                 continue
 
             break
@@ -2019,7 +2075,7 @@ class FacebookUI:
             nghi_ngau_nhien(delay_avatar, 0.15)
             self.xoa_anh_tam_tren_dt(remote_paths)
             self.log('✅ ĐÃ CẬP NHẬT AVATAR TỪ MÁY TÍNH THÀNH CÔNG!')
-            # Dọn sạch ngay màn hình Danh bạ / Bỏ qua / Lúc khác nếu xuất hiện ngay sau khi lưu Avatar
+            # Dọn sạch ngay màn hình Danh bạ / Bỏ qua / Lúc khác / Không cho phép nếu xuất hiện ngay sau khi lưu Avatar
             self.quet_va_xoa_man_hinh_chan()
             return True
         except KeyboardInterrupt:
@@ -2428,10 +2484,14 @@ class FacebookUI:
 
     def _kiem_tra_va_xu_ly_loi_mang_2fa(self):
         """
-        Kiểm tra nếu màn hình báo lỗi 'Không có kết nối', 'Không thể tải', 'Đã xảy ra lỗi', 'Thử lại'
-        thì tự động bật lại dữ liệu di động 4G, bấm Thử lại hoặc lùi ra.
+        Kiểm tra nếu màn hình báo lỗi 'Error Facebook', 'Sự cố tải', 'Nhấn để thử lại',
+        'Không có kết nối', 'Không thể tải', 'Đã xảy ra lỗi' thì tự động thoát ra hoặc tải lại.
         """
+        w, h = self.d.window_size()
         dau_hieu_loi_mang = [
+            'Error Facebook',
+            'Sự cố tải',
+            'Nhấn để thử lại',
             'Không có kết nối',
             'Không thể kết nối',
             'Không thể tải',
@@ -2445,9 +2505,18 @@ class FacebookUI:
             'Try again'
         ]
         if self.kiem_tra_text(dau_hieu_loi_mang, 1, 0.2):
-            self.log('🌐 Phát hiện thông báo lỗi tải trang -> Đang làm mới kết nối...')
+            self.log('🌐 Phát hiện màn hình "Error Facebook / Sự cố tải" -> Đang thoát màn hình lỗi...')
             self.chay_shell_nhanh('svc wifi disable; svc data enable')
-            time.sleep(1.0)
+            time.sleep(0.5)
+
+            if self.kiem_tra_text(['Error Facebook', 'Sự cố tải', 'Nhấn để thử lại'], 1, 0.2):
+                self.d.press('back')
+                time.sleep(1.2)
+                if self.kiem_tra_text(['Error Facebook', 'Sự cố tải'], 1, 0.2):
+                    self.click_toa_do_an_toan(int(w * 0.07), int(h * 0.082))
+                    time.sleep(1.2)
+                return True
+
             if not (
                 self.click_text('Thử lại', 'Thử lại', 1, 0.4)
                 or self.click_text('Tải lại', 'Tải lại', 1, 0.4)
@@ -2460,10 +2529,10 @@ class FacebookUI:
 
     def dieu_huong_vao_man_hinh_2fa(self, ten_fb=""):
         """
-        Cơ chế mở nhanh trang 2FA ăn 100% (chống bị màn hình Danh bạ / Gợi ý chặn ngang):
-        - Luôn đọc màn hình ưu tiên 1: Bỏ qua -> 2: Lúc khác (quet_va_xoa_man_hinh_chan)
-        - Nếu đang mở 2FA mà bị bảng 'Để tìm bạn bè nhanh hơn...' hoặc 'Bạn có chắc chắn muốn bỏ qua...' đè lên,
-          tool lập tức bấm Lúc khác -> Bỏ qua rồi bật lại trang 2FA cho đến khi ra thì thôi.
+        Cơ chế mở trang 2FA chuẩn (chống kẹt 'Error Facebook / Sự cố tải' và chống bảng chắn):
+        - Luôn đọc màn hình ưu tiên 1: Bỏ qua -> 2: Lúc khác -> 3: Không cho phép (quet_va_xoa_man_hinh_chan)
+        - Thử mở nhanh bằng DeepLink 1 lần: Nếu báo 'Error Facebook / Sự cố tải' thì bấm Back thoát ra ngay
+          và chuyển thẳng sang mở bằng Cài đặt -> Trung tâm tài khoản -> Mật khẩu và bảo mật -> Xác thực 2 yếu tố.
         """
         w, h = self.d.window_size()
         self.chay_shell_nhanh('svc data enable')
@@ -2479,126 +2548,143 @@ class FacebookUI:
             'Giúp bảo vệ tài khoản của bạn'
         ]
 
-        ds_lenh_2fa_1_phat = [
-            'am start -a android.intent.action.VIEW -d "fb://facewebmodal/f?href=https%3A%2F%2Fm.facebook.com%2Fsecurity%2F2fac%2Fsetup%2Fintro%2F" com.facebook.katana',
-            'am start -a android.intent.action.VIEW -d "fb://facewebmodal/f?href=%2Fsecurity%2F2fac%2Fsetup%2Fintro%2F" com.facebook.katana'
+        cac_dau_hieu_loi_trang = [
+            'Error Facebook',
+            'Sự cố tải',
+            'Nhấn để thử lại',
+            'Không có kết nối',
+            'Không thể tải',
+            'Đã xảy ra lỗi',
+            'Thử lại',
+            'Trang này không hiển thị'
         ]
 
-        # ==================== TẦNG 1: VÒNG LẶP ÉP MỞ TRANG 2FA ĐẾN KHI RA THÌ THÔI ====================
-        for lan_mo in range(1, 7):
-            # 1. Quét dọn màn hình chắn (1: Bỏ qua -> 2: Lúc khác) trước khi gọi lệnh
-            self.bo_qua_luu_thong_tin_dang_nhap()
-            self.quet_va_xoa_man_hinh_chan()
+        # 1. Quét dọn màn hình chắn (1: Bỏ qua -> 2: Lúc khác -> 3: Không cho phép) trước khi mở 2FA
+        self.bo_qua_luu_thong_tin_dang_nhap()
+        self.quet_va_xoa_man_hinh_chan()
 
-            if self.kiem_tra_text(cac_dau_hieu_trang_2fa + ['Nhập mật khẩu', 'Vì lý do bảo mật'], 1, 0.2):
+        if self.kiem_tra_text(cac_dau_hieu_trang_2fa + ['Nhập mật khẩu', 'Vì lý do bảo mật'], 1, 0.2):
+            return True
+
+        # ==================== TẦNG 1: THỬ DEEP LINK 1 LẦN DUY NHẤT ====================
+        self.log('⚡ [Tầng 1] Thử gọi lệnh mở nhanh trang 2FA...')
+        self.chay_shell_nhanh(
+            'am start -a android.intent.action.VIEW -d "fb://facewebmodal/f?href=https%3A%2F%2Fm.facebook.com%2Fsecurity%2F2fac%2Fsetup%2Fintro%2F" com.facebook.katana'
+        )
+        time.sleep(2.5)
+
+        # Nếu bảng Danh bạ / Bỏ qua / Lúc khác / Không cho phép nhảy lên đè ngang -> Dọn sạch
+        if self.quet_va_xoa_man_hinh_chan():
+            time.sleep(0.8)
+
+        # Kiểm tra nếu bị lỗi "Error Facebook / Sự cố tải" -> Bấm Back (<) thoát ngay sang Tầng 2
+        if self.kiem_tra_text(cac_dau_hieu_loi_trang, 1, 0.3):
+            self.log('⚠️ DeepLink báo "Error Facebook / Sự cố tải" -> Thoát ra để vào qua Trung tâm tài khoản...')
+            self.d.press('back')
+            time.sleep(1.2)
+            if self.kiem_tra_text(['Error Facebook', 'Sự cố tải'], 1, 0.2):
+                self.click_toa_do_an_toan(int(w * 0.07), int(h * 0.082))
+                time.sleep(1.2)
+        else:
+            if self.kiem_tra_text(cac_dau_hieu_trang_2fa + ['Nhập mật khẩu', 'Vì lý do bảo mật'], 1, 0.3):
+                self.log('✅ Đã mở thẳng trang 2FA thành công!')
                 return True
 
-            self.log(f'⚡ [Tầng 1 - Lần {lan_mo}] Gọi lệnh nhảy thẳng vào trang Xác thực 2 yếu tố (2FA)...')
-            lenh_2fa = ds_lenh_2fa_1_phat[(lan_mo - 1) % len(ds_lenh_2fa_1_phat)]
-            self.chay_shell_nhanh(lenh_2fa)
-            time.sleep(2.8)
-
-            # 2. Kiểm tra ngay xem bảng Danh bạ / "Bỏ qua" / "Lúc khác" có nhảy lên chặn mất lệnh chuyển trang 2FA không
-            if self.quet_va_xoa_man_hinh_chan():
-                self.log('🔄 Đã xử lý xong màn hình chắn (Bỏ qua / Lúc khác) -> Bật lại trang 2FA...')
-                time.sleep(0.8)
-                continue
-
-            # 3. Kiểm tra nếu không bị lỗi mạng và đã hiện đúng giao diện 2FA hoặc chọn tài khoản
-            if not self.kiem_tra_text(['Không có kết nối', 'Không thể tải', 'Đã xảy ra lỗi', 'Thử lại', 'Trang này không hiển thị'], 1, 0.2):
+            if self.kiem_tra_text(['Chọn tài khoản', 'Chọn trang cá nhân', 'Xác thực 2 yếu tố', 'Xác thực hai yếu tố'], 1, 0.3):
+                self.log('✅ Đã mở thẳng trang chọn tài khoản 2FA!')
+                if ten_fb and (self.d(textContains=ten_fb).exists or self.d(descriptionContains=ten_fb).exists):
+                    self.click_text_chua(ten_fb, ten_fb, 1, 0.5)
+                else:
+                    self.click_text_chua('Facebook', 'Tài khoản FB', 1, 0.4) or self.click_toa_do_an_toan(int(w * 0.50), int(h * 0.32))
+                time.sleep(2.5)
+                self.quet_va_xoa_man_hinh_chan()
                 if self.kiem_tra_text(cac_dau_hieu_trang_2fa + ['Nhập mật khẩu', 'Vì lý do bảo mật'], 1, 0.3):
-                    self.log('✅ Đã mở thẳng trang 2FA thành công!')
                     return True
 
-                if self.kiem_tra_text(['Chọn tài khoản', 'Chọn trang cá nhân', 'Xác thực 2 yếu tố', 'Xác thực hai yếu tố'], 1, 0.3):
-                    self.log('✅ Đã mở thẳng trang chọn tài khoản 2FA!')
-                    if ten_fb and (self.d(textContains=ten_fb).exists or self.d(descriptionContains=ten_fb).exists):
-                        self.click_text_chua(ten_fb, ten_fb, 1, 0.5)
-                    else:
-                        self.click_text_chua('Facebook', 'Tài khoản FB', 1, 0.4) or self.click_toa_do_an_toan(int(w * 0.50), int(h * 0.32))
-                    time.sleep(2.5)
-                    self.quet_va_xoa_man_hinh_chan()
-                    if self.kiem_tra_text(cac_dau_hieu_trang_2fa + ['Nhập mật khẩu', 'Vì lý do bảo mật'], 1, 0.3):
-                        return True
-
-            # Nếu modal báo lỗi kết nối thì đóng modal để vòng lặp thử lại
-            if self.kiem_tra_text(['Không có kết nối', 'Không thể tải', 'Đã xảy ra lỗi', 'Thử lại'], 1, 0.2):
-                self.d.press('back')
-                time.sleep(1.0)
-
-        # ==================== TẦNG 2: GỌI THẲNG TRANG CÀI ĐẶT NATIVE (fb://settings) ====================
-        self.quet_va_xoa_man_hinh_chan()
-        self.log('🛡️ [Tầng 2] Gọi thẳng trang Cài đặt gốc (fb://settings) -> Trung tâm tài khoản...')
-        self.chay_shell_nhanh('am start -a android.intent.action.VIEW -d "fb://settings" com.facebook.katana')
-        time.sleep(2.2)
-        if self.quet_va_xoa_man_hinh_chan():
+        # ==================== TẦNG 2: VÀO QUA CÀI ĐẶT -> TRUNG TÂM TÀI KHOẢN (ĂN CHẮC 100%) ====================
+        for lan_thu_cd in range(1, 5):
+            self.quet_va_xoa_man_hinh_chan()
+            self._kiem_tra_va_xu_ly_loi_mang_2fa()
+            self.log(f'🛡️ [Tầng 2 - Lần {lan_thu_cd}] Mở Cài đặt -> Trung tâm tài khoản -> Xác thực 2 yếu tố...')
             self.chay_shell_nhanh('am start -a android.intent.action.VIEW -d "fb://settings" com.facebook.katana')
             time.sleep(2.2)
 
-        # Nếu fb://settings chưa vào thẳng Cài đặt thì mới mở qua Menu 3 gạch
-        if not self.kiem_tra_text(['Trung tâm tài khoản', 'Mật khẩu và bảo mật', 'Cài đặt', 'Accounts Center'], 1, 0.3):
-            self._bam_nut_3_gach_goc_trai()
-            time.sleep(1.5)
-            self.quet_va_xoa_man_hinh_chan()
-            if self.d(description='Cài đặt').exists or self.d(description='Settings').exists:
-                self.click_text('Cài đặt', 'Bánh răng Cài đặt', 1, 0.5) or self.click_text('Settings', 'Settings', 1, 0.5)
-                time.sleep(2.0)
-            else:
-                for _ in range(3):
-                    if self.kiem_tra_text(['Cài đặt & quyền riêng tư', 'Cài đặt và quyền riêng tư', 'Settings & privacy'], 1, 0.2):
-                        break
-                    self.vuot_toa_do_an_toan(int(w * 0.50), int(h * 0.82), int(w * 0.50), int(h * 0.25), 200)
-                    time.sleep(0.5)
-                self.click_text_chua('Cài đặt & quyền riêng tư', 'Cài đặt & quyền riêng tư', 2, 0.5) or self.click_text_chua('Cài đặt và quyền riêng tư', 'Cài đặt và quyền riêng tư', 2, 0.5)
-                time.sleep(1.2)
-                self.click_text('Cài đặt', 'Cài đặt', 2, 0.5) or self.click_text('Settings', 'Settings', 2, 0.5)
-                time.sleep(2.0)
-
-        self.quet_va_xoa_man_hinh_chan()
-
-        # Mở Trung tâm tài khoản Meta
-        if not self.kiem_tra_text(['Mật khẩu và bảo mật', 'Password and security'], 1, 0.3):
-            if not (
-                self.click_text_chua('Xem thêm trong Trung tâm tài khoản', 'Xem thêm TT Tài khoản', 2, 0.5)
-                or self.click_text_chua('Trung tâm tài khoản', 'Trung tâm TK', 2, 0.5)
-                or self.click_text_chua('Accounts Center', 'Accounts Center', 1, 0.5)
-            ):
-                self.click_toa_do_an_toan(int(w * 0.50), int(h * 0.25))
-            time.sleep(2.2)
-
-        self.quet_va_xoa_man_hinh_chan()
-
-        # Cuộn tìm và bấm 'Mật khẩu và bảo mật'
-        for _ in range(4):
-            if self.kiem_tra_text(['Mật khẩu và bảo mật', 'Password and security'], 1, 0.3):
-                self.click_text_chua('Mật khẩu và bảo mật', 'Mật khẩu & bảo mật', 2, 0.5) or self.click_text_chua('Password and security', 'Password', 2, 0.5)
-                time.sleep(2.0)
-                break
-            self.vuot_toa_do_an_toan(int(w * 0.50), int(h * 0.78), int(w * 0.50), int(h * 0.30), 200)
-            time.sleep(0.5)
-
-        # Bấm 'Xác thực 2 yếu tố'
-        self.log('🛡️ Bấm chọn "Xác thực 2 yếu tố"...')
-        for _ in range(3):
-            if self.kiem_tra_text(['Xác thực 2 yếu tố', 'Xác thực hai yếu tố', 'Two-factor authentication'], 1, 0.3):
-                self.click_text_chua('Xác thực 2 yếu tố', 'Xác thực 2 yếu tố', 2, 0.5) or self.click_text_chua('Xác thực hai yếu tố', 'Xác thực 2 yếu tố', 1, 0.5) or self.click_text_chua('Two-factor authentication', '2FA', 1, 0.5)
+            if self.quet_va_xoa_man_hinh_chan():
+                self.chay_shell_nhanh('am start -a android.intent.action.VIEW -d "fb://settings" com.facebook.katana')
                 time.sleep(2.2)
-                break
-            self.vuot_toa_do_an_toan(int(w * 0.50), int(h * 0.75), int(w * 0.50), int(h * 0.30), 200)
-            time.sleep(0.5)
 
-        # Nếu hiện danh sách Chọn tài khoản để thiết lập 2FA -> Bấm vào tên FB vừa tạo
-        if self.kiem_tra_text(['Chọn tài khoản', 'Select an account', 'Chọn trang cá nhân', 'Trang cá nhân', 'Facebook'], 2, 0.4):
-            if not self.kiem_tra_text(cac_dau_hieu_trang_2fa, 1, 0.2):
-                self.log(f'👤 Chọn tài khoản "{ten_fb or "Facebook"}" để bật 2FA...')
-                da_chon_tk = False
-                if ten_fb and (self.d(textContains=ten_fb).exists or self.d(descriptionContains=ten_fb).exists):
-                    da_chon_tk = self.click_text_chua(ten_fb, ten_fb, 1, 0.5)
-                if not da_chon_tk:
-                    da_chon_tk = self.click_text_chua('Facebook', 'Tài khoản FB', 1, 0.4)
-                if not da_chon_tk:
-                    self.click_toa_do_an_toan(int(w * 0.50), int(h * 0.32))
-                time.sleep(2.5)
+            # Nếu fb://settings chưa vào thẳng Cài đặt thì mở qua Menu 3 gạch
+            if not self.kiem_tra_text(['Trung tâm tài khoản', 'Mật khẩu và bảo mật', 'Cài đặt', 'Accounts Center'], 1, 0.3):
+                self._bam_nut_3_gach_goc_trai()
+                time.sleep(1.5)
+                self.quet_va_xoa_man_hinh_chan()
+                if self.d(description='Cài đặt').exists or self.d(description='Settings').exists:
+                    self.click_text('Cài đặt', 'Bánh răng Cài đặt', 1, 0.5) or self.click_text('Settings', 'Settings', 1, 0.5)
+                    time.sleep(2.0)
+                else:
+                    for _ in range(3):
+                        if self.kiem_tra_text(['Cài đặt & quyền riêng tư', 'Cài đặt và quyền riêng tư', 'Settings & privacy'], 1, 0.2):
+                            break
+                        self.vuot_toa_do_an_toan(int(w * 0.50), int(h * 0.82), int(w * 0.50), int(h * 0.25), 200)
+                        time.sleep(0.5)
+                    self.click_text_chua('Cài đặt & quyền riêng tư', 'Cài đặt & quyền riêng tư', 2, 0.5) or self.click_text_chua('Cài đặt và quyền riêng tư', 'Cài đặt và quyền riêng tư', 2, 0.5)
+                    time.sleep(1.2)
+                    self.click_text('Cài đặt', 'Cài đặt', 2, 0.5) or self.click_text('Settings', 'Settings', 2, 0.5)
+                    time.sleep(2.0)
+
+            self.quet_va_xoa_man_hinh_chan()
+
+            # Bấm vào Trung tâm tài khoản Meta
+            if not self.kiem_tra_text(['Mật khẩu và bảo mật', 'Password and security'], 1, 0.3):
+                if not (
+                    self.click_text_chua('Xem thêm trong Trung tâm tài khoản', 'Xem thêm TT Tài khoản', 2, 0.5)
+                    or self.click_text_chua('Trung tâm tài khoản', 'Trung tâm TK', 2, 0.5)
+                    or self.click_text_chua('Accounts Center', 'Accounts Center', 1, 0.5)
+                ):
+                    self.click_toa_do_an_toan(int(w * 0.50), int(h * 0.25))
+                time.sleep(2.2)
+
+            self.quet_va_xoa_man_hinh_chan()
+
+            # Cuộn tìm và bấm 'Mật khẩu và bảo mật'
+            for _ in range(4):
+                if self.kiem_tra_text(['Mật khẩu và bảo mật', 'Password and security'], 1, 0.3):
+                    self.click_text_chua('Mật khẩu và bảo mật', 'Mật khẩu & bảo mật', 2, 0.5) or self.click_text_chua('Password and security', 'Password', 2, 0.5)
+                    time.sleep(2.0)
+                    break
+                self.vuot_toa_do_an_toan(int(w * 0.50), int(h * 0.78), int(w * 0.50), int(h * 0.30), 200)
+                time.sleep(0.5)
+
+            self.quet_va_xoa_man_hinh_chan()
+
+            # Bấm 'Xác thực 2 yếu tố'
+            self.log('🛡️ Bấm chọn "Xác thực 2 yếu tố"...')
+            for _ in range(3):
+                if self.kiem_tra_text(['Xác thực 2 yếu tố', 'Xác thực hai yếu tố', 'Two-factor authentication'], 1, 0.3):
+                    self.click_text_chua('Xác thực 2 yếu tố', 'Xác thực 2 yếu tố', 2, 0.5) or self.click_text_chua('Xác thực hai yếu tố', 'Xác thực 2 yếu tố', 1, 0.5) or self.click_text_chua('Two-factor authentication', '2FA', 1, 0.5)
+                    time.sleep(2.2)
+                    break
+                self.vuot_toa_do_an_toan(int(w * 0.50), int(h * 0.75), int(w * 0.50), int(h * 0.30), 200)
+                time.sleep(0.5)
+
+            self.quet_va_xoa_man_hinh_chan()
+
+            # Nếu hiện danh sách Chọn tài khoản để thiết lập 2FA -> Bấm vào tên FB vừa tạo
+            if self.kiem_tra_text(['Chọn tài khoản', 'Select an account', 'Chọn trang cá nhân', 'Trang cá nhân', 'Facebook'], 2, 0.4):
+                if not self.kiem_tra_text(cac_dau_hieu_trang_2fa, 1, 0.2):
+                    self.log(f'👤 Chọn tài khoản "{ten_fb or "Facebook"}" để bật 2FA...')
+                    da_chon_tk = False
+                    if ten_fb and (self.d(textContains=ten_fb).exists or self.d(descriptionContains=ten_fb).exists):
+                        da_chon_tk = self.click_text_chua(ten_fb, ten_fb, 1, 0.5)
+                    if not da_chon_tk:
+                        da_chon_tk = self.click_text_chua('Facebook', 'Tài khoản FB', 1, 0.4)
+                    if not da_chon_tk:
+                        self.click_toa_do_an_toan(int(w * 0.50), int(h * 0.32))
+                    time.sleep(2.5)
+
+            if self.kiem_tra_text(cac_dau_hieu_trang_2fa + ['Nhập mật khẩu', 'Vì lý do bảo mật'], 1, 0.3):
+                self.log('✅ Đã vào trang thiết lập 2FA thành công!')
+                return True
 
         return True
 
@@ -2698,8 +2784,8 @@ class FacebookUI:
     def bat_2fa_fb(self, used_email, ten_fb="", mode="1", mail_service=None, imap_service=None, hotmail_service=None, autosms_service=None):
         """
         Luồng bật 2FA tự động mượt 100%:
-        - Luôn đọc màn hình ưu tiên 1: Bỏ qua -> 2: Lúc khác (quet_va_xoa_man_hinh_chan) trước mọi thao tác
-        - Mở thẳng trang 2FA bằng vòng lặp DeepLink cho đến khi ra thì thôi
+        - Luôn đọc màn hình ưu tiên 1: Bỏ qua -> 2: Lúc khác -> 3: Không cho phép (quet_va_xoa_man_hinh_chan) trước mọi thao tác
+        - Mở trang 2FA chống lỗi Error Facebook / Sự cố tải
         - Hình 1: Chọn 'Dùng ứng dụng xác thực' / 'Ứng dụng xác thực' -> Bấm 'Tiếp' / 'Tiếp tục'
         - Hình 2: Nếu hỏi mật khẩu hoặc OTP Email phụ -> Tự động điền và bấm 'Tiếp tục'
         - Hình 3: Quét lấy dòng Key 2FA dưới mã QR -> Bấm 'Tiếp tục'
@@ -2751,10 +2837,9 @@ class FacebookUI:
             # ==================== BƯỚC 3 (HÌNH 3): LẤY DÒNG CODE 2FA DƯỚI MÃ QR & BẤM TIẾP TỤC ====================
             self.log('📜 [Hình 3] Đang lấy dòng code 2FA dưới mã QR...')
             for lan_quet in range(6):
-                # Nếu bảng chắn (Bỏ qua / Lúc khác) bất ngờ nhảy lên đè mất trang 2FA thì dọn sạch và mở lại 2FA
-                if self.quet_va_xoa_man_hinh_chan():
+                # Nếu bảng chắn (Bỏ qua / Lúc khác / Không cho phép) hoặc lỗi mạng nhảy lên thì dọn sạch và mở lại 2FA
+                if self.quet_va_xoa_man_hinh_chan() or self._kiem_tra_va_xu_ly_loi_mang_2fa():
                     self.dieu_huong_vao_man_hinh_2fa(ten_fb=ten_fb)
-                self._kiem_tra_va_xu_ly_loi_mang_2fa()
                 two_fa_secret = self.trich_xuat_key_2fa_tu_man_hinh()
                 if two_fa_secret:
                     break
@@ -2956,7 +3041,7 @@ class FacebookUI:
         Xóa sạch dữ liệu FB & Autofill -> Đổi Android ID -> Đổi IP 4G -> Mở FB
         -> Ảnh 1: Màn hình danh sách tài khoản -> Bấm 'Tạo tài khoản mới' ở dưới cùng
         -> Ảnh 2: Màn hình 'Tham gia Facebook' -> Bấm nút xanh 'Tạo tài khoản mới'
-        -> Trang hỏi quyền -> Bấm 'Lúc khác' (hoặc 'KHÔNG CHO PHÉP')
+        -> Trang hỏi quyền -> Bấm 'Bỏ qua' / 'Lúc khác' / 'KHÔNG CHO PHÉP'
         -> Nhập Họ & Tên (100% Tên Nam) -> Ngày sinh (3 cột) -> Giới tính (100% Nam) -> Email / SĐT
         -> Mật khẩu & OTP -> Thêm ảnh đại diện từ PC -> Bật 2FA -> Thoát tab vào lại FB -> Đăng xuất & Gỡ trang cá nhân
         """
@@ -3009,10 +3094,10 @@ class FacebookUI:
             time.sleep(0.4)
 
         # ==================== BƯỚC 3: TRANG HỎI QUYỀN -> BẤM "BỎ QUA" / "LÚC KHÁC" / "KHÔNG CHO PHÉP" ====================
-        self.log('🚫 Kiểm tra trang hỏi quyền -> Ưu tiên 1: Bỏ qua | Ưu tiên 2: Lúc khác...')
+        self.log('🚫 Kiểm tra trang hỏi quyền -> Ưu tiên 1: Bỏ qua | 2: Lúc khác | 3: Không cho phép...')
         for _ in range(5):
             if self.kiem_tra_text(['Bạn tên gì'], 1, 0.2):
-                self.tat_quyen_khong_cho_phep()
+                self.quet_va_xoa_man_hinh_chan(so_vong_quet=2)
                 break
 
             da_xu_ly_quyen = self.quet_va_xoa_man_hinh_chan(so_vong_quet=2)
@@ -3066,7 +3151,7 @@ class FacebookUI:
         self.click_text('Tiếp', 'Tiếp', 3, 0.8) or self.click_text_chua('Tiếp', 'Tiếp', 2, 0.6)
         nghi_ngau_nhien(self.config['delay_click_tiep_lan5'])
 
-        self.tat_quyen_khong_cho_phep()
+        self.quet_va_xoa_man_hinh_chan(so_vong_quet=2)
 
         if mode == "6" and autosms_service:
             self.log('📞 [Mode 6] Đang thuê SĐT từ AutoSMS.site...')
@@ -3100,7 +3185,7 @@ class FacebookUI:
             self.click_text_chua('Đăng ký bằng email', 'Đăng ký bằng email', 3, 0.6)
             time.sleep(1.5)
 
-        self.tat_quyen_khong_cho_phep()
+        self.quet_va_xoa_man_hinh_chan(so_vong_quet=2)
         self.dong_goi_y_google()
 
         uid_moc = 0
