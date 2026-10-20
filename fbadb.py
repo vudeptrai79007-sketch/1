@@ -1143,16 +1143,18 @@ def doi_ip_che_do_may_bay_adb(serial=None, device_name="Device", config=None):
 
 
 def cap_quyen_bo_nho_fb(serial=None):
-    """Cấp quyền bộ nhớ/Camera và chặn quyền đọc danh bạ/tài khoản máy để chống dính vết nick cũ"""
+    """Cấp quyền bộ nhớ/Camera/Media chuẩn cho mọi đời Android và chặn quyền đọc danh bạ/tài khoản máy"""
     lenh_gop_quyen = (
         "pm grant com.facebook.katana android.permission.READ_EXTERNAL_STORAGE; "
         "pm grant com.facebook.katana android.permission.WRITE_EXTERNAL_STORAGE; "
         "pm grant com.facebook.katana android.permission.READ_MEDIA_IMAGES; "
+        "pm grant com.facebook.katana android.permission.READ_MEDIA_VISUAL_USER_SELECTED; "
         "pm grant com.facebook.katana android.permission.CAMERA; "
         "cmd appops set com.facebook.katana READ_EXTERNAL_STORAGE allow; "
         "cmd appops set com.facebook.katana WRITE_EXTERNAL_STORAGE allow; "
         "cmd appops set com.facebook.katana READ_MEDIA_IMAGES allow; "
         "cmd appops set com.facebook.katana MANAGE_EXTERNAL_STORAGE allow; "
+        "cmd appops set com.facebook.katana LEGACY_STORAGE allow; "
         "cmd appops set com.facebook.katana GET_ACCOUNTS ignore; "
         "cmd appops set com.facebook.katana READ_CONTACTS ignore; "
         "cmd appops set com.facebook.katana READ_PHONE_STATE ignore; "
@@ -1660,7 +1662,7 @@ class FacebookUI:
     def _tao_ban_sao_anh_sach_exif(self, src_path):
         """
         Tạo file ảnh tạm đã xóa sạch EXIF (DateTaken cũ) trên PC để khi đẩy vào điện thoại,
-        Android MediaStore luôn coi đây là bức ảnh mới chụp nhất (đứng số 1 đầu thư viện).
+        Android MediaStore luôn coi đây là bức ảnh mới chụp nhất (đứng đầu Thư viện).
         """
         temp_clean_path = os.path.join(
             tempfile.gettempdir(),
@@ -1678,7 +1680,6 @@ class FacebookUI:
         try:
             with open(src_path, 'rb') as f_in:
                 raw_bytes = f_in.read()
-            # Nếu là ảnh JPEG và có marker APP1 (EXIF 0xFFE1) ngay đầu file, cắt bỏ đoạn EXIF
             if len(raw_bytes) > 20 and raw_bytes[0:2] == b'\xff\xd8' and raw_bytes[2:4] == b'\xff\xe1':
                 exif_len = struct.unpack('>H', raw_bytes[4:6])[0]
                 raw_bytes = b'\xff\xd8' + raw_bytes[4 + exif_len:]
@@ -1690,8 +1691,10 @@ class FacebookUI:
 
     def day_anh_qua_adb(self):
         """
-        Đẩy ảnh từ PC sang điện thoại, xóa EXIF cũ và ép ghi trực tiếp vào MediaStore của Android
-        với thời gian hiện tại (datetaken mới nhất) để ảnh luôn nằm ở Ô ĐẦU TIÊN trong Thư viện.
+        Đẩy ảnh từ PC sang điện thoại an toàn 100% trên mọi đời Android / Xiaomi:
+        - Không dùng lệnh content insert/delete thủ công gây lỗi ảnh xám 0 byte
+        - Đẩy vào /sdcard/DCIM/Camera và /sdcard/Pictures, dùng touch đồng bộ giờ thực tế của máy
+        - Gọi trực tiếp MediaProvider scan_file + MEDIA_SCANNER_SCAN_FILE để ảnh hiện ngay ở đầu Thư viện
         """
         folder_pc = self.avatar_folder.strip() if self.avatar_folder else DEFAULT_AVATAR_DIR
         if not os.path.isabs(folder_pc):
@@ -1714,8 +1717,6 @@ class FacebookUI:
         local_path = os.path.abspath(os.path.join(folder_pc, chosen_img))
         clean_local_path = self._tao_ban_sao_anh_sach_exif(local_path)
 
-        now_sec = int(time.time()) + 60
-        now_ms = now_sec * 1000
         remote_filename = f"IMG_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{random.randint(100, 999)}.jpg"
         remote_path_dcim = f"/sdcard/DCIM/Camera/{remote_filename}"
         remote_path_pic = f"/sdcard/Pictures/{remote_filename}"
@@ -1727,23 +1728,31 @@ class FacebookUI:
             self.log(f'💻 Chọn ảnh từ PC: {chosen_img} -> Đang truyền sang điện thoại...')
             cap_quyen_bo_nho_fb(self.serial)
             self.chay_shell_nhanh(
-                'mkdir -p /sdcard/DCIM/Camera /sdcard/Pictures; '
+                'mkdir -p /sdcard/DCIM/Camera /sdcard/Pictures /storage/emulated/0/DCIM/Camera /storage/emulated/0/Pictures; '
                 'rm -f /sdcard/DCIM/Camera/IMG_20* /sdcard/Pictures/IMG_20* /sdcard/DCIM/Camera/FB_AVT_* /sdcard/Pictures/FB_AVT_*'
             )
 
             push_thanh_cong = False
             for r_path in remote_paths:
+                da_day_r_path = False
                 try:
                     self.d.push(clean_local_path, r_path)
+                    da_day_r_path = True
                     push_thanh_cong = True
                 except Exception:
-                    cmd_list = ['adb']
-                    if self.serial:
-                        cmd_list += ['-s', str(self.serial)]
-                    cmd_list += ['push', clean_local_path, r_path]
-                    res = subprocess.run(cmd_list, capture_output=True, creationflags=ADB_CREATION_FLAGS, timeout=15)
-                    if res.returncode == 0:
-                        push_thanh_cong = True
+                    pass
+
+                if not da_day_r_path:
+                    try:
+                        cmd_list = ['adb']
+                        if self.serial:
+                            cmd_list += ['-s', str(self.serial)]
+                        cmd_list += ['push', clean_local_path, r_path]
+                        res = subprocess.run(cmd_list, capture_output=True, creationflags=ADB_CREATION_FLAGS, timeout=15)
+                        if res.returncode == 0:
+                            push_thanh_cong = True
+                    except Exception:
+                        pass
 
             # Xóa file tạm trên PC sau khi đã đẩy xong
             if clean_local_path != local_path and os.path.exists(clean_local_path):
@@ -1756,30 +1765,21 @@ class FacebookUI:
                 self.log('❌ Không thể truyền ảnh từ PC sang điện thoại!')
                 return None
 
-            # Ép cập nhật timestamp mới nhất và chèn thẳng vào bảng MediaStore của Android
-            lenh_ep_mediastore = (
+            # Đồng bộ giờ file theo đồng hồ thiết bị và gọi MediaProvider scan_file + MediaScanner chuẩn
+            lenh_quet_anh = (
+                f'chmod 644 "{remote_path_dcim}" "{remote_path_pic}"; '
                 f'touch "{remote_path_dcim}" "{remote_path_pic}"; '
-                f'content delete --uri content://media/external/images/media --where "_data LIKE \'%IMG_%\'"; '
-                f'content insert --uri content://media/external/images/media '
-                f'--bind _data:s:"{real_path_dcim}" '
-                f'--bind _display_name:s:"{remote_filename}" '
-                f'--bind mime_type:s:"image/jpeg" '
-                f'--bind datetaken:l:{now_ms} '
-                f'--bind date_added:l:{now_sec} '
-                f'--bind date_modified:l:{now_sec}; '
-                f'content insert --uri content://media/external/images/media '
-                f'--bind _data:s:"{real_path_pic}" '
-                f'--bind _display_name:s:"{remote_filename}" '
-                f'--bind mime_type:s:"image/jpeg" '
-                f'--bind datetaken:l:{now_ms} '
-                f'--bind date_added:l:{now_sec} '
-                f'--bind date_modified:l:{now_sec}; '
+                f'content call --uri content://media --method scan_file --arg "{real_path_dcim}"; '
+                f'content call --uri content://media --method scan_file --arg "{real_path_pic}"; '
                 f'am broadcast -a android.intent.action.MEDIA_SCANNER_SCAN_FILE -d "file://{real_path_dcim}"; '
-                f'am broadcast -a android.intent.action.MEDIA_SCANNER_SCAN_FILE -d "file://{real_path_pic}"'
+                f'am broadcast -a android.intent.action.MEDIA_SCANNER_SCAN_FILE -d "file://{real_path_pic}"; '
+                f'am broadcast -a android.intent.action.MEDIA_SCANNER_SCAN_FILE -d "file://{remote_path_dcim}"; '
+                f'am broadcast -a android.intent.action.MEDIA_SCANNER_SCAN_FILE -d "file://{remote_path_pic}"'
             )
-            self.chay_shell_nhanh(lenh_ep_mediastore)
-            time.sleep(2.2)
-            return remote_paths
+            self.chay_shell_nhanh(lenh_quet_anh)
+            time.sleep(2.0)
+            self.log(f'✅ Đã truyền ảnh {remote_filename} vào Thư viện điện thoại!')
+            return [remote_path_dcim, remote_path_pic, real_path_dcim, real_path_pic]
         except KeyboardInterrupt:
             raise KeyboardInterrupt
         except Exception as e:
@@ -1793,10 +1793,83 @@ class FacebookUI:
         try:
             self.chay_shell_nhanh(
                 'rm -f /sdcard/DCIM/Camera/IMG_20* /sdcard/Pictures/IMG_20*; '
-                'content delete --uri content://media/external/images/media --where "_data LIKE \'%IMG_20%\'"'
+                'am broadcast -a android.intent.action.MEDIA_SCANNER_SCAN_FILE -d "file:///storage/emulated/0/DCIM/Camera"; '
+                'am broadcast -a android.intent.action.MEDIA_SCANNER_SCAN_FILE -d "file:///storage/emulated/0/Pictures"'
             )
         except Exception:
             pass
+
+    def _xu_ly_tat_ca_hop_thoai_quyen_anh(self):
+        """
+        Xử lý chuẩn xác thứ tự ưu tiên các hộp thoại cấp quyền thư viện ảnh:
+        1. Hộp thoại trắng nổi lên ('Cho phép Facebook truy cập vào thư viện ảnh?' / 'sử dụng bộ nhớ') -> Bấm 'Cho phép'
+        2. Hộp thoại quyền hệ thống Android ('CHO PHÉP', 'Cho phép tất cả', 'Trong khi dùng ứng dụng')
+        3. Nút xanh 'Cho phép truy cập' ở màn hình nền (chỉ bấm khi không có hộp thoại trắng đè lên)
+        """
+        w, h = self.d.window_size()
+
+        # ƯU TIÊN 1: Kiểm tra nút "Cho phép" trên hộp thoại trắng của Facebook hoặc resourceId android:id/button1
+        if (
+            self.d(text='Cho phép').exists
+            or self.d(description='Cho phép').exists
+            or self.d(resourceId='android:id/button1').exists
+            or self.d(textContains='Cho phép Facebook truy cập vào').exists
+            or self.d(textContains='Khi đó, bạn có thể chia sẻ từ thư viện').exists
+            or self.d(textContains='sử dụng bộ nhớ điện thoại').exists
+        ):
+            self.log('🔓 Bấm nút "Cho phép" trên hộp thoại truy cập thư viện ảnh...')
+            da_bam = False
+            if self.d(text='Cho phép').exists:
+                da_bam = self._click_phan_tu_an_toan(self.d(text='Cho phép')[-1])
+            elif self.d(description='Cho phép').exists:
+                da_bam = self._click_phan_tu_an_toan(self.d(description='Cho phép')[-1])
+            elif self.d(resourceId='android:id/button1').exists:
+                da_bam = self._click_phan_tu_an_toan(self.d(resourceId='android:id/button1')[0])
+
+            if not da_bam:
+                # Tọa độ chuẩn tâm chữ "Cho phép" trên hộp thoại trắng
+                self.click_toa_do_an_toan(int(w * 0.785), int(h * 0.578))
+            time.sleep(1.2)
+            return True
+
+        # ƯU TIÊN 2: Hộp thoại cấp quyền của hệ điều hành Android / MIUI
+        for res_id in [
+            'com.android.permissioncontroller:id/permission_allow_button',
+            'com.android.permissioncontroller:id/permission_allow_all_button',
+            'com.android.permissioncontroller:id/permission_allow_foreground_only_button',
+            'com.lbe.security.miui:id/permission_allow_button_1'
+        ]:
+            if self.d(resourceId=res_id).exists:
+                self.log('🔓 Bấm chấp nhận quyền hệ thống Android...')
+                self._click_phan_tu_an_toan(self.d(resourceId=res_id)[0])
+                time.sleep(1.2)
+                return True
+
+        for nut_he_thong in ['CHO PHÉP', 'Cho phép tất cả', 'Allow all', 'ALLOW', 'Allow', 'Trong khi dùng ứng dụng', 'Chỉ lần này']:
+            if self.d(text=nut_he_thong).exists or self.d(textContains=nut_he_thong).exists:
+                self.log(f'🔓 Bấm "{nut_he_thong}" (quyền ảnh hệ thống)...')
+                if not (self.click_text(nut_he_thong, nut_he_thong, 1, 0.4) or self.click_text_chua(nut_he_thong, nut_he_thong, 1, 0.4)):
+                    self.click_toa_do_an_toan(int(w * 0.50), int(h * 0.53))
+                time.sleep(1.2)
+                return True
+
+        # ƯU TIÊN 3: Menu "Chọn từ thư viện"
+        if self.d(textContains='Chọn từ thư viện').exists or self.d(descriptionContains='Chọn từ thư viện').exists:
+            self.click_text_chua('Chọn từ thư viện', 'Chọn từ thư viện', 1, 0.4)
+            time.sleep(1.0)
+            return True
+
+        # ƯU TIÊN 4: Nút màu xanh đậm "Cho phép truy cập" ở màn hình nền (chỉ bấm khi không có chữ "Từ chối" của hộp thoại trắng)
+        if not self.d(text='Từ chối').exists and (
+            self.d(text='Cho phép truy cập').exists or self.d(description='Cho phép truy cập').exists
+        ):
+            self.log('🔓 Bấm nút xanh "Cho phép truy cập"...')
+            if not (self.click_text('Cho phép truy cập', 'Cho phép truy cập', 2, 0.4) or self.click_text_chua('Cho phép truy cập', 'Cho phép truy cập', 1, 0.4)):
+                self.click_toa_do_an_toan(int(w * 0.50), int(h * 0.60))
+            time.sleep(1.2)
+            return True
+
+        return False
 
     def up_avatar_fb(self):
         """Xử lý chuẩn 5 màn hình Thêm ảnh đại diện ngay sau bước OTP (luôn lấy đúng ảnh từ PC)"""
@@ -1815,69 +1888,68 @@ class FacebookUI:
                     break
                 time.sleep(0.5)
 
-            self.log('🖼️ [Bước 1/5] Bấm nút "Thêm ảnh"...')
-            if not (self.click_text('Thêm ảnh', 'Thêm ảnh', 2, 0.5) or self.click_text_chua('Thêm ảnh', 'Thêm ảnh', 2, 0.5, click_duoi=True)):
+            self.log('🖼️ [Bước 1] Bấm nút "Thêm ảnh"...')
+            if not (
+                self.click_text('Thêm ảnh', 'Thêm ảnh', 2, 0.5)
+                or self.click_text_chua('Thêm ảnh', 'Thêm ảnh', 2, 0.5, click_duoi=True)
+                or self.click_text_chua('Add picture', 'Add picture', 1, 0.4, click_duoi=True)
+            ):
                 self.click_toa_do_an_toan(int(w * 0.50), int(h * 0.82))
             time.sleep(1.5)
 
-            for _ in range(8):
-                if self.d(text='Thư viện').exists or self.d(description='Thư viện').exists or self.d(text='Gallery').exists:
+            # Vòng lặp vượt qua mọi hộp thoại hỏi quyền (bao gồm bảng trắng "Cho phép" và quyền hệ thống)
+            for _ in range(10):
+                if self._xu_ly_tat_ca_hop_thoai_quyen_anh():
+                    continue
+                if self.kiem_tra_text(['Thư viện', 'Gallery', 'Ảnh gần đây', 'Tất cả ảnh'], 1, 0.2):
                     break
+                time.sleep(0.4)
 
-                if self.d(textContains='Chọn từ thư viện').exists or self.d(descriptionContains='Chọn từ thư viện').exists:
-                    self.click_text_chua('Chọn từ thư viện', 'Chọn từ thư viện', 1, 0.4)
-                    time.sleep(1.0)
-                    continue
-
-                if self.d(text='Cho phép truy cập').exists or self.d(description='Cho phép truy cập').exists or self.d(textContains='truy cập vào thư viện ảnh').exists:
-                    self.log('🔓 [Bước 2/5] Bấm nút "Cho phép truy cập"...')
-                    if not (self.click_text('Cho phép truy cập', 'Cho phép truy cập', 2, 0.4) or self.click_text_chua('Cho phép truy cập', 'Cho phép truy cập', 1, 0.4)):
-                        self.click_toa_do_an_toan(int(w * 0.46), int(h * 0.59))
-                    time.sleep(1.2)
-                    continue
-
-                if self.d(textContains='sử dụng bộ nhớ điện thoại').exists or self.d(text='Cho phép').exists:
-                    self.log('🔓 [Bước 3/5] Bấm "Cho phép" (sử dụng bộ nhớ điện thoại)...')
-                    if not self.click_text('Cho phép', 'Cho phép', 2, 0.4):
-                        self.click_toa_do_an_toan(int(w * 0.78), int(h * 0.56))
-                    time.sleep(1.2)
-                    continue
-
-                for nut_he_thong in ['CHO PHÉP', 'Cho phép tất cả', 'Allow all', 'ALLOW', 'Allow', 'Trong khi dùng ứng dụng']:
-                    if self.d(text=nut_he_thong).exists or self.d(textContains=nut_he_thong).exists:
-                        self.log(f'🔓 [Bước 4/5] Bấm "{nut_he_thong}" (quyền ảnh hệ thống)...')
-                        if not (self.click_text(nut_he_thong, nut_he_thong, 1, 0.4) or self.click_text_chua(nut_he_thong, nut_he_thong, 1, 0.4)):
-                            self.click_toa_do_an_toan(int(w * 0.50), int(h * 0.53))
-                        time.sleep(1.2)
-                        break
-
-                time.sleep(0.5)
-
+            # Quét lại MediaScanner một lần nữa ngay khi mở Thư viện để đảm bảo ảnh hiện ở ô đầu
             for r_path in remote_paths:
                 self.chay_shell_nhanh(f'am broadcast -a android.intent.action.MEDIA_SCANNER_SCAN_FILE -d "file://{r_path}"')
             time.sleep(1.5)
 
-            self.log('🖼️ [Bước 5/5] Đã vào "Thư viện" -> Chọn đúng ảnh vừa đẩy từ PC (ô số 1 góc trên trái)...')
-            self.click_toa_do_an_toan(int(w * 0.16), int(h * 0.18))
-            time.sleep(2.0)
+            # Kiểm tra lại nếu vẫn còn sót hộp thoại quyền
+            self._xu_ly_tat_ca_hop_thoai_quyen_anh()
 
-            if self.d(text='Thư viện').exists or self.d(description='Thư viện').exists:
-                self.log('🖼️ Chọn lại ô ảnh đầu tiên trong lưới Thư viện...')
-                self.click_toa_do_an_toan(int(w * 0.16), int(h * 0.25))
-                time.sleep(2.0)
+            self.log('🖼️ [Bước 2] Đang chọn ảnh vừa đẩy từ PC trong lưới Thư viện...')
+            cac_o_anh = [
+                (int(w * 0.16), int(h * 0.22)),
+                (int(w * 0.50), int(h * 0.22)),
+                (int(w * 0.16), int(h * 0.18)),
+                (int(w * 0.83), int(h * 0.22)),
+                (int(w * 0.16), int(h * 0.32)),
+            ]
 
-            self.log('💾 Bấm Lưu / Xong ảnh đại diện...')
-            da_bam_luu = False
-            for nut_luu in ['Xong', 'Lưu', 'Done', 'Save', 'Áp dụng', 'Apply', 'Tiếp', 'Next', 'Chia sẻ']:
-                if self.d(text=nut_luu).exists or self.d(description=nut_luu).exists or self.d(textContains=nut_luu).exists:
-                    self.click_text(nut_luu, nut_luu, 2, 0.5) or self.click_text_chua(nut_luu, nut_luu, 1, 0.5, click_duoi=True)
-                    da_bam_luu = True
-                    time.sleep(1.5)
-                    if self.d(text='Lưu').exists or self.d(description='Lưu').exists:
-                        self.click_text('Lưu', 'Lưu', 1, 0.5)
+            if self.kiem_tra_text(['Máy ảnh', 'Camera', 'Chụp ảnh'], 1, 0.2):
+                cac_o_anh = [
+                    (int(w * 0.50), int(h * 0.22)),
+                    (int(w * 0.83), int(h * 0.22)),
+                    (int(w * 0.16), int(h * 0.22)),
+                ]
+
+            for ox, oy in cac_o_anh:
+                self.click_toa_do_an_toan(ox, oy)
+                time.sleep(1.8)
+                if self.kiem_tra_text(['Xong', 'Lưu', 'Done', 'Save', 'Áp dụng', 'Chỉnh sửa', 'Cắt', 'Chia sẻ lên bảng feed'], 1, 0.3):
+                    break
+                if not self.kiem_tra_text(['Thư viện', 'Gallery'], 1, 0.2):
                     break
 
+            self.log('💾 [Bước 3] Bấm Lưu / Xong ảnh đại diện...')
+            da_bam_luu = False
+            for _ in range(3):
+                for nut_luu in ['Lưu', 'Xong', 'Save', 'Done', 'Áp dụng', 'Apply', 'Tiếp', 'Next']:
+                    if self.d(text=nut_luu).exists or self.d(description=nut_luu).exists or self.d(textContains=nut_luu).exists:
+                        self.click_text(nut_luu, nut_luu, 2, 0.5) or self.click_text_chua(nut_luu, nut_luu, 1, 0.5, click_duoi=True)
+                        da_bam_luu = True
+                        time.sleep(1.5)
+                        break
+
             if not da_bam_luu:
+                self.click_toa_do_an_toan(int(w * 0.90), int(h * 0.08))
+                time.sleep(0.8)
                 self.click_toa_do_an_toan(int(w * 0.50), int(h * 0.90))
                 time.sleep(1.0)
 
@@ -2247,7 +2319,7 @@ class FacebookUI:
         """
         Trích xuất dòng code 2FA (VD: VAEI HQNR I2PH Z4HZ XV3D IN3M BKL4 6IAS) ở Hình 3:
         1. Quét toàn bộ text / content-desc trong XML để bắt đúng dòng 8 cụm 4 ký tự dưới mã QR
-        2. Nếu cần có thể chạm giữ / sao chép vào Clipboard
+        2. Nếu cần có thể bấm Sao chép khóa để lấy từ Clipboard
         """
         try:
             xml_dump = self.d.dump_hierarchy()
@@ -2290,7 +2362,7 @@ class FacebookUI:
     def _kiem_tra_va_xu_ly_loi_mang_2fa(self):
         """
         Kiểm tra nếu màn hình báo lỗi 'Không có kết nối', 'Không thể tải', 'Đã xảy ra lỗi', 'Thử lại'
-        thì tự động bật lại dữ liệu di động 4G, bấm Thử lại hoặc lùi ra để vào bằng Cài đặt chính thống.
+        thì tự động bật lại dữ liệu di động 4G, bấm Thử lại hoặc lùi ra.
         """
         dau_hieu_loi_mang = [
             'Không có kết nối',
@@ -2306,102 +2378,130 @@ class FacebookUI:
             'Try again'
         ]
         if self.kiem_tra_text(dau_hieu_loi_mang, 1, 0.2):
-            self.log('🌐 Phát hiện thông báo lỗi kết nối mạng -> Đang kích hoạt lại 4G & bấm Thử lại...')
+            self.log('🌐 Phát hiện thông báo lỗi tải trang -> Đang làm mới kết nối...')
             self.chay_shell_nhanh('svc wifi disable; svc data enable')
-            time.sleep(1.5)
+            time.sleep(1.0)
             if not (
                 self.click_text('Thử lại', 'Thử lại', 1, 0.4)
                 or self.click_text('Tải lại', 'Tải lại', 1, 0.4)
                 or self.click_text('Try again', 'Try again', 1, 0.4)
             ):
                 self.d.press('back')
-            time.sleep(2.0)
+            time.sleep(1.5)
             return True
         return False
 
     def dieu_huong_vao_man_hinh_2fa(self, ten_fb=""):
         """
-        Điều hướng vào màn hình Xác thực 2 yếu tố bằng giao diện chính thống trong Cài đặt
-        (Tuyệt đối KHÔNG dùng link faceweb cũ gây lỗi 'Không có kết nối mạng'):
-        Menu 3 gạch -> Cài đặt & quyền riêng tư -> Cài đặt -> Trung tâm tài khoản -> Mật khẩu và bảo mật -> Xác thực 2 yếu tố
+        Cơ chế mở nhanh trang 2FA ăn 100%:
+        - Tầng 1 (Gọi 1 phát ra thẳng trang 2FA): Bắn trực tiếp DeepLink nội bộ mở màn hình Thiết lập 2FA.
+        - Tầng 2 (Dự phòng): Nếu thiết bị/phiên bản FB báo lỗi với DeepLink WebModal, gọi thẳng 'fb://settings'
+          để nhảy trực tiếp vào trang Cài đặt -> Trung tâm tài khoản -> Mật khẩu và bảo mật -> Xác thực 2 yếu tố.
         """
         w, h = self.d.window_size()
         self.chay_shell_nhanh('svc data enable')
 
-        # Nếu đã ở sẵn màn hình 2FA thì không cần đi lại
-        if self.kiem_tra_text([
-            'Chọn phương thức bảo mật', 'Dùng ứng dụng xác thực',
-            'Ứng dụng xác thực', 'Authentication app'
-        ], 1, 0.3):
+        cac_dau_hieu_trang_2fa = [
+            'Chọn phương thức bảo mật',
+            'Dùng ứng dụng xác thực',
+            'Sử dụng ứng dụng xác thực',
+            'Ứng dụng xác thực',
+            'Authentication app',
+            'Use authentication app',
+            'Thiết lập ứng dụng',
+            'Giúp bảo vệ tài khoản của bạn'
+        ]
+
+        if self.kiem_tra_text(cac_dau_hieu_trang_2fa, 1, 0.2):
             return True
 
-        self.log('🛡️ Mở 2FA qua Menu Cài đặt chính thống (chống lỗi mất kết nối)...')
-        self._bam_nut_3_gach_goc_trai()
-        time.sleep(1.5)
-        self._kiem_tra_va_xu_ly_loi_mang_2fa()
+        # ==================== TẦNG 1: GỌI 1 LỆNH RA THẲNG TRANG 2FA ====================
+        self.log('⚡ [Tầng 1] Gọi lệnh nhảy thẳng vào trang Xác thực 2 yếu tố (2FA)...')
+        ds_lenh_2fa_1_phat = [
+            'am start -a android.intent.action.VIEW -d "fb://facewebmodal/f?href=https%3A%2F%2Fm.facebook.com%2Fsecurity%2F2fac%2Fsetup%2Fintro%2F" com.facebook.katana',
+            'am start -a android.intent.action.VIEW -d "fb://facewebmodal/f?href=%2Fsecurity%2F2fac%2Fsetup%2Fintro%2F" com.facebook.katana'
+        ]
 
-        # Cách 1: Bấm biểu tượng bánh răng Cài đặt ở góc trên bên phải của trang Menu 3 gạch
-        da_vao_cai_dat = False
-        if self.d(description='Cài đặt').exists or self.d(description='Settings').exists:
-            if self.click_text('Cài đặt', 'Bánh răng Cài đặt', 1, 0.5) or self.click_text('Settings', 'Settings', 1, 0.5):
-                da_vao_cai_dat = True
+        for lenh_2fa in ds_lenh_2fa_1_phat:
+            self.chay_shell_nhanh(lenh_2fa)
+            time.sleep(2.8)
+
+            # Kiểm tra nếu không bị lỗi mạng và đã hiện đúng giao diện 2FA hoặc chọn tài khoản
+            if not self.kiem_tra_text(['Không có kết nối', 'Không thể tải', 'Đã xảy ra lỗi', 'Thử lại', 'Trang này không hiển thị'], 1, 0.2):
+                if self.kiem_tra_text(cac_dau_hieu_trang_2fa + ['Nhập mật khẩu', 'Vì lý do bảo mật'], 1, 0.3):
+                    self.log('✅ Đã mở thẳng trang 2FA bằng 1 lệnh thành công!')
+                    return True
+
+                if self.kiem_tra_text(['Chọn tài khoản', 'Chọn trang cá nhân', 'Xác thực 2 yếu tố', 'Xác thực hai yếu tố'], 1, 0.3):
+                    self.log('✅ Đã mở thẳng trang chọn tài khoản 2FA!')
+                    if ten_fb and (self.d(textContains=ten_fb).exists or self.d(descriptionContains=ten_fb).exists):
+                        self.click_text_chua(ten_fb, ten_fb, 1, 0.5)
+                    else:
+                        self.click_text_chua('Facebook', 'Tài khoản FB', 1, 0.4) or self.click_toa_do_an_toan(int(w * 0.50), int(h * 0.32))
+                    time.sleep(2.5)
+                    if self.kiem_tra_text(cac_dau_hieu_trang_2fa + ['Nhập mật khẩu', 'Vì lý do bảo mật'], 1, 0.3):
+                        return True
+
+            # Nếu modal báo lỗi kết nối thì đóng modal để chuyển sang lệnh tiếp theo
+            if self.kiem_tra_text(['Không có kết nối', 'Không thể tải', 'Đã xảy ra lỗi', 'Thử lại'], 1, 0.2):
+                self.d.press('back')
+                time.sleep(1.0)
+
+        # ==================== TẦNG 2: GỌI THẲNG TRANG CÀI ĐẶT NATIVE (fb://settings) ====================
+        self.log('🛡️ [Tầng 2] Gọi thẳng trang Cài đặt gốc (fb://settings) -> Trung tâm tài khoản...')
+        self.chay_shell_nhanh('am start -a android.intent.action.VIEW -d "fb://settings" com.facebook.katana')
+        time.sleep(2.2)
+
+        # Nếu fb://settings chưa vào thẳng Cài đặt thì mới mở qua Menu 3 gạch
+        if not self.kiem_tra_text(['Trung tâm tài khoản', 'Mật khẩu và bảo mật', 'Cài đặt', 'Accounts Center'], 1, 0.3):
+            self._bam_nut_3_gach_goc_trai()
+            time.sleep(1.5)
+            if self.d(description='Cài đặt').exists or self.d(description='Settings').exists:
+                self.click_text('Cài đặt', 'Bánh răng Cài đặt', 1, 0.5) or self.click_text('Settings', 'Settings', 1, 0.5)
+                time.sleep(2.0)
+            else:
+                for _ in range(3):
+                    if self.kiem_tra_text(['Cài đặt & quyền riêng tư', 'Cài đặt và quyền riêng tư', 'Settings & privacy'], 1, 0.2):
+                        break
+                    self.vuot_toa_do_an_toan(int(w * 0.50), int(h * 0.82), int(w * 0.50), int(h * 0.25), 200)
+                    time.sleep(0.5)
+                self.click_text_chua('Cài đặt & quyền riêng tư', 'Cài đặt & quyền riêng tư', 2, 0.5) or self.click_text_chua('Cài đặt và quyền riêng tư', 'Cài đặt và quyền riêng tư', 2, 0.5)
+                time.sleep(1.2)
+                self.click_text('Cài đặt', 'Cài đặt', 2, 0.5) or self.click_text('Settings', 'Settings', 2, 0.5)
                 time.sleep(2.0)
 
-        # Cách 2: Cuộn xuống bấm 'Cài đặt & quyền riêng tư' -> 'Cài đặt'
-        if not da_vao_cai_dat and not self.kiem_tra_text(['Trung tâm tài khoản', 'Mật khẩu và bảo mật'], 1, 0.3):
-            for _ in range(3):
-                if self.kiem_tra_text(['Cài đặt & quyền riêng tư', 'Cài đặt và quyền riêng tư', 'Settings & privacy'], 1, 0.2):
-                    break
-                self.vuot_toa_do_an_toan(int(w * 0.50), int(h * 0.82), int(w * 0.50), int(h * 0.25), 200)
-                time.sleep(0.5)
-
-            self.click_text_chua('Cài đặt & quyền riêng tư', 'Cài đặt & quyền riêng tư', 2, 0.5) or self.click_text_chua('Cài đặt và quyền riêng tư', 'Cài đặt và quyền riêng tư', 2, 0.5) or self.click_text_chua('Settings & privacy', 'Settings', 1, 0.5)
-            time.sleep(1.2)
-            self.click_text('Cài đặt', 'Cài đặt', 2, 0.5) or self.click_text('Settings', 'Settings', 2, 0.5)
-            time.sleep(2.2)
-
-        self._kiem_tra_va_xu_ly_loi_mang_2fa()
-
-        # Bước vào Trung tâm tài khoản Meta
-        self.log('🛡️ Mở Trung tâm tài khoản -> Mật khẩu và bảo mật...')
+        # Mở Trung tâm tài khoản Meta
         if not self.kiem_tra_text(['Mật khẩu và bảo mật', 'Password and security'], 1, 0.3):
             if not (
                 self.click_text_chua('Xem thêm trong Trung tâm tài khoản', 'Xem thêm TT Tài khoản', 2, 0.5)
                 or self.click_text_chua('Trung tâm tài khoản', 'Trung tâm TK', 2, 0.5)
                 or self.click_text_chua('Accounts Center', 'Accounts Center', 1, 0.5)
             ):
-                # Tọa độ thẻ Trung tâm tài khoản ở đầu trang Cài đặt
                 self.click_toa_do_an_toan(int(w * 0.50), int(h * 0.25))
-            time.sleep(2.5)
-
-        self._kiem_tra_va_xu_ly_loi_mang_2fa()
+            time.sleep(2.2)
 
         # Cuộn tìm và bấm 'Mật khẩu và bảo mật'
         for _ in range(4):
             if self.kiem_tra_text(['Mật khẩu và bảo mật', 'Password and security'], 1, 0.3):
                 self.click_text_chua('Mật khẩu và bảo mật', 'Mật khẩu & bảo mật', 2, 0.5) or self.click_text_chua('Password and security', 'Password', 2, 0.5)
-                time.sleep(2.2)
+                time.sleep(2.0)
                 break
             self.vuot_toa_do_an_toan(int(w * 0.50), int(h * 0.78), int(w * 0.50), int(h * 0.30), 200)
-            time.sleep(0.6)
-
-        self._kiem_tra_va_xu_ly_loi_mang_2fa()
+            time.sleep(0.5)
 
         # Bấm 'Xác thực 2 yếu tố'
         self.log('🛡️ Bấm chọn "Xác thực 2 yếu tố"...')
         for _ in range(3):
             if self.kiem_tra_text(['Xác thực 2 yếu tố', 'Xác thực hai yếu tố', 'Two-factor authentication'], 1, 0.3):
                 self.click_text_chua('Xác thực 2 yếu tố', 'Xác thực 2 yếu tố', 2, 0.5) or self.click_text_chua('Xác thực hai yếu tố', 'Xác thực 2 yếu tố', 1, 0.5) or self.click_text_chua('Two-factor authentication', '2FA', 1, 0.5)
-                time.sleep(2.5)
+                time.sleep(2.2)
                 break
             self.vuot_toa_do_an_toan(int(w * 0.50), int(h * 0.75), int(w * 0.50), int(h * 0.30), 200)
             time.sleep(0.5)
 
-        self._kiem_tra_va_xu_ly_loi_mang_2fa()
-
         # Nếu hiện danh sách Chọn tài khoản để thiết lập 2FA -> Bấm vào tên FB vừa tạo
-        if self.kiem_tra_text(['Chọn tài khoản', 'Select an account', 'Chọn trang cá nhân', 'Trang cá nhân', 'Facebook'], 2, 0.5):
-            if not self.kiem_tra_text(['Chọn phương thức bảo mật', 'Dùng ứng dụng xác thực'], 1, 0.2):
+        if self.kiem_tra_text(['Chọn tài khoản', 'Select an account', 'Chọn trang cá nhân', 'Trang cá nhân', 'Facebook'], 2, 0.4):
+            if not self.kiem_tra_text(cac_dau_hieu_trang_2fa, 1, 0.2):
                 self.log(f'👤 Chọn tài khoản "{ten_fb or "Facebook"}" để bật 2FA...')
                 da_chon_tk = False
                 if ten_fb and (self.d(textContains=ten_fb).exists or self.d(descriptionContains=ten_fb).exists):
@@ -2410,9 +2510,8 @@ class FacebookUI:
                     da_chon_tk = self.click_text_chua('Facebook', 'Tài khoản FB', 1, 0.4)
                 if not da_chon_tk:
                     self.click_toa_do_an_toan(int(w * 0.50), int(h * 0.32))
-                time.sleep(2.8)
+                time.sleep(2.5)
 
-        self._kiem_tra_va_xu_ly_loi_mang_2fa()
         return True
 
     def _nhap_mat_khau_xac_nhan_2fa_hinh_2(self):
@@ -2429,7 +2528,7 @@ class FacebookUI:
             'nhập lại mật khẩu của bạn',
             'Quên mật khẩu',
             'Re-enter your password'
-        ], 2, 0.5):
+        ], 2, 0.4):
             self.log('🔑 [Hình 2] Phát hiện màn hình Nhập mật khẩu -> Đang nhập mật khẩu tài khoản...')
             da_focus_mk = False
             if self.d(className='android.widget.EditText').exists:
@@ -2447,19 +2546,20 @@ class FacebookUI:
             self.log('⏩ [Hình 2] Bấm nút màu xanh "Tiếp tục" sau khi nhập mật khẩu...')
             if not (
                 self.click_text('Tiếp tục', 'Tiếp tục', 2, 0.5)
-                or self.click_text_chua('Tiếp tục', 'Tiếp tục', 2, 0.5)
+                or self.click_text_chua('Tiếp tục', 'Tiếp tục', 2, 0.5, click_duoi=True)
+                or self.click_text('Tiếp', 'Tiếp', 1, 0.4)
                 or self.click_text('Continue', 'Continue', 1, 0.4)
             ):
                 self.click_toa_do_an_toan(int(w * 0.50), int(h * 0.253))
 
-            time.sleep(3.5)
+            time.sleep(3.2)
             return True
         return False
 
     def _nhap_otp_hoac_mk_phu_2fa(self, used_email, mode, mail_service, imap_service, hotmail_service, autosms_service, ten_fb=""):
         """
         Xử lý trường hợp Facebook hỏi lại Mật khẩu (Hình 2) hoặc Mã bảo mật Email/SMS trong quá trình bật 2FA.
-        Sau khi xác minh Email xong, tự động kiểm tra và bấm quay lại luồng thiết lập 2FA nếu bị đẩy ra ngoài.
+        Sau khi xác minh Email xong, tự động kiểm tra và bấm tiếp vào luồng thiết lập 2FA nếu cần.
         """
         w, h = self.d.window_size()
         self._nhap_mat_khau_xac_nhan_2fa_hinh_2()
@@ -2491,9 +2591,8 @@ class FacebookUI:
                 self.nhap_text(verify_code)
                 time.sleep(0.8)
                 self.click_text_chua('Tiếp tục', 'Tiếp tục', 2, 0.5, click_duoi=True) or self.click_text_chua('Tiếp', 'Tiếp', 2, 0.5, click_duoi=True)
-                time.sleep(4.0)
+                time.sleep(3.8)
 
-                # Nếu sau khi xác minh email bị quay về màn hình chọn tài khoản hoặc phương thức bảo mật, tự động vào lại 2FA
                 if self.kiem_tra_text(['Xác thực 2 yếu tố', 'Chọn tài khoản'], 1, 0.3) and not self.kiem_tra_text(['Thiết lập ứng dụng', 'Sao chép khóa'], 1, 0.2):
                     if ten_fb and self.d(textContains=ten_fb).exists:
                         self.click_text_chua(ten_fb, ten_fb, 1, 0.4)
@@ -2501,16 +2600,19 @@ class FacebookUI:
                     for nut_hinh_1 in ['Dùng ứng dụng xác thực', 'Sử dụng ứng dụng xác thực', 'Ứng dụng xác thực']:
                         if self.d(textContains=nut_hinh_1).exists or self.d(descriptionContains=nut_hinh_1).exists:
                             self.click_text_chua(nut_hinh_1, nut_hinh_1, 1, 0.4)
-                            time.sleep(2.5)
+                            time.sleep(1.2)
+                            self.click_text_chua('Tiếp', 'Tiếp', 1, 0.4, click_duoi=True)
+                            time.sleep(2.0)
                             break
 
     def bat_2fa_fb(self, used_email, ten_fb="", mode="1", mail_service=None, imap_service=None, hotmail_service=None, autosms_service=None):
         """
-        Luồng bật 2FA chuẩn theo đúng 4 hình ảnh (điều hướng bằng Cài đặt thật chống lỗi mạng):
-        - Hình 1: Màn hình 'Chọn phương thức bảo mật' -> Bấm nút màu xanh 'Dùng ứng dụng xác thực'
-        - Hình 2: Màn hình 'Nhập mật khẩu' -> Nhập mật khẩu tạo tài khoản -> Bấm nút xanh 'Tiếp tục'
-        - Hình 3: Màn hình 'Thiết lập ứng dụng trên một thiết bị khác' -> Sao chép dòng code 2FA dưới QR -> Bấm 'Tiếp tục'
-        - Hình 4: Màn hình 'Nhập mã xác nhận' -> Nhập OTP 6 số vào ô 'Mã xác nhận' -> Bấm 'Tiếp tục' -> Bấm 'Xong'
+        Luồng bật 2FA tự động mượt 100%:
+        - Mở thẳng trang 2FA bằng lệnh DeepLink 1 phát (kèm dự phòng fb://settings)
+        - Hình 1: Chọn 'Dùng ứng dụng xác thực' / 'Ứng dụng xác thực' -> Bấm 'Tiếp' / 'Tiếp tục'
+        - Hình 2: Nếu hỏi mật khẩu hoặc OTP Email phụ -> Tự động điền và bấm 'Tiếp tục'
+        - Hình 3: Quét lấy dòng Key 2FA dưới mã QR -> Bấm 'Tiếp tục'
+        - Hình 4: Đổi Key 2FA sang OTP 6 số -> Điền vào ô 'Mã xác nhận' -> Bấm 'Tiếp tục' -> Bấm 'Xong'
         """
         self.log('🛡️ Đang mở cài đặt Xác thực 2 yếu tố (2FA)...')
         two_fa_secret = ""
@@ -2525,31 +2627,34 @@ class FacebookUI:
 
             self.dieu_huong_vao_man_hinh_2fa(ten_fb=ten_fb)
 
-            # Nếu hỏi mật khẩu hoặc mã xác minh ngay khi vừa chọn tài khoản
+            # Nếu hỏi mật khẩu hoặc mã xác minh ngay khi vừa mở 2FA
             self._nhap_otp_hoac_mk_phu_2fa(used_email, mode, mail_service, imap_service, hotmail_service, autosms_service, ten_fb=ten_fb)
 
-            # ==================== BƯỚC 1 (HÌNH 1): BẤM NÚT MÀU XANH "DÙNG ỨNG DỤNG XÁC THỰC" ====================
-            self.log('🛡️ [Hình 1] Bấm nút màu xanh "Dùng ứng dụng xác thực"...')
-            da_bam_nut_xanh_hinh_1 = False
-            for nut_hinh_1 in [
-                'Dùng ứng dụng xác thực',
-                'Sử dụng ứng dụng xác thực',
-                'Use authentication app',
-                'Ứng dụng xác thực'
-            ]:
-                if self.d(text=nut_hinh_1).exists or self.d(description=nut_hinh_1).exists or self.d(textContains=nut_hinh_1).exists:
-                    if self.click_text(nut_hinh_1, nut_hinh_1, 2, 0.4) or self.click_text_chua(nut_hinh_1, nut_hinh_1, 2, 0.4):
-                        da_bam_nut_xanh_hinh_1 = True
-                        break
+            # ==================== BƯỚC 1 (HÌNH 1): CHỌN "DÙNG ỨNG DỤNG XÁC THỰC" ====================
+            if not self.kiem_tra_text(['Thiết lập ứng dụng', 'Sao chép khóa', 'Copy key', 'quét mã QR'], 1, 0.2):
+                self.log('🛡️ [Hình 1] Chọn "Dùng ứng dụng xác thực"...')
+                da_bam_nut_xanh_hinh_1 = False
+                for nut_hinh_1 in [
+                    'Dùng ứng dụng xác thực',
+                    'Sử dụng ứng dụng xác thực',
+                    'Use authentication app',
+                    'Ứng dụng xác thực',
+                    'Authentication app'
+                ]:
+                    if self.d(text=nut_hinh_1).exists or self.d(description=nut_hinh_1).exists or self.d(textContains=nut_hinh_1).exists:
+                        if self.click_text(nut_hinh_1, nut_hinh_1, 2, 0.4) or self.click_text_chua(nut_hinh_1, nut_hinh_1, 2, 0.4):
+                            da_bam_nut_xanh_hinh_1 = True
+                            break
 
-            if not da_bam_nut_xanh_hinh_1:
-                self.click_toa_do_an_toan(int(w * 0.464), int(h * 0.436))
+                if not da_bam_nut_xanh_hinh_1:
+                    self.click_toa_do_an_toan(int(w * 0.464), int(h * 0.436))
 
-            time.sleep(2.5)
+                time.sleep(1.5)
 
-            if self.kiem_tra_text(['Chọn phương thức bảo mật'], 1, 0.2):
-                self.click_text_chua('Tiếp tục', 'Tiếp tục', 1, 0.4, click_duoi=True) or self.click_toa_do_an_toan(int(w * 0.464), int(h * 0.436))
-                time.sleep(2.0)
+                # Nếu là giao diện Radio Button (chọn 'Ứng dụng xác thực' xong cần bấm nút 'Tiếp' / 'Tiếp tục' ở đáy)
+                if self.kiem_tra_text(['Chọn phương thức bảo mật', 'Giúp bảo vệ tài khoản của bạn', 'Ứng dụng xác thực'], 1, 0.2) and not self.kiem_tra_text(['Thiết lập ứng dụng', 'Sao chép khóa'], 1, 0.2):
+                    self.click_text('Tiếp', 'Tiếp', 1, 0.4) or self.click_text('Tiếp tục', 'Tiếp tục', 1, 0.4) or self.click_text_chua('Tiếp', 'Tiếp', 1, 0.4, click_duoi=True) or self.click_toa_do_an_toan(int(w * 0.50), int(h * 0.90))
+                    time.sleep(2.2)
 
             # ==================== BƯỚC 2 (HÌNH 2): NHẬP MẬT KHẨU TÀI KHOẢN & BẤM TIẾP TỤC ====================
             self._nhap_otp_hoac_mk_phu_2fa(used_email, mode, mail_service, imap_service, hotmail_service, autosms_service, ten_fb=ten_fb)
@@ -2595,6 +2700,7 @@ class FacebookUI:
                 elif (
                     self.click_truong('Mã xác nhận', False, 2, 0.4)
                     or self.click_text_chua('Mã xác nhận', 'Mã xác nhận', 1, 0.4)
+                    or self.click_truong('Nhập mã', False, 1, 0.4)
                 ):
                     da_bam_o_ma = True
 
@@ -2605,9 +2711,7 @@ class FacebookUI:
                 self.nhap_text(ma_otp_6_so)
                 time.sleep(1.0)
 
-                if self.d(text='Tiếp tục').exists or self.d(description='Tiếp tục').exists:
-                    pass
-                else:
+                if not (self.d(text='Tiếp tục').exists or self.d(description='Tiếp tục').exists or self.d(text='Tiếp').exists):
                     self.d.press('back')
                     time.sleep(0.6)
 
