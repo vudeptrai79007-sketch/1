@@ -96,6 +96,12 @@ except ImportError:
     from urllib3.util.retry import Retry
     import pyotp
 
+# ===== HÀM LẤY ĐƯỜNG DẪN THƯ MỤC CHỨA TOOL (HỖ TRỢ CẢ .PY VÀ .EXE) =====
+def get_app_dir():
+    if getattr(sys, 'frozen', False):
+        return os.path.dirname(os.path.abspath(sys.executable))
+    return os.path.dirname(os.path.abspath(__file__))
+
 # BIẾN TOÀN CỤC & CÁC KHÓA (LOCK)
 STOP_EVENT = threading.Event()
 OTP_LOCK = threading.Lock() 
@@ -107,7 +113,7 @@ SUBMIT_LOCK = threading.Lock()
 PRINT_LOCK = threading.Lock()
 DRIVER_LOCK = threading.Lock()
 
-CONFIG_FILE = "config_gmail.json"
+CONFIG_FILE = os.path.join(get_app_dir(), "config_gmail.json")
 BASE_YEAR = random.randint(1995, 2005)
 
 # Danh sách lưu toàn bộ Trình duyệt để hỏi đóng vào cuối cùng
@@ -155,7 +161,7 @@ def banner():
  ██║  ███╗███████║██████╔╝██║   ██║██╔████╔██║█████╗  
  ██║   ██║██╔══██║██╔══██╗██║   ██║██║╚██╔╝██║██╔══╝  
  ╚██████╔╝██║  ██║██║  ██║╚██████╔╝██║ ╚═╝ ██║███████╗
-  ╚═════╝ ╚═╝  ╚═╝╚═╝  ╚═╝ ╚═════╝ ╚═╝   ╚═╝╚══════╝
+  ╚═════╝ ╚═╝  ╚═╝╚═╝  ╚═╝ ╚═════╝ ╚═╝     ╚═╝╚══════╝
 {Colors.RESET}""")
     built_in_print(f"{Colors.INFO}Phiên Bản: v18.0 (Fix Form Meta IG - 100% Nam - Full Bypass){Colors.RESET}")
     built_in_print(f"{Colors.LINE}{'─'*70}{Colors.RESET}\n")
@@ -173,31 +179,47 @@ def save_config(data):
     except Exception: pass
 
 def save_account(thread_id, email_str, password, username, full_name, mode="auto", cookie="", two_fa=""):
-    # Lấy vị trí thư mục chính xác nơi đang chứa file code
-    current_dir = os.path.dirname(os.path.abspath(__file__))
+    # Lấy vị trí thư mục chính xác nơi đang chứa file .exe (hoặc file .py)
+    current_dir = get_app_dir()
     
-    # Tạo đường dẫn cho file TỔNG nằm ngay sát cạnh file code
+    # Tạo đường dẫn cho file TỔNG nằm ngay sát cạnh file tool
     file_tong = os.path.join(current_dir, "danh_sach_acc_ig.txt")
     
-    # Tạo đường dẫn cho thư mục chứa các file lẻ
+    # Tạo đường dẫn cho thư mục chứa các file lẻ nằm trong thư mục chứa tool
     folder_name = os.path.join(current_dir, "Instagram_reg_PC")
-    if not os.path.exists(folder_name): os.makedirs(folder_name)
+    os.makedirs(folder_name, exist_ok=True)
     
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     filename = os.path.join(folder_name, f"account_{thread_id}_{timestamp}.txt")
     
-    # Định dạng lưu acc (Ví dụ: Email|Pass|User|2FA|Cookie)
+    # Định dạng lưu acc đầy đủ: Email|Pass|User|2FA|Cookie
     dinh_dang_luu = f"{email_str}|{password}|{username}|{two_fa}|{cookie}\n"
     
     try:
-        # GHI VÀO FILE TỔNG
-        with open(file_tong, 'a', encoding='utf-8') as f: 
-            f.write(dinh_dang_luu)
-            
-        # Ghi file lẻ (bạn có thể xóa đoạn này nếu thấy rác máy)
-        content = f"Luồng: {thread_id}\nEmail: {email_str}\nPass: {password}\nUser: {username}\n2FA: {two_fa}\nCookie: {cookie}\n"
-        with open(filename, 'w', encoding='utf-8') as f: 
-            f.write(content)
+        with DATA_LOCK:
+            # GHI VÀO FILE TỔNG (ép flush xuống ổ cứng ngay lập tức)
+            with open(file_tong, 'a', encoding='utf-8') as f: 
+                f.write(dinh_dang_luu)
+                f.flush()
+                os.fsync(f.fileno())
+                
+            # Ghi file lẻ đầy đủ thông tin
+            content = (
+                f"Luồng: {thread_id}\n"
+                f"Chế độ: {mode}\n"
+                f"Họ tên: {full_name}\n"
+                f"Email: {email_str}\n"
+                f"Pass: {password}\n"
+                f"User: {username}\n"
+                f"2FA: {two_fa}\n"
+                f"Cookie: {cookie}\n"
+            )
+            with open(filename, 'w', encoding='utf-8') as f: 
+                f.write(content)
+                f.flush()
+                os.fsync(f.fileno())
+                
+        print(f"{Colors.color_text(f'[{thread_id}] Đã lưu acc thành công vào: {file_tong}', Colors.SUCCESS)}")
     except Exception as e: 
         print(f"Lỗi khi lưu file: {e}")
 
@@ -1887,6 +1909,11 @@ def process_file_input(config_key, default_prompt):
     if not file_path:
         built_in_print(default_prompt, end="")
         file_path = input().strip().strip('"')
+        # Nếu chỉ nhập tên file (vd: mail.txt), tự động tìm trong thư mục chứa tool .exe
+        if file_path and not os.path.isfile(file_path):
+            alt_path = os.path.join(get_app_dir(), file_path)
+            if os.path.isfile(alt_path):
+                file_path = alt_path
         if os.path.isfile(file_path):
             config_data[config_key] = file_path
             save_config(config_data)
@@ -2001,6 +2028,10 @@ if __name__ == "__main__":
         built_in_print(f"\n{Colors.KEY}Nhập đường dẫn thư mục chứa ảnh làm Avatar (Bỏ trống nếu không muốn up): {Colors.RESET}", end="")
         avatar_folder_input = input().strip()
         avatar_folder_input = avatar_folder_input.strip('"').strip("'")
+        if avatar_folder_input and not os.path.isdir(avatar_folder_input):
+            alt_avatar = os.path.join(get_app_dir(), avatar_folder_input)
+            if os.path.isdir(alt_avatar):
+                avatar_folder_input = alt_avatar
         
         if avatar_folder_input and os.path.isdir(avatar_folder_input):
             config_data["last_avatar_folder"] = avatar_folder_input
@@ -2008,6 +2039,11 @@ if __name__ == "__main__":
 
     built_in_print(f"\n{Colors.KEY}Nhập đường dẫn file Proxy (.txt) (Hỗ trợ định dạng: IP:Port, IP:Port:User:Pass, User:Pass@IP:Port): {Colors.RESET}", end="")
     proxy_file_input = input().strip().strip('"').strip("'")
+    if proxy_file_input and not os.path.isfile(proxy_file_input):
+        alt_proxy = os.path.join(get_app_dir(), proxy_file_input)
+        if os.path.isfile(alt_proxy):
+            proxy_file_input = alt_proxy
+
     proxies_list = []
     if proxy_file_input and os.path.isfile(proxy_file_input):
         with open(proxy_file_input, 'r', encoding='utf-8') as f_proxy:
