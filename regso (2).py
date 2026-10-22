@@ -108,7 +108,14 @@ SUBMIT_LOCK = threading.Lock()
 PRINT_LOCK = threading.Lock()
 DRIVER_LOCK = threading.Lock()
 
-CONFIG_FILE = "config_gmail.json"
+# --- HÀM LẤY ĐÚNG THƯ MỤC CHỨA FILE .EXE HOẶC FILE .PY ---
+def get_app_dir():
+    if getattr(sys, 'frozen', False):
+        return os.path.dirname(sys.executable)
+    return os.path.dirname(os.path.abspath(__file__))
+
+BASE_DIR = get_app_dir()
+CONFIG_FILE = os.path.join(BASE_DIR, "config_gmail.json")
 BASE_YEAR = random.randint(1995, 2005)
 
 # Danh sách lưu toàn bộ Trình duyệt để hỏi đóng vào cuối cùng
@@ -156,7 +163,7 @@ def banner():
 ██║  ███╗███████║██████╔╝██║   ██║██╔████╔██║█████╗  
 ██║   ██║██╔══██║██╔══██╗██║   ██║██║╚██╔╝██║██╔══╝  
 ╚██████╔╝██║  ██║██║  ██║╚██████╔╝██║ ╚═╝ ██║███████╗
- ╚═════╝ ╚═╝  ╚═╝╚═╝  ╚═╝ ╚═════╝ ╚═╝    ╚═╝╚══════╝
+ ╚═════╝ ╚═╝  ╚═╝╚═╝  ╚═╝ ╚═════╝ ╚═╝     ╚═╝╚══════╝
 {Colors.RESET}""")
     built_in_print(f"{Colors.INFO}Phiên Bản: v17.5 (Bypass 100% bốc nhầm số trong Tên Email){Colors.RESET}")
     built_in_print(f"{Colors.LINE}{'─'*70}{Colors.RESET}\n")
@@ -174,15 +181,14 @@ def save_config(data):
     except Exception: pass
 
 def save_account(thread_id, email_str, password, username, full_name, mode="auto", cookie="", two_fa=""):
-    # Lấy vị trí thư mục chính xác nơi đang chứa file code
-    current_dir = os.path.dirname(os.path.abspath(__file__))
+    # Lấy vị trí thư mục chính xác nơi đang chứa file .exe (hoặc file .py)
+    current_dir = get_app_dir()
     
-    # Tạo đường dẫn cho file TỔNG nằm ngay sát cạnh file code
+    # Tạo đường dẫn cho file TỔNG nằm ngay sát cạnh file .exe
     file_tong = os.path.join(current_dir, "danh_sach_acc_ig.txt")
     
-    # Tạo đường dẫn cho thư mục chứa các file lẻ
+    # Tạo đường dẫn cho thư mục chứa các file lẻ nằm ngay cạnh file .exe
     folder_name = os.path.join(current_dir, "Instagram_reg_PC")
-    if not os.path.exists(folder_name): os.makedirs(folder_name)
     
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     filename = os.path.join(folder_name, f"account_{thread_id}_{timestamp}.txt")
@@ -190,17 +196,23 @@ def save_account(thread_id, email_str, password, username, full_name, mode="auto
     # Định dạng lưu acc (Ví dụ: Email|Pass|User|2FA|Cookie)
     dinh_dang_luu = f"{email_str}|{password}|{username}|{two_fa}|{cookie}\n"
     
-    try:
-        # GHI VÀO FILE TỔNG
-        with open(file_tong, 'a', encoding='utf-8') as f: 
-            f.write(dinh_dang_luu)
-            
-        # Ghi file lẻ (bạn có thể xóa đoạn này nếu thấy rác máy)
-        content = f"Luồng: {thread_id}\nEmail: {email_str}\nPass: {password}\nUser: {username}\n2FA: {two_fa}\nCookie: {cookie}\n"
-        with open(filename, 'w', encoding='utf-8') as f: 
-            f.write(content)
-    except Exception as e: 
-        print(f"Lỗi khi lưu file: {e}")
+    with DATA_LOCK:
+        try:
+            if not os.path.exists(folder_name):
+                os.makedirs(folder_name, exist_ok=True)
+                
+            # GHI VÀO FILE TỔNG
+            with open(file_tong, 'a', encoding='utf-8') as f: 
+                f.write(dinh_dang_luu)
+                
+            # Ghi file lẻ
+            content = f"Luồng: {thread_id}\nEmail: {email_str}\nPass: {password}\nUser: {username}\n2FA: {two_fa}\nCookie: {cookie}\n"
+            with open(filename, 'w', encoding='utf-8') as f: 
+                f.write(content)
+                
+            print(f"{Colors.color_text(f'[{thread_id}] Đã xuất tài khoản vào: {file_tong}', Colors.SUCCESS)}")
+        except Exception as e: 
+            print(f"Lỗi khi lưu file: {e}")
 
 def VietnameseNameGenerator():
     first = random.choice(["Nguyen", "Tran", "Le", "Pham", "Hoang", "Huynh", "Vu", "Dang", "Bui", "Do"])
